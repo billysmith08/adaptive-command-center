@@ -1005,6 +1005,9 @@ export default function Dashboard({ user, onLogout }) {
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [driveDiag, setDriveDiag] = useState(null); // diagnostics result
+  const [driveDiagLoading, setDriveDiagLoading] = useState(false);
+  const [driveTestSearch, setDriveTestSearch] = useState("");
   const isAdmin = appSettings.authorizedUsers.includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -2699,25 +2702,175 @@ export default function Dashboard({ user, onLogout }) {
               {/* ── DRIVE TAB ── */}
               {settingsTab === "drive" && (
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Connect Google Drive folders for vendor scanning. Share each folder with the service account email below as Editor.</div>
-                  <div style={{ padding: "10px 12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 16 }}>
-                    <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>SERVICE ACCOUNT EMAIL</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 11, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{appSettings.driveConnections[0]?.serviceEmail || "command-center-drive@adaptive-command-center.iam.gserviceaccount.com"}</span>
-                      <button onClick={() => { navigator.clipboard.writeText(appSettings.driveConnections[0]?.serviceEmail || "command-center-drive@adaptive-command-center.iam.gserviceaccount.com"); setClipboardToast({ text: "Copied!", x: window.innerWidth / 2, y: 60 }); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "var(--textMuted)", cursor: "pointer" }}>📋 Copy</button>
+                  {/* Service Account Info */}
+                  <div style={{ padding: "12px 14px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)", marginBottom: 16 }}>
+                    <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>SERVICE ACCOUNT EMAIL</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                      <span style={{ fontSize: 11, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>command-center-drive@adaptive-command-center.iam.gserviceaccount.com</span>
+                      <button onClick={() => { navigator.clipboard.writeText("command-center-drive@adaptive-command-center.iam.gserviceaccount.com"); setClipboardToast({ text: "Copied!", x: window.innerWidth / 2, y: 60 }); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "var(--textMuted)", cursor: "pointer", flexShrink: 0 }}>📋 Copy</button>
                     </div>
+                    <div style={{ fontSize: 10, color: "var(--textGhost)", lineHeight: 1.5 }}>Share any Google Drive folder with this email (as Editor) to make it searchable from the Vendors tab.</div>
                   </div>
-                  {appSettings.driveConnections.map((conn, i) => (
-                    <div key={i} style={{ padding: "12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 6 }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
-                        <input value={conn.name} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, name: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Folder name" style={{ width: 120, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, outline: "none" }} />
-                        <input value={conn.folderId} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Google Drive folder ID" style={{ flex: 1, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
-                        {i > 0 && <button onClick={() => { const updated = { ...appSettings, driveConnections: appSettings.driveConnections.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer" }}>✕</button>}
+
+                  {/* Test Connection Button */}
+                  <button disabled={driveDiagLoading} onClick={async () => {
+                    setDriveDiagLoading(true); setDriveDiag(null);
+                    try {
+                      const params = new URLSearchParams();
+                      const folderIds = appSettings.driveConnections?.filter(c => c.folderId).map(c => c.folderId) || [];
+                      if (folderIds[0]) params.set("folderId", folderIds[0]);
+                      if (driveTestSearch.trim()) params.set("testSearch", driveTestSearch.trim());
+                      const res = await fetch(`/api/drive/test?${params}`);
+                      const data = await res.json();
+                      setDriveDiag(data);
+                    } catch (err) { setDriveDiag({ error: err.message }); }
+                    setDriveDiagLoading(false);
+                  }} style={{ width: "100%", padding: "10px 16px", background: driveDiagLoading ? "var(--bgInput)" : "#3da5db15", border: `1px solid ${driveDiagLoading ? "var(--borderSub)" : "#3da5db30"}`, borderRadius: 8, color: driveDiagLoading ? "var(--textGhost)" : "#3da5db", fontSize: 12, fontWeight: 700, cursor: driveDiagLoading ? "wait" : "pointer", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                    {driveDiagLoading ? "⏳ Testing Connection..." : "🔌 Test Drive Connection"}
+                  </button>
+
+                  {/* Test Search */}
+                  <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                    <input value={driveTestSearch} onChange={e => setDriveTestSearch(e.target.value)} placeholder="Test search for a vendor name..." style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'JetBrains Mono', monospace" }}
+                      onKeyDown={async (e) => {
+                        if (e.key === "Enter" && driveTestSearch.trim()) {
+                          setDriveDiagLoading(true); setDriveDiag(null);
+                          try {
+                            const params = new URLSearchParams({ testSearch: driveTestSearch.trim() });
+                            const folderIds = appSettings.driveConnections?.filter(c => c.folderId).map(c => c.folderId) || [];
+                            if (folderIds[0]) params.set("folderId", folderIds[0]);
+                            const res = await fetch(`/api/drive/test?${params}`);
+                            setDriveDiag(await res.json());
+                          } catch (err) { setDriveDiag({ error: err.message }); }
+                          setDriveDiagLoading(false);
+                        }
+                      }}
+                    />
+                    <button onClick={async () => {
+                      if (!driveTestSearch.trim()) return;
+                      setDriveDiagLoading(true); setDriveDiag(null);
+                      try {
+                        const params = new URLSearchParams({ testSearch: driveTestSearch.trim() });
+                        const folderIds = appSettings.driveConnections?.filter(c => c.folderId).map(c => c.folderId) || [];
+                        if (folderIds[0]) params.set("folderId", folderIds[0]);
+                        const res = await fetch(`/api/drive/test?${params}`);
+                        setDriveDiag(await res.json());
+                      } catch (err) { setDriveDiag({ error: err.message }); }
+                      setDriveDiagLoading(false);
+                    }} style={{ padding: "8px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>🔍 Search</button>
+                  </div>
+
+                  {/* Diagnostics Results */}
+                  {driveDiag && (
+                    <div style={{ background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)", overflow: "hidden" }}>
+                      {/* Environment Variables */}
+                      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>ENVIRONMENT VARIABLES (Vercel)</div>
+                        {driveDiag.envVars && Object.entries(driveDiag.envVars).map(([key, val]) => (
+                          <div key={key} style={{ fontSize: 10, color: val.startsWith("✅") ? "#4ecb71" : "#e85454", fontFamily: "'JetBrains Mono', monospace", marginBottom: 2 }}>
+                            {key}: {val}
+                          </div>
+                        ))}
                       </div>
-                      <div style={{ fontSize: 9, color: "var(--textGhost)" }}>Paste the folder ID from the Google Drive URL: drive.google.com/drive/folders/<strong>FOLDER_ID_HERE</strong></div>
+
+                      {/* Connection Status */}
+                      <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>CONNECTION</div>
+                        {driveDiag.connection ? (
+                          <div>
+                            <div style={{ fontSize: 11, color: driveDiag.connection.status.includes("✅") ? "#4ecb71" : "#e85454", fontWeight: 600, marginBottom: 2 }}>{driveDiag.connection.status}</div>
+                            {driveDiag.connection.authenticatedAs && <div style={{ fontSize: 10, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace" }}>Authenticated as: {driveDiag.connection.authenticatedAs}</div>}
+                          </div>
+                        ) : driveDiag.error ? (
+                          <div style={{ fontSize: 11, color: "#e85454", fontWeight: 600 }}>❌ {driveDiag.error}</div>
+                        ) : null}
+                      </div>
+
+                      {/* Accessible Files */}
+                      {driveDiag.accessibleFiles && (
+                        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>VISIBLE TO SERVICE ACCOUNT ({driveDiag.accessibleFiles.totalVisible} items)</div>
+                          {driveDiag.accessibleFiles.folders.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, marginBottom: 4 }}>📁 Shared Folders:</div>
+                              {driveDiag.accessibleFiles.folders.map((f, i) => (
+                                <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
+                                  <span style={{ fontSize: 10, color: "var(--textSub)" }}>📁 {f.name}</span>
+                                  <span style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>ID: {f.id}</span>
+                                  <button onClick={() => { navigator.clipboard.writeText(f.id); setClipboardToast({ text: "Folder ID copied!", x: window.innerWidth / 2, y: 60 }); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 3, padding: "1px 4px", fontSize: 8, color: "var(--textGhost)", cursor: "pointer" }}>copy</button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {driveDiag.accessibleFiles.folders.length === 0 && (
+                            <div style={{ fontSize: 10, color: "#f5a623", padding: "6px 0" }}>⚠️ No folders shared with service account. Share a Google Drive folder to enable vendor search.</div>
+                          )}
+                          {driveDiag.accessibleFiles.recentFiles.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, marginBottom: 4 }}>📄 Recent Files:</div>
+                              {driveDiag.accessibleFiles.recentFiles.map((f, i) => (
+                                <div key={i} style={{ fontSize: 10, color: "var(--textMuted)", padding: "2px 0", fontFamily: "'JetBrains Mono', monospace" }}>
+                                  {f.name}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Folder Contents */}
+                      {driveDiag.folderContents && (
+                        <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>FOLDER CONTENTS ({driveDiag.folderContents.count || 0} items)</div>
+                          {driveDiag.folderContents.error ? (
+                            <div style={{ fontSize: 10, color: "#e85454" }}>❌ {driveDiag.folderContents.error}</div>
+                          ) : (
+                            driveDiag.folderContents.items?.map((f, i) => (
+                              <div key={i} style={{ fontSize: 10, color: "var(--textMuted)", padding: "2px 0" }}>
+                                {f.type === "folder" ? "📁" : "📄"} {f.name}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+
+                      {/* Search Results */}
+                      {driveDiag.searchResults && (
+                        <div style={{ padding: "10px 14px" }}>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>SEARCH: "{driveDiag.searchResults.query}" ({driveDiag.searchResults.count || 0} results)</div>
+                          {driveDiag.searchResults.error ? (
+                            <div style={{ fontSize: 10, color: "#e85454" }}>❌ {driveDiag.searchResults.error}</div>
+                          ) : driveDiag.searchResults.count === 0 ? (
+                            <div style={{ fontSize: 10, color: "#f5a623" }}>No results found. Make sure the folder containing vendor files is shared with the service account.</div>
+                          ) : (
+                            driveDiag.searchResults.results?.map((f, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
+                                <span style={{ fontSize: 10, color: "var(--textSub)" }}>{f.type === "folder" ? "📁" : "📄"} {f.name}</span>
+                                {f.link && <a href={f.link} target="_blank" rel="noopener noreferrer" style={{ fontSize: 8, color: "#3da5db" }}>open ↗</a>}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
-                  <button onClick={() => { setAppSettings(prev => ({ ...prev, driveConnections: [...prev.driveConnections, { name: "", folderId: "", serviceEmail: prev.driveConnections[0]?.serviceEmail }] })); setSettingsDirty(true); }} style={{ marginTop: 8, padding: "7px 14px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Folder Connection</button>
+                  )}
+
+                  {/* Folder Connections Config */}
+                  <div style={{ marginTop: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Scoped Folder Connections</div>
+                    <div style={{ fontSize: 10, color: "var(--textGhost)", marginBottom: 10, lineHeight: 1.5 }}>Optionally scope the vendor search to specific folders. If no folder IDs are set, it searches everything the service account can see.</div>
+                    {appSettings.driveConnections.map((conn, i) => (
+                      <div key={i} style={{ padding: "10px 12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 6 }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
+                          <input value={conn.name} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, name: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Label (e.g. Vendors)" style={{ width: 120, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, outline: "none" }} />
+                          <input value={conn.folderId} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Paste Google Drive folder ID here" style={{ flex: 1, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                          {i > 0 && <button onClick={() => { const updated = { ...appSettings, driveConnections: appSettings.driveConnections.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer" }}>✕</button>}
+                        </div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)" }}>From URL: drive.google.com/drive/folders/<strong style={{ color: "var(--textMuted)" }}>THIS_PART_IS_THE_ID</strong></div>
+                      </div>
+                    ))}
+                    <button onClick={() => { setAppSettings(prev => ({ ...prev, driveConnections: [...prev.driveConnections, { name: "", folderId: "" }] })); setSettingsDirty(true); }} style={{ marginTop: 6, padding: "7px 14px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Folder</button>
+                  </div>
                 </div>
               )}
 
