@@ -51,6 +51,7 @@ export async function GET(request) {
     const allFiles = await drive.files.list({
       q: "trashed=false",
       fields: 'files(id, name, mimeType, modifiedTime, webViewLink, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
+      corpora: 'allDrives',
       orderBy: 'modifiedTime desc',
       pageSize: 30,
     });
@@ -89,26 +90,41 @@ export async function GET(request) {
       }
     }
 
-    // Test 4: If a test search is provided, run it
+    // Test 4: If a test search is provided, run it (searches ALL accessible files, not scoped to folder)
     if (testSearch) {
       try {
         let searchQuery = `name contains '${testSearch.replace(/'/g, "\\'")}' and trashed=false`;
-        if (folderId) {
-          searchQuery += ` and '${folderId.replace(/'/g, "\\'")}' in parents`;
-        }
         const searchResults = await drive.files.list({
           q: searchQuery,
-          fields: 'files(id, name, mimeType, modifiedTime, webViewLink)',
+          fields: 'files(id, name, mimeType, modifiedTime, webViewLink, parents)',
           supportsAllDrives: true,
           includeItemsFromAllDrives: true,
+          corpora: 'allDrives',
           orderBy: 'modifiedTime desc',
           pageSize: 20,
         });
+        // Also try fullText search for deeper matches
+        let fullTextFiles = [];
+        try {
+          const ftResults = await drive.files.list({
+            q: `fullText contains '${testSearch.replace(/'/g, "\\'")}' and trashed=false`,
+            fields: 'files(id, name, mimeType, modifiedTime, webViewLink, parents)',
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true,
+            corpora: 'allDrives',
+            orderBy: 'relevance desc',
+            pageSize: 20,
+          });
+          fullTextFiles = ftResults.data.files || [];
+        } catch (e) { /* ignore */ }
+        // Merge and dedupe
+        const seen = new Set((searchResults.data.files || []).map(f => f.id));
+        const merged = [...(searchResults.data.files || [])];
+        for (const f of fullTextFiles) { if (!seen.has(f.id)) { merged.push(f); seen.add(f.id); } }
         diagnostics.searchResults = {
           query: testSearch,
-          scopedToFolder: folderId || null,
-          count: (searchResults.data.files || []).length,
-          results: (searchResults.data.files || []).map(f => ({ name: f.name, id: f.id, type: f.mimeType === 'application/vnd.google-apps.folder' ? 'folder' : 'file', link: f.webViewLink })),
+          count: merged.length,
+          results: merged.map(f => ({ name: f.name, id: f.id, type: f.mimeType === 'application/vnd.google-apps.folder' ? 'folder' : 'file', link: f.webViewLink })),
         };
       } catch (searchErr) {
         diagnostics.searchResults = { query: testSearch, error: searchErr.message };

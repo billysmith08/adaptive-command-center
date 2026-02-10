@@ -503,30 +503,79 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
 
 // ─── DOC DROP ZONE (from v3) ─────────────────────────────────────────────────
 
-function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview }) {
+function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear }) {
   const [dragOver, setDragOver] = useState(false);
   const [justUploaded, setJustUploaded] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
+  const boxRef = useRef(null);
   const isDone = compInfo.done;
   const vendorFolder = vendor.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim();
   const drivePath = `${compKey.drivePrefix}/${vendorFolder}/`;
 
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); const f = e.dataTransfer?.files; if (f?.length) { onFileDrop(vendor.id, compKey.key, f[0], drivePath, compKey.drivePrefix); setJustUploaded(true); setTimeout(() => setJustUploaded(false), 3000); } };
+  const handleUploadClick = (e) => {
+    e.stopPropagation();
+    const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (ev) => { const f = ev.target.files[0]; if (f) { onFileDrop(vendor.id, compKey.key, f, drivePath, compKey.drivePrefix); setJustUploaded(true); setTimeout(() => setJustUploaded(false), 3000); setShowTooltip(false); } }; input.click();
+  };
   const handleClick = () => {
-    if (isDone && onPreview) { onPreview({ vendorName: vendor.name, docType: compKey.fullLabel, fileName: compInfo.file || "Document", date: compInfo.date, path: drivePath, link: compInfo.link || null }); }
-    else if (!isDone) { const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (e) => { const f = e.target.files[0]; if (f) { onFileDrop(vendor.id, compKey.key, f, drivePath, compKey.drivePrefix); setJustUploaded(true); setTimeout(() => setJustUploaded(false), 3000); } }; input.click(); }
+    if (!isDone) handleUploadClick({ stopPropagation: () => {} });
   };
 
+  // Smart position: if box is in top 200px of viewport, show tooltip below
+  const getTooltipPosition = () => {
+    if (!boxRef.current) return { bottom: "calc(100% + 8px)" };
+    const rect = boxRef.current.getBoundingClientRect();
+    if (rect.top < 200) return { top: "calc(100% + 8px)", arrowTop: true };
+    return { bottom: "calc(100% + 8px)", arrowTop: false };
+  };
+  const tp = showTooltip ? getTooltipPosition() : {};
+
   return (
-    <div onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop} onClick={handleClick} onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}
-      style={{ position: "relative", width: 52, height: 52, borderRadius: 8, background: justUploaded ? "#4ecb7110" : dragOver ? "#4ecb7108" : isDone ? "#4ecb7108" : "var(--bgCard)", border: `1.5px dashed ${justUploaded ? "#4ecb7180" : dragOver ? "#4ecb7160" : isDone ? "#4ecb7140" : "var(--borderSub)"}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: isDone ? "pointer" : "pointer", transition: "all 0.25s", transform: dragOver ? "scale(1.08)" : "scale(1)" }}>
+    <div ref={boxRef} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop} onClick={handleClick} onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}
+      style={{ position: "relative", width: 52, height: 52, borderRadius: 8, background: justUploaded ? "#4ecb7110" : dragOver ? "#4ecb7108" : isDone ? "#4ecb7108" : "var(--bgCard)", border: `1.5px dashed ${justUploaded ? "#4ecb7180" : dragOver ? "#4ecb7160" : isDone ? "#4ecb7140" : "var(--borderSub)"}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.25s", transform: dragOver ? "scale(1.08)" : "scale(1)" }}>
       {justUploaded ? <><span style={{ fontSize: 16 }}>✓</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>SAVED</span></> : isDone ? <><span style={{ fontSize: 13, lineHeight: 1 }}>📄</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>✓</span></> : <><span style={{ fontSize: 14, opacity: dragOver ? 1 : 0.5 }}>{dragOver ? "📥" : "+"}</span><span style={{ fontSize: 7, color: dragOver ? "#4ecb71" : "var(--textGhost)", fontWeight: 600, marginTop: 1 }}>{compKey.label}</span></>}
-      {showTooltip && <div style={{ position: "absolute", bottom: "calc(100% + 8px)", left: "50%", transform: "translateX(-50%)", background: "var(--borderSub)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: "10px 12px", minWidth: 200, zIndex: 100, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{compKey.fullLabel}</div>
-        <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 6 }}>{vendor.name}</div>
-        {isDone ? <><div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}><span style={{ fontSize: 9, color: "#4ecb71" }}>●</span><span style={{ fontSize: 10, color: "var(--textSub)" }}>{compInfo.file || "Received"}</span></div><div style={{ fontSize: 9, color: "var(--textFaint)" }}>Uploaded {compInfo.date}</div><div style={{ fontSize: 9, color: "#3da5db", marginTop: 3 }}>Click to preview</div></> : <><div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}><span style={{ fontSize: 9, color: "#e85454" }}>●</span><span style={{ fontSize: 10, color: "#e85454" }}>Missing</span></div><div style={{ fontSize: 9, color: "var(--textMuted)" }}>Drop file or click to upload</div></>}
-        <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>📁 .../{drivePath.split("/").slice(-3).join("/")}</div>
-        <div style={{ position: "absolute", bottom: -5, left: "50%", transform: "translateX(-50%) rotate(45deg)", width: 8, height: 8, background: "var(--borderSub)", borderRight: "1px solid var(--borderActive)", borderBottom: "1px solid var(--borderActive)" }} />
+      {showTooltip && <div onClick={e => e.stopPropagation()} style={{ position: "absolute", ...(tp.arrowTop ? { top: "calc(100% + 8px)" } : { bottom: "calc(100% + 8px)" }), left: "50%", transform: "translateX(-50%)", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 10, padding: "12px 14px", minWidth: 230, maxWidth: 280, zIndex: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{compKey.fullLabel}</div>
+        <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 8 }}>{vendor.name}</div>
+        
+        {isDone ? <>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+            <span style={{ fontSize: 9, color: "#4ecb71" }}>●</span>
+            <span style={{ fontSize: 10, color: "var(--textSub)", fontWeight: 600 }}>{compInfo.file || "Received"}</span>
+          </div>
+          <div style={{ fontSize: 9, color: "var(--textFaint)", marginBottom: 8 }}>Uploaded {compInfo.date}</div>
+          
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {compInfo.link && (
+              <button onClick={(e) => { e.stopPropagation(); window.open(compInfo.link, '_blank'); }} style={{ padding: "4px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 5, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                📂 Open in Drive
+              </button>
+            )}
+            <button onClick={handleUploadClick} style={{ padding: "4px 8px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 5, color: "#dba94e", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+              🔄 Replace
+            </button>
+            {onClear && (
+              <button onClick={(e) => { e.stopPropagation(); onClear(vendor.id, compKey.key); setShowTooltip(false); }} style={{ padding: "4px 8px", background: "#e8545410", border: "1px solid #e8545425", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                ✕ Clear
+              </button>
+            )}
+          </div>
+          
+          <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginTop: 8 }}>📁 .../{drivePath.split("/").slice(-3).join("/")}</div>
+        </> : <>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+            <span style={{ fontSize: 9, color: "#e85454" }}>●</span>
+            <span style={{ fontSize: 10, color: "#e85454" }}>Missing</span>
+          </div>
+          <div style={{ fontSize: 9, color: "var(--textMuted)", marginBottom: 6 }}>Drop file or click to upload</div>
+          <button onClick={handleUploadClick} style={{ padding: "4px 10px", background: "#4ecb7110", border: "1px solid #4ecb7125", borderRadius: 5, color: "#4ecb71", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>
+            📎 Upload {compKey.label}
+          </button>
+        </>}
+        
+        {/* Arrow */}
+        <div style={{ position: "absolute", ...(tp.arrowTop ? { top: -5 } : { bottom: -5 }), left: "50%", transform: `translateX(-50%) rotate(45deg)`, width: 8, height: 8, background: "var(--bgCard)", ...(tp.arrowTop ? { borderTop: "1px solid var(--borderActive)", borderLeft: "1px solid var(--borderActive)" } : { borderRight: "1px solid var(--borderActive)", borderBottom: "1px solid var(--borderActive)" }) }} />
       </div>}
     </div>
   );
@@ -1034,6 +1083,7 @@ export default function Dashboard({ user, onLogout }) {
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [w9Scanning, setW9Scanning] = useState(false);
+  const [w9ParsedData, setW9ParsedData] = useState(null);
   const [vendorSearch, setVendorSearch] = useState("");
   const [vendorSearching, setVendorSearching] = useState(false);
   const [driveResults, setDriveResults] = useState(null);
@@ -1295,15 +1345,19 @@ export default function Dashboard({ user, onLogout }) {
   const submitVendor = () => {
     if (!vendorForm.company && !vendorForm.firstName) return;
     const name = vendorForm.company || `${vendorForm.firstName} ${vendorForm.lastName}`.trim();
+    const w9Done = w9ParsedData?.upload?.success ? { done: true, file: w9ParsedData.fileName, date: new Date().toISOString().split("T")[0], link: w9ParsedData.upload.file?.link } : { done: false, file: null, date: null };
     const newV = {
       id: `v_${Date.now()}`, name, type: vendorForm.resourceType || "Other",
       email: vendorForm.email, contact: `${vendorForm.firstName} ${vendorForm.lastName}`.trim(),
       phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
       deptId: vendorForm.dept, source: "manual",
-      compliance: { coi: { done: false, file: null, date: null }, w9: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
+      ein: w9ParsedData?.ein || '',
+      address: w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '',
+      compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
     setVendorForm({ ...emptyVendorForm });
+    setW9ParsedData(null);
     setShowAddVendor(false);
   };
 
@@ -1432,7 +1486,86 @@ export default function Dashboard({ user, onLogout }) {
     setUploadLog(prev => [{ id: Date.now(), vendorName: vendor?.name, compKey, fileName, drivePath, time: new Date().toLocaleTimeString(), folderCreated, vendorFolder }, ...prev].slice(0, 20));
   };
 
+  const handleClearCompliance = (vendorId, compKey) => {
+    setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: false, file: null, date: null, link: null } } }));
+  };
+
   const peopleOptions = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];
+
+  // W9 Drop-to-Scrape: parse PDF, upload to Drive, pre-fill vendor form
+  const handleW9Upload = async (file) => {
+    if (!file) return;
+    setW9Scanning(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('basePath', 'ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s');
+      
+      const res = await fetch('/api/drive/parse-w9', { method: 'POST', body: formData });
+      const data = await res.json();
+      
+      if (data.success && data.parsed) {
+        const p = data.parsed;
+        // Split name into first/last
+        const nameParts = (p.name || '').split(/\s+/);
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+        
+        setVendorForm({
+          ...emptyVendorForm,
+          company: p.company || p.name || file.name.replace(/[._-]/g, ' ').replace(/w9|pdf/gi, '').trim(),
+          firstName,
+          lastName,
+          contactType: 'Vendor',
+          title: p.taxClass || '',
+          dept: DEPT_OPTIONS[0],
+        });
+        
+        // Store parsed W9 data for display
+        setW9ParsedData({
+          ...p,
+          fileName: file.name,
+          upload: data.upload,
+        });
+        
+        // Add to upload log if Drive upload succeeded
+        if (data.upload?.success) {
+          setUploadLog(prev => [{
+            id: Date.now(),
+            vendorName: p.company || p.name,
+            compKey: 'w9',
+            fileName: file.name,
+            drivePath: `2026 W9s/${p.company || p.name}/`,
+            time: new Date().toLocaleTimeString(),
+            folderCreated: data.upload.folder?.created,
+            vendorFolder: p.company || p.name,
+          }, ...prev].slice(0, 20));
+        }
+        
+        setShowAddVendor(true);
+      } else {
+        // Fallback: just use filename
+        setVendorForm({
+          ...emptyVendorForm,
+          company: file.name.replace(/[._-]/g, ' ').replace(/w9|pdf|W9|PDF/gi, '').trim(),
+          contactType: 'Vendor',
+        });
+        setW9ParsedData(null);
+        setShowAddVendor(true);
+      }
+    } catch (err) {
+      console.error('W9 parse failed:', err);
+      setVendorForm({
+        ...emptyVendorForm,
+        company: file.name.replace(/[._-]/g, ' ').replace(/w9|pdf|W9|PDF/gi, '').trim(),
+        contactType: 'Vendor',
+      });
+      setW9ParsedData(null);
+      setShowAddVendor(true);
+    } finally {
+      setW9Scanning(false);
+    }
+  };
   // Event contacts = only people on THIS project (for workback Responsible + ROS Contact/Owner)
   const eventContactNames = [...new Set([
     ...project.producers, ...project.managers, ...(project.staff || []),
@@ -2230,29 +2363,14 @@ export default function Dashboard({ user, onLogout }) {
                     e.currentTarget.style.borderColor = "var(--borderSub)";
                     e.currentTarget.style.background = "var(--bgInput)";
                     const file = e.dataTransfer.files[0];
-                    if (!file) return;
-                    setW9Scanning(true);
-                    setTimeout(() => {
-                      setW9Scanning(false);
-                      const fakeParsed = file.name.includes("Kirk") ? { company: "Cam Kirk Studios", firstName: "Cam", lastName: "Kirk", resourceType: "Photography", contactType: "Vendor", dept: "Production" }
-                        : file.name.includes("Sidle") ? { company: "Sidle Entertainment LLC", firstName: "Sidle", lastName: "Ent.", resourceType: "AV/Tech", contactType: "Vendor", dept: "Experience" }
-                        : { company: file.name.replace(/[._-]/g, " ").replace(/w9|pdf|W9|PDF/gi, "").trim(), firstName: "", lastName: "", resourceType: "", contactType: "Vendor", dept: DEPT_OPTIONS[0] };
-                      setVendorForm({ ...emptyVendorForm, ...fakeParsed });
-                      setShowAddVendor(true);
-                    }, 1500);
+                    handleW9Upload(file);
                   }}
                   style={{ marginBottom: 16, border: "2px dashed var(--borderSub)", borderRadius: 12, padding: "16px 24px", background: "var(--bgInput)", cursor: "pointer", transition: "all 0.2s", display: "flex", alignItems: "center", gap: 16 }}
                   onClick={() => document.getElementById("w9-file-input")?.click()}
                 >
                   <input id="w9-file-input" type="file" accept=".pdf,.jpg,.png" style={{ display: "none" }} onChange={e => {
-                    const file = e.target.files[0];
-                    if (!file) return;
-                    setW9Scanning(true);
-                    setTimeout(() => {
-                      setW9Scanning(false);
-                      setVendorForm({ ...emptyVendorForm, company: file.name.replace(/[._-]/g, " ").replace(/w9|pdf|W9|PDF/gi, "").trim(), contactType: "Vendor" });
-                      setShowAddVendor(true);
-                    }, 1500);
+                    handleW9Upload(e.target.files[0]);
+                    e.target.value = '';
                   }} />
                   <div style={{ width: 44, height: 44, borderRadius: 10, background: w9Scanning ? "#9b6dff20" : "var(--bgCard)", border: `1px solid ${w9Scanning ? "#9b6dff40" : "var(--borderSub)"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
                     {w9Scanning ? <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span> : "📋"}
@@ -2403,7 +2521,7 @@ export default function Dashboard({ user, onLogout }) {
                             {COMP_KEYS.map(ck => (
                               <div key={ck.key} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                                 <span style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5 }}>{ck.label}</span>
-                                <DocDropZone vendor={v} compKey={ck} compInfo={v.compliance[ck.key]} onFileDrop={handleFileDrop} onPreview={setDocPreview} />
+                                <DocDropZone vendor={v} compKey={ck} compInfo={v.compliance[ck.key]} onFileDrop={handleFileDrop} onPreview={setDocPreview} onClear={handleClearCompliance} />
                               </div>
                             ))}
                           </div>
@@ -2417,9 +2535,17 @@ export default function Dashboard({ user, onLogout }) {
                                 const info = v.compliance[ck.key];
                                 const dp = `${ck.drivePrefix}/${v.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim()}/`;
                                 return (
-                                  <div key={ck.key} onClick={() => { if (info.done) setDocPreview({ vendorName: v.name, docType: ck.fullLabel, fileName: info.file || "Document", date: info.date, path: dp, link: info.link || null }); }} style={{ background: info.done ? "#4ecb7108" : "#e8545408", border: `1px solid ${info.done ? "#4ecb7130" : "#e8545420"}`, borderRadius: 8, padding: 12, cursor: info.done ? "pointer" : "default", transition: "border-color 0.2s" }}>
+                                  <div key={ck.key} style={{ background: info.done ? "#4ecb7108" : "#e8545408", border: `1px solid ${info.done ? "#4ecb7130" : "#e8545420"}`, borderRadius: 8, padding: 12, transition: "border-color 0.2s" }}>
                                     <div style={{ fontSize: 10, fontWeight: 700, color: info.done ? "#4ecb71" : "#e85454", letterSpacing: 0.5, marginBottom: 6 }}>{ck.fullLabel}</div>
-                                    {info.done ? <><div style={{ fontSize: 11, color: "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}><span>📄</span> {info.file || "Received"}</div><div style={{ fontSize: 9, color: "var(--textFaint)" }}>Uploaded {info.date}</div><div style={{ fontSize: 8, color: "#3da5db", marginTop: 4 }}>Click to preview →</div></> : <div style={{ fontSize: 11, color: "#6a4a4a" }}>Not received — drop above</div>}
+                                    {info.done ? <>
+                                      <div style={{ fontSize: 11, color: "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}><span>📄</span> {info.file || "Received"}</div>
+                                      <div style={{ fontSize: 9, color: "var(--textFaint)", marginBottom: 6 }}>Uploaded {info.date}</div>
+                                      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                        {info.link && <button onClick={(e) => { e.stopPropagation(); window.open(info.link, '_blank'); }} style={{ padding: "3px 7px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>📂 Open</button>}
+                                        <button onClick={(e) => { e.stopPropagation(); const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (ev) => { const f = ev.target.files[0]; if (f) handleFileDrop(v.id, ck.key, f, dp, ck.drivePrefix); }; input.click(); }} style={{ padding: "3px 7px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 4, color: "#dba94e", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>🔄 Replace</button>
+                                        <button onClick={(e) => { e.stopPropagation(); handleClearCompliance(v.id, ck.key); }} style={{ padding: "3px 7px", background: "#e8545410", border: "1px solid #e8545425", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>✕ Clear</button>
+                                      </div>
+                                    </> : <div style={{ fontSize: 11, color: "#6a4a4a" }}>Not received — drop above</div>}
                                     <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>📁 .../{dp.split("/").slice(-3).join("/")}</div>
                                   </div>
                                 );
@@ -3337,7 +3463,7 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* ═══ ADD VENDOR MODAL ═══ */}
       {showAddVendor && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddVendor(false); }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) { setShowAddVendor(false); setW9ParsedData(null); } }}>
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 620, maxHeight: "85vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
             {/* Header */}
             <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -3345,11 +3471,36 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Add New Vendor</div>
                 <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 2 }}>Fill in contact details — compliance docs can be uploaded after</div>
               </div>
-              <button onClick={() => setShowAddVendor(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
+              <button onClick={() => { setShowAddVendor(false); setW9ParsedData(null); }} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
             </div>
 
             {/* Form */}
             <div style={{ padding: "20px 28px 28px" }}>
+              {/* W9 Parsed Data Banner */}
+              {w9ParsedData && (
+                <div style={{ marginBottom: 18, padding: "12px 16px", background: "#9b6dff08", border: "1px solid #9b6dff20", borderRadius: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 14 }}>📋</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#9b6dff", letterSpacing: 0.5 }}>EXTRACTED FROM W9</span>
+                    {w9ParsedData.upload?.success && (
+                      <span style={{ fontSize: 9, padding: "2px 6px", background: "#4ecb7115", color: "#4ecb71", borderRadius: 4, fontWeight: 700, marginLeft: "auto" }}>✓ UPLOADED TO DRIVE</span>
+                    )}
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", fontSize: 11, color: "var(--textSub)" }}>
+                    {w9ParsedData.name && <div><span style={{ color: "var(--textFaint)" }}>Name:</span> {w9ParsedData.name}</div>}
+                    {w9ParsedData.company && <div><span style={{ color: "var(--textFaint)" }}>Business:</span> {w9ParsedData.company}</div>}
+                    {w9ParsedData.ein && <div><span style={{ color: "var(--textFaint)" }}>EIN:</span> {w9ParsedData.ein}</div>}
+                    {w9ParsedData.taxClass && <div><span style={{ color: "var(--textFaint)" }}>Type:</span> {w9ParsedData.taxClass}</div>}
+                    {w9ParsedData.address && <div><span style={{ color: "var(--textFaint)" }}>Address:</span> {w9ParsedData.address}</div>}
+                    {(w9ParsedData.city || w9ParsedData.state) && <div><span style={{ color: "var(--textFaint)" }}>Location:</span> {[w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ')}</div>}
+                  </div>
+                  {w9ParsedData.upload?.success && w9ParsedData.upload.folder && (
+                    <div style={{ marginTop: 6, fontSize: 10, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>
+                      📁 {w9ParsedData.upload.folder.path}{w9ParsedData.upload.folder.created ? ' — folder created' : ''}
+                    </div>
+                  )}
+                </div>
+              )}
               {/* Row 1: Contact Type + Resource Type */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
                 <div>
@@ -3431,7 +3582,7 @@ export default function Dashboard({ user, onLogout }) {
 
               {/* Actions */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
-                <button onClick={() => setShowAddVendor(false)} style={{ padding: "9px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                <button onClick={() => { setShowAddVendor(false); setW9ParsedData(null); }} style={{ padding: "9px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
                 <button onClick={submitVendor} disabled={!vendorForm.company && !vendorForm.firstName} style={{ padding: "9px 24px", background: (!vendorForm.company && !vendorForm.firstName) ? "var(--borderSub)" : "#ff6b4a", border: "none", borderRadius: 8, color: (!vendorForm.company && !vendorForm.firstName) ? "var(--textFaint)" : "#fff", cursor: (!vendorForm.company && !vendorForm.firstName) ? "default" : "pointer", fontSize: 13, fontWeight: 700 }}>Add Vendor</button>
               </div>
             </div>

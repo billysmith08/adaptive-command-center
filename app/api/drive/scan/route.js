@@ -83,6 +83,7 @@ export async function GET(request) {
       const nameResults = await drive.files.list({
         q: nameQuery,
         fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
+        corpora: 'allDrives',
         orderBy: 'modifiedTime desc',
         pageSize: 50,
       });
@@ -97,6 +98,7 @@ export async function GET(request) {
       const textResults = await drive.files.list({
         q: fullTextQuery,
         fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
+        corpora: 'allDrives',
         orderBy: 'relevance desc',
         pageSize: 30,
       });
