@@ -988,6 +988,11 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { setSelectedVendorIds(new Set()); setExpandedVendor(null); }, [activeProjectId]);
   const [search, setSearch] = useState("");
   const [sidebarW, setSidebarW] = useState(280);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [showArchived, setShowArchived] = useState(false);
+  const [swipeState, setSwipeState] = useState({}); // { projectId: { startX, offsetX } }
+  const [archiveConfirm, setArchiveConfirm] = useState(null); // { projectId, action: "archive"|"delete" }
+  const isAdmin = user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [w9Scanning, setW9Scanning] = useState(false);
@@ -1076,6 +1081,72 @@ export default function Dashboard({ user, onLogout }) {
           return [...prev, ...unique];
         });
       }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  // CSV upload for bulk contact import
+  const handleCSVUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result;
+      const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return;
+      // Parse header row
+      const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/['"]/g, ""));
+      const nameIdx = headers.findIndex(h => h === "name" || h === "full name" || h === "fullname");
+      const firstIdx = headers.findIndex(h => h === "first name" || h === "firstname" || h === "first");
+      const lastIdx = headers.findIndex(h => h === "last name" || h === "lastname" || h === "last");
+      const emailIdx = headers.findIndex(h => h === "email" || h === "e-mail" || h === "email address");
+      const phoneIdx = headers.findIndex(h => h === "phone" || h === "telephone" || h === "phone number" || h === "mobile");
+      const companyIdx = headers.findIndex(h => h === "company" || h === "organization" || h === "org");
+      const positionIdx = headers.findIndex(h => h === "position" || h === "title" || h === "job title" || h === "role");
+      const deptIdx = headers.findIndex(h => h === "department" || h === "dept");
+      const notesIdx = headers.findIndex(h => h === "notes" || h === "note" || h === "comments");
+      // Parse each row (handle quoted fields with commas)
+      const parseCSVRow = (row) => {
+        const result = []; let current = ""; let inQuotes = false;
+        for (let i = 0; i < row.length; i++) {
+          if (row[i] === '"') { inQuotes = !inQuotes; }
+          else if (row[i] === ',' && !inQuotes) { result.push(current.trim()); current = ""; }
+          else { current += row[i]; }
+        }
+        result.push(current.trim());
+        return result;
+      };
+      const newContacts = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVRow(lines[i]);
+        const firstName = firstIdx >= 0 ? (cols[firstIdx] || "") : "";
+        const lastName = lastIdx >= 0 ? (cols[lastIdx] || "") : "";
+        const fullName = nameIdx >= 0 ? (cols[nameIdx] || "") : `${firstName} ${lastName}`.trim();
+        if (!fullName) continue;
+        newContacts.push({
+          id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          name: fullName,
+          firstName: firstName || fullName.split(" ")[0] || "",
+          lastName: lastName || fullName.split(" ").slice(1).join(" ") || "",
+          email: emailIdx >= 0 ? (cols[emailIdx] || "") : "",
+          phone: phoneIdx >= 0 ? (cols[phoneIdx] || "") : "",
+          company: companyIdx >= 0 ? (cols[companyIdx] || "") : "",
+          position: positionIdx >= 0 ? (cols[positionIdx] || "") : "",
+          department: deptIdx >= 0 ? (cols[deptIdx] || "") : "",
+          notes: notesIdx >= 0 ? (cols[notesIdx] || "") : "",
+          source: "csv"
+        });
+      }
+      setContacts(prev => {
+        const existing = new Set(prev.map(c => c.name.toLowerCase()));
+        const unique = newContacts.filter(c => !existing.has(c.name.toLowerCase()));
+        if (unique.length > 0) {
+          setClipboardToast({ text: `Imported ${unique.length} contact${unique.length > 1 ? "s" : ""} from CSV`, x: window.innerWidth / 2, y: 60 });
+          setTimeout(() => setClipboardToast(null), 3000);
+        }
+        return [...prev, ...unique];
+      });
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -1303,7 +1374,11 @@ export default function Dashboard({ user, onLogout }) {
   const compTotal = vendors.length * 5;
   const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
-  const filteredProjects = projects.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase()));
+  const filteredProjects = projects.filter(p => {
+    if (!showArchived && p.archived) return false;
+    return p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
+  });
+  const archivedCount = projects.filter(p => p.archived).length;
 
   const tabs = [
     { id: "overview", label: "Overview", icon: "◉" },
@@ -1348,6 +1423,11 @@ export default function Dashboard({ user, onLogout }) {
           <button onClick={() => { setActiveTab("todoist"); if (!todoistTasks.length && todoistKey) todoistFetch(); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "todoist" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
             ✅ Todoist {todoistTasks.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{todoistTasks.length}</span>}
           </button>
+          {isAdmin && (
+            <button onClick={() => setActiveTab("macro")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "macro" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+              📋 Macro View
+            </button>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Dark/Light toggle */}
@@ -1365,6 +1445,7 @@ export default function Dashboard({ user, onLogout }) {
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
         {/* SIDEBAR */}
+        {sidebarOpen && (
         <div style={{ width: sidebarW, minWidth: 220, maxWidth: 440, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bgSub)", position: "relative", flexShrink: 0, transition: "background 0.3s" }}>
           {/* Resize handle */}
           <div onMouseDown={(e) => {
@@ -1377,32 +1458,60 @@ export default function Dashboard({ user, onLogout }) {
             document.addEventListener("mouseup", onUp);
           }} style={{ position: "absolute", top: 0, right: -3, bottom: 0, width: 6, cursor: "col-resize", zIndex: 10 }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a30"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} />
           <div style={{ padding: "14px 12px 10px" }}>
-            <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", marginBottom: 8 }} />
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'" }} />
+              <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>
+            </div>
             <button onClick={() => { setNewProjectForm({ ...emptyProject }); setShowAddProject(true); }} style={{ width: "100%", padding: "7px 12px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <span style={{ fontSize: 13 }}>+</span> New Project
             </button>
+            {archivedCount > 0 && (
+              <button onClick={() => setShowArchived(!showArchived)} style={{ width: "100%", marginTop: 6, padding: "5px 12px", background: showArchived ? "#9b6dff10" : "transparent", border: `1px solid ${showArchived ? "#9b6dff30" : "var(--borderSub)"}`, borderRadius: 7, color: showArchived ? "#9b6dff" : "var(--textGhost)", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                📦 {showArchived ? "Hide" : "Show"} Archived ({archivedCount})
+              </button>
+            )}
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 12px" }}>
+          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 6px 12px" }}>
             {filteredProjects.map((p, i) => {
               const active = p.id === activeProjectId;
               const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
               const pct = p.budget > 0 ? (p.spent / p.budget) * 100 : 0;
               const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
+              const swipe = swipeState[p.id] || { offsetX: 0 };
+              const swipeThreshold = 80;
               return (
-                <div key={p.id} onClick={() => { setActiveProjectId(p.id); if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist") setActiveTab("overview"); }} style={{ padding: 12, marginBottom: 2, borderRadius: 8, cursor: "pointer", background: active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: "all 0.15s" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>{p.client}{p.projectType && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: ptc + "15", color: ptc, border: `1px solid ${ptc}25`, fontWeight: 700, letterSpacing: 0.5 }}>{p.projectType.toUpperCase()}</span>}</span>
-                    <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, background: sc.bg, color: sc.text }}><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: sc.dot, marginRight: 4 }} />{p.status}</span>
+                <div key={p.id} style={{ position: "relative", overflow: "hidden", marginBottom: 2, borderRadius: 8 }}>
+                  {/* Swipe action backgrounds */}
+                  {isAdmin && swipe.offsetX < -10 && (
+                    <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: Math.abs(swipe.offsetX), display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2, paddingRight: 8, borderRadius: 8 }}>
+                      <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "archive", name: p.name }); setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); }} style={{ padding: "4px 8px", background: "#9b6dff20", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", fontSize: 9, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{p.archived ? "↩" : "📦"}</button>
+                      <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "delete", name: p.name }); setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); }} style={{ padding: "4px 8px", background: "#e8545420", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", fontSize: 9, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>🗑</button>
+                    </div>
+                  )}
+                  <div
+                    onClick={() => { if (Math.abs(swipe.offsetX) < 10) { setActiveProjectId(p.id); if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" || activeTab === "macro") setActiveTab("overview"); } }}
+                    onTouchStart={(e) => { if (!isAdmin) return; const touch = e.touches[0]; setSwipeState(prev => ({ ...prev, [p.id]: { startX: touch.clientX, offsetX: 0 } })); }}
+                    onTouchMove={(e) => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw || sw.startX === undefined) return; const diff = e.touches[0].clientX - sw.startX; setSwipeState(prev => ({ ...prev, [p.id]: { ...prev[p.id], offsetX: Math.min(0, diff) } })); }}
+                    onTouchEnd={() => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; if (sw.offsetX < -swipeThreshold) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -120 } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); } }}
+                    onMouseDown={(e) => { if (!isAdmin || e.button !== 0) return; const startX = e.clientX; let currentOffset = 0; const onMove = (ev) => { const diff = ev.clientX - startX; currentOffset = Math.min(0, diff); setSwipeState(prev => ({ ...prev, [p.id]: { startX, offsetX: currentOffset } })); }; const onUp = () => { if (currentOffset < -swipeThreshold) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -120 } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); } document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }; document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp); }}
+                    style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.2s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1 }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>{p.client}{p.projectType && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: ptc + "15", color: ptc, border: `1px solid ${ptc}25`, fontWeight: 700, letterSpacing: 0.5 }}>{p.projectType.toUpperCase()}</span>}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        {p.archived && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#9b6dff15", color: "#9b6dff", fontWeight: 700, letterSpacing: 0.5 }}>ARCHIVED</span>}
+                        <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, background: sc.bg, color: sc.text }}><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: sc.dot, marginRight: 4 }} />{p.status}</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3 }}>{p.name}</div>
+                    {p.code && <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, letterSpacing: 0.3 }}>{p.code}</div>}
+                    {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
+                      {p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
+                      {p.eventDates && p.eventDates.start && <div>🎪 {fmtShort(p.eventDates.start)}{p.eventDates.end ? ` – ${fmtShort(p.eventDates.end)}` : ""}</div>}
+                    </div>}
+                    {p.budget > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><ProgressBar pct={pct} h={3} /><span style={{ fontSize: 10, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", minWidth: 30 }}>{Math.round(pct)}%</span></div>}
+                    {p.budget === 0 && p.location && <div style={{ fontSize: 9, color: "var(--textGhost)" }}>📍 {p.location}</div>}
                   </div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3 }}>{p.name}</div>
-                  {p.code && <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, letterSpacing: 0.3 }}>{p.code}</div>}
-                  {/* Dates */}
-                  {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
-                    {p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
-                    {p.eventDates && p.eventDates.start && <div>🎪 {fmtShort(p.eventDates.start)}{p.eventDates.end ? ` – ${fmtShort(p.eventDates.end)}` : ""}</div>}
-                  </div>}
-                  {p.budget > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><ProgressBar pct={pct} h={3} /><span style={{ fontSize: 10, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", minWidth: 30 }}>{Math.round(pct)}%</span></div>}
-                  {p.budget === 0 && p.location && <div style={{ fontSize: 9, color: "var(--textGhost)" }}>📍 {p.location}</div>}
                 </div>
               );
             })}
@@ -1414,11 +1523,19 @@ export default function Dashboard({ user, onLogout }) {
             </div>
           </div>
         </div>
+        )}
+        {/* Sidebar collapsed toggle */}
+        {!sidebarOpen && (
+          <div style={{ width: 40, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--bgSub)", flexShrink: 0, paddingTop: 14 }}>
+            <button onClick={() => setSidebarOpen(true)} style={{ padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Expand sidebar">▶</button>
+            <div style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 1, marginTop: 14, transform: "rotate(180deg)" }}>PROJECTS ({projects.filter(p => !p.archived).length})</div>
+          </div>
+        )}
 
         {/* MAIN */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "16px 28px 0" }}>
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "macro" && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -1436,7 +1553,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
               </div>
             )}
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "macro" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
@@ -1475,6 +1592,10 @@ export default function Dashboard({ user, onLogout }) {
                     <label style={{ padding: "7px 16px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13 }}>📇</span> Import vCard
                       <input type="file" accept=".vcf,.vcard" onChange={handleVCardUpload} style={{ display: "none" }} multiple />
+                    </label>
+                    <label style={{ padding: "7px 16px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 7, color: "#4ecb71", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>📊</span> Import CSV
+                      <input type="file" accept=".csv" onChange={handleCSVUpload} style={{ display: "none" }} />
                     </label>
                     <button onClick={() => { setContactForm({ ...emptyContact }); setShowAddContact(true); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14 }}>+</span> Add Contact
@@ -1520,8 +1641,11 @@ export default function Dashboard({ user, onLogout }) {
                             <button onClick={() => setAssignContactPopover(assignContactPopover?.contactId === c.id ? null : { contactId: c.id, selectedProject: activeProjectId, selectedRole: "Point of Contact" })} style={{ padding: "4px 10px", background: assignContactPopover?.contactId === c.id ? "#9b6dff25" : "#9b6dff10", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>+ Project</button>
                             {assignContactPopover?.contactId === c.id && (
                               <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.7)", zIndex: 80, width: 280, overflow: "hidden" }}>
-                                <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
-                                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>ASSIGN TO PROJECT</div>
+                                <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8 }}>ASSIGN TO PROJECT</div>
+                                  <button onClick={() => setAssignContactPopover(null)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px" }}>✕</button>
+                                </div>
+                                <div style={{ padding: "0 14px 10px" }}>
                                   <select value={assignContactPopover.selectedProject} onChange={e => setAssignContactPopover(prev => ({ ...prev, selectedProject: e.target.value }))} style={{ width: "100%", padding: "6px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }}>
                                     {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                   </select>
@@ -1682,6 +1806,83 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             )}
 
+            {/* ═══ MACRO PROJECT VIEW ═══ */}
+            {activeTab === "macro" && (
+              <div style={{ animation: "fadeUp 0.3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL PROJECTS</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Macro Project View</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "var(--textGhost)" }}>{projects.length} projects</span>
+                  </div>
+                </div>
+                <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                  <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
+                        {["Project", "Status", "Date(s)", "Client", "Project Type", "Project Ref", "Location", "Project Code", "Notes", "Services Needed"].map(h => (
+                          <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", position: "sticky", top: 0, background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...projects].sort((a, b) => {
+                        const da = a.eventDates?.start || a.engagementDates?.start || "9999";
+                        const db = b.eventDates?.start || b.engagementDates?.start || "9999";
+                        return da.localeCompare(db);
+                      }).map(p => {
+                        const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
+                        const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
+                        const dateStr = (() => {
+                          const s = p.eventDates?.start; const e = p.eventDates?.end;
+                          if (!s) return "–";
+                          const fmt2 = d => { const dt = new Date(d + "T12:00:00"); return `${dt.toLocaleDateString("en-US", { month: "short" })} ${dt.getDate()} '${dt.getFullYear().toString().slice(2)}`; };
+                          return e && e !== s ? `${fmt2(s)} - ${fmt2(e)}` : fmt2(s);
+                        })();
+                        const projRef = (() => {
+                          if (!p.code) return "–";
+                          const parts = p.code.split("-");
+                          return parts.length >= 4 ? parts.slice(3, -1).join("-") : "–";
+                        })();
+                        const locRef = (() => {
+                          if (!p.code) return "–";
+                          const parts = p.code.split("-");
+                          return parts[parts.length - 1] || "–";
+                        })();
+                        return (
+                          <tr key={p.id} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ borderBottom: "1px solid var(--calLine)", cursor: "pointer", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                            <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</td>
+                            <td style={{ padding: "10px 12px" }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: sc.bg, color: sc.text, whiteSpace: "nowrap" }}>{p.status}</span>
+                            </td>
+                            <td style={{ padding: "10px 12px", color: "var(--textSub)", whiteSpace: "nowrap", fontSize: 10 }}>{dateStr}</td>
+                            <td style={{ padding: "10px 12px", color: "var(--textSub)", whiteSpace: "nowrap" }}>{p.client || "–"}</td>
+                            <td style={{ padding: "10px 12px" }}>
+                              {p.projectType ? <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: ptc + "18", color: ptc, border: `1px solid ${ptc}30`, whiteSpace: "nowrap" }}>{p.projectType}</span> : <span style={{ color: "var(--textGhost)" }}>–</span>}
+                            </td>
+                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap" }}>{projRef}</td>
+                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap" }}>{locRef}</td>
+                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{p.code || "–"}</td>
+                            <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.notes ? p.notes.split("\n")[0].slice(0, 40) : "–"}</td>
+                            <td style={{ padding: "10px 12px" }}>
+                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                {(p.services || []).map((s, i) => (
+                                  <span key={i} style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: "#3da5db15", color: "#3da5db", fontWeight: 600, whiteSpace: "nowrap", border: "1px solid #3da5db20" }}>{s}</span>
+                                ))}
+                                {(!p.services || p.services.length === 0) && <span style={{ color: "var(--textGhost)" }}>–</span>}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {/* ═══ OVERVIEW ═══ */}
             {activeTab === "overview" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
@@ -1740,6 +1941,26 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}><ProgressBar pct={pctSpent} h={6} /><span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "var(--textMuted)" }}>{Math.round(pctSpent)}%</span></div>
                     <div style={{ fontSize: 12, color: "var(--textFaint)" }}>Remaining: <span style={{ color: "#dba94e", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{fmt(project.budget - project.spent)}</span></div>
+                  </div>
+                </div>
+
+                {/* ── PROJECT NOTES / UPDATES ── */}
+                <div style={{ marginTop: 22 }}>
+                  <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
+                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 10 }}>PROJECT NOTES & UPDATES</div>
+                    <textarea
+                      value={project.notes || ""}
+                      onChange={e => updateProject("notes", e.target.value)}
+                      placeholder={"Write updates, tag team members with @name...\n\nExample:\n@Billy — confirmed venue contract signed 2/10\n@Clancy — waiting on final headcount from client"}
+                      style={{ width: "100%", minHeight: 140, padding: "12px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textSub)", fontSize: 13, fontFamily: "'Inter', sans-serif", lineHeight: 1.6, resize: "vertical", outline: "none", boxSizing: "border-box" }}
+                    />
+                    {project.notes && (() => {
+                      const mentions = [...new Set((project.notes.match(/@[\w]+(?:\s[\w]+)?/g) || []).map(m => m.slice(1)))];
+                      if (mentions.length === 0) return null;
+                      return <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {mentions.map(m => <span key={m} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#9b6dff15", color: "#9b6dff", fontWeight: 600 }}>@{m}</span>)}
+                      </div>;
+                    })()}
                   </div>
                 </div>
 
@@ -2352,6 +2573,49 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         );
       })()}
+
+      {/* ═══ ARCHIVE / DELETE CONFIRM ═══ */}
+      {archiveConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setArchiveConfirm(null); setSwipeState({}); }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, padding: "28px 32px", width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>{archiveConfirm.action === "archive" ? "📦" : "🗑"}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, textAlign: "center", color: "var(--text)", marginBottom: 8, fontFamily: "'Instrument Sans'" }}>
+              {archiveConfirm.action === "archive" ? "Archive Project?" : "Delete Project?"}
+            </div>
+            <div style={{ fontSize: 13, color: "var(--textMuted)", textAlign: "center", marginBottom: 6 }}>
+              <strong>{archiveConfirm.name}</strong>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--textFaint)", textAlign: "center", marginBottom: 24, lineHeight: 1.5 }}>
+              {archiveConfirm.action === "archive"
+                ? "This project will be hidden from the sidebar. You can restore it anytime from the archived view."
+                : "This will permanently remove the project and all its data. This action cannot be undone."}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setArchiveConfirm(null); setSwipeState({}); }} style={{ flex: 1, padding: "10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textSub)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+              <button onClick={() => {
+                if (archiveConfirm.action === "archive") {
+                  const p = projects.find(x => x.id === archiveConfirm.projectId);
+                  if (p?.archived) {
+                    setProjects(prev => prev.map(x => x.id === archiveConfirm.projectId ? { ...x, archived: false } : x));
+                    setClipboardToast({ text: `${archiveConfirm.name} restored!`, x: window.innerWidth / 2, y: 60 });
+                  } else {
+                    setProjects(prev => prev.map(x => x.id === archiveConfirm.projectId ? { ...x, archived: true } : x));
+                    setClipboardToast({ text: `${archiveConfirm.name} archived`, x: window.innerWidth / 2, y: 60 });
+                  }
+                } else {
+                  setProjects(prev => prev.filter(x => x.id !== archiveConfirm.projectId));
+                  setClipboardToast({ text: `${archiveConfirm.name} deleted`, x: window.innerWidth / 2, y: 60 });
+                }
+                setTimeout(() => setClipboardToast(null), 2200);
+                setArchiveConfirm(null);
+                setSwipeState({});
+              }} style={{ flex: 1, padding: "10px", background: archiveConfirm.action === "archive" ? "#9b6dff" : "#e85454", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                {archiveConfirm.action === "archive" ? (projects.find(x => x.id === archiveConfirm.projectId)?.archived ? "Restore" : "Archive") : "Delete Forever"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ═══ CLIPBOARD TOAST ═══ */}
       {clipboardToast && (
