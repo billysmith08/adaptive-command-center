@@ -982,55 +982,6 @@ export default function Dashboard({ user, onLogout }) {
     }));
   };
   const [rosDayDates, setRosDayDates] = useState({});
-  // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
-  // Load all data from Supabase on mount
-  useEffect(() => {
-    if (!user) return;
-    (async () => {
-      try {
-        const { data, error } = await supabase
-          .from('app_state')
-          .select('state')
-          .eq('user_id', user.id)
-          .single();
-        if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
-        if (data?.state) {
-          const s = data.state;
-          if (s.projects) setProjects(s.projects);
-          if (s.projectVendors) setProjectVendors(s.projectVendors);
-          if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
-          if (s.projectROS) setProjectROS(s.projectROS);
-          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
-          if (s.contacts) setContacts(s.contacts);
-          if (s.activeProjectId) setActiveProjectId(s.activeProjectId);
-        }
-        setDataLoaded(true);
-      } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
-    })();
-  }, [user]);
-
-  // Auto-save whenever data changes (debounced 1.5s)
-  const saveToSupabase = useCallback(async (state) => {
-    if (!user) return;
-    setSaveStatus("saving");
-    try {
-      const { error } = await supabase
-        .from('app_state')
-        .upsert({ user_id: user.id, state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
-      if (error) { console.error('Save error:', error); setSaveStatus("error"); }
-      else { setSaveStatus("saved"); }
-    } catch (e) { console.error('Save failed:', e); setSaveStatus("error"); }
-  }, [user, supabase]);
-
-  useEffect(() => {
-    if (!dataLoaded) return; // Don't save until initial load is done
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId });
-    }, 1500);
-    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId, dataLoaded]);
-
   const [time, setTime] = useState(new Date());
   const [uploadLog, setUploadLog] = useState([]);
   const [expandedVendor, setExpandedVendor] = useState(null);
@@ -1247,6 +1198,53 @@ export default function Dashboard({ user, onLogout }) {
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { if (todoistKey) todoistFetch(todoistKey); }, []);
+
+  // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_state')
+          .select('state')
+          .eq('user_id', user.id)
+          .single();
+        if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
+        if (data?.state) {
+          const s = data.state;
+          if (s.projects) setProjects(s.projects);
+          if (s.projectVendors) setProjectVendors(s.projectVendors);
+          if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
+          if (s.projectROS) setProjectROS(s.projectROS);
+          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
+          if (s.contacts) setContacts(s.contacts);
+          if (s.activeProjectId) setActiveProjectId(s.activeProjectId);
+        }
+        setDataLoaded(true);
+      } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
+    })();
+  }, [user]);
+
+  const saveToSupabase = useCallback(async (state) => {
+    if (!user) return;
+    setSaveStatus("saving");
+    try {
+      const { error } = await supabase
+        .from('app_state')
+        .upsert({ user_id: user.id, state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      if (error) { console.error('Save error:', error); setSaveStatus("error"); }
+      else { setSaveStatus("saved"); }
+    } catch (e) { console.error('Save failed:', e); setSaveStatus("error"); }
+  }, [user, supabase]);
+
+  useEffect(() => {
+    if (!dataLoaded) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId });
+    }, 1500);
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId, dataLoaded]);
 
   const project = projects.find(p => p.id === activeProjectId) || projects[0];
   const updateProject = (key, val) => setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
