@@ -40,7 +40,7 @@ export async function GET(request) {
     const testSearch = searchParams.get('testSearch');
 
     // Test 1: Can we connect at all?
-    const about = await drive.about.get({ fields: 'user' });
+    const about = await drive.about.get({ fields: 'user', supportsAllDrives: true });
     diagnostics.connection = {
       status: "✅ Connected",
       authenticatedAs: about.data.user?.emailAddress || "unknown",
@@ -50,7 +50,7 @@ export async function GET(request) {
     // Test 2: What can the service account see?
     const allFiles = await drive.files.list({
       q: "trashed=false",
-      fields: 'files(id, name, mimeType, modifiedTime, webViewLink, parents)',
+      fields: 'files(id, name, mimeType, modifiedTime, webViewLink, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
       orderBy: 'modifiedTime desc',
       pageSize: 30,
     });
@@ -71,6 +71,8 @@ export async function GET(request) {
         const folderFiles = await drive.files.list({
           q: `'${folderId.replace(/'/g, "\\'")}' in parents and trashed=false`,
           fields: 'files(id, name, mimeType, modifiedTime, webViewLink)',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
           orderBy: 'name',
           pageSize: 50,
         });
@@ -97,6 +99,8 @@ export async function GET(request) {
         const searchResults = await drive.files.list({
           q: searchQuery,
           fields: 'files(id, name, mimeType, modifiedTime, webViewLink)',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true,
           orderBy: 'modifiedTime desc',
           pageSize: 20,
         });

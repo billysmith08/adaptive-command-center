@@ -19,7 +19,7 @@ async function getAllSubfolders(drive, parentId, depth = 0, maxDepth = 5) {
   try {
     const res = await drive.files.list({
       q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed=false`,
-      fields: 'files(id, name)',
+      fields: 'files(id, name)', supportsAllDrives: true, includeItemsFromAllDrives: true,
       pageSize: 100,
     });
     const folders = res.data.files || [];
@@ -65,7 +65,7 @@ export async function GET(request) {
             try {
               const res = await drive.files.list({
                 q: `'${fid}' in parents and name contains '${escapedQ}' and trashed=false`,
-                fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+                fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
                 pageSize: 50,
               });
               for (const f of (res.data.files || [])) {
@@ -82,7 +82,7 @@ export async function GET(request) {
     try {
       const nameResults = await drive.files.list({
         q: nameQuery,
-        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
         orderBy: 'modifiedTime desc',
         pageSize: 50,
       });
@@ -96,7 +96,7 @@ export async function GET(request) {
       const fullTextQuery = `fullText contains '${escapedQ}' and trashed=false`;
       const textResults = await drive.files.list({
         q: fullTextQuery,
-        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
         orderBy: 'relevance desc',
         pageSize: 30,
       });
@@ -113,7 +113,7 @@ export async function GET(request) {
     const parentNames = {};
     for (const pid of parentIds) {
       try {
-        const pf = await drive.files.get({ fileId: pid, fields: 'name' });
+        const pf = await drive.files.get({ fileId: pid, fields: 'name', supportsAllDrives: true });
         parentNames[pid] = pf.data.name;
       } catch (e) { /* ignore */ }
     }
