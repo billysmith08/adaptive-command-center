@@ -1301,13 +1301,6 @@ export default function Dashboard({ user, onLogout }) {
     ...(project.pocs || []).filter(p => p.name).map(p => p.name),
     ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
   ])];
-  // Event contact names: people assigned to THIS project (for Workback Responsible, ROS Contact/Owner)
-  const eventContactNames = [...new Set([
-    ...project.producers, ...project.managers, ...(project.staff || []),
-    ...(project.pocs || []).filter(p => p.name).map(p => p.name),
-    ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
-    ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
-  ])];
   const pctSpent = project.budget > 0 ? (project.spent / project.budget) * 100 : 0;
   const compTotal = vendors.length * 5;
   const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
