@@ -13,114 +13,134 @@ function getDriveClient() {
   return google.drive({ version: 'v3', auth });
 }
 
-async function findFolder(drive, name, parentId) {
-  let query = `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  if (parentId) query += ` and '${parentId}' in parents`;
-  const res = await drive.files.list({ q: query, fields: 'files(id, name)', spaces: 'drive' });
-  return res.data.files?.[0] || null;
-}
-
-async function navigatePath(drive, parts) {
-  let parentId = null;
-  for (const part of parts) {
-    const folder = await findFolder(drive, part, parentId);
-    if (!folder) return null;
-    parentId = folder.id;
-  }
-  return parentId;
-}
-
-async function getVendorFoldersInPath(drive, basePath) {
-  const parts = basePath.split('/').filter(Boolean);
-  const baseId = await navigatePath(drive, parts);
-  if (!baseId) return [];
-
-  const foldersRes = await drive.files.list({
-    q: `'${baseId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-    fields: 'files(id, name)',
-    orderBy: 'name',
-    pageSize: 200,
-  });
-
-  const results = [];
-  for (const folder of foldersRes.data.files || []) {
-    const filesRes = await drive.files.list({
-      q: `'${folder.id}' in parents and trashed=false`,
-      fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size)',
-      orderBy: 'modifiedTime desc',
-      pageSize: 10,
-    });
-    results.push({
-      vendorName: folder.name,
-      folderId: folder.id,
-      files: (filesRes.data.files || []).map(f => ({
-        name: f.name, id: f.id, modified: f.modifiedTime, link: f.webViewLink, size: f.size,
-      })),
-    });
-  }
-  return results;
-}
-
-const BASE = 'ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026';
-const DOC_PATHS = {
-  coi: `${BASE}/2026 COIs & Workers Comp`,
-  w9: `${BASE}/2026 W9s`,
-};
-
 export async function GET(request) {
   try {
     const drive = getDriveClient();
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get('type');
     const search = searchParams.get('search');
 
-    if (type && DOC_PATHS[type]) {
-      const vendors = await getVendorFoldersInPath(drive, DOC_PATHS[type]);
-      if (search) {
-        const q = search.toLowerCase();
-        return NextResponse.json({ type, vendors: vendors.filter(v => v.vendorName.toLowerCase().includes(q)) });
-      }
-      return NextResponse.json({ type, vendors });
+    if (!search || !search.trim()) {
+      return NextResponse.json({ vendors: [], message: 'Provide a search query' });
     }
 
-    // Scan both COI and W9 folders
-    const [coiVendors, w9Vendors] = await Promise.all([
-      getVendorFoldersInPath(drive, DOC_PATHS.coi),
-      getVendorFoldersInPath(drive, DOC_PATHS.w9),
+    const q = search.trim();
+
+    // Search entire Drive for files/folders matching the vendor name
+    // Search by name and fullText across all shared files
+    const nameQuery = `name contains '${q.replace(/'/g, "\\'")}' and trashed=false`;
+    const fullTextQuery = `fullText contains '${q.replace(/'/g, "\\'")}' and trashed=false`;
+
+    const [nameResults, textResults] = await Promise.all([
+      drive.files.list({
+        q: nameQuery,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+        orderBy: 'modifiedTime desc',
+        pageSize: 50,
+      }),
+      drive.files.list({
+        q: fullTextQuery,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+        orderBy: 'modifiedTime desc',
+        pageSize: 30,
+      }),
     ]);
 
-    // Merge into unified vendor list
+    // Merge and deduplicate
+    const allFiles = [...(nameResults.data.files || [])];
+    const seenIds = new Set(allFiles.map(f => f.id));
+    for (const f of (textResults.data.files || [])) {
+      if (!seenIds.has(f.id)) {
+        allFiles.push(f);
+        seenIds.add(f.id);
+      }
+    }
+
+    // Group files by likely vendor name
+    // For folders: the folder name itself is the vendor
+    // For files: try to get parent folder name
     const vendorMap = {};
-    for (const v of coiVendors) {
-      if (!vendorMap[v.vendorName]) vendorMap[v.vendorName] = { name: v.vendorName, drive: {} };
-      vendorMap[v.vendorName].drive.coi = { found: true, files: v.files, folderId: v.folderId, file: v.files[0]?.name || null };
-    }
-    for (const v of w9Vendors) {
-      if (!vendorMap[v.vendorName]) vendorMap[v.vendorName] = { name: v.vendorName, drive: {} };
-      vendorMap[v.vendorName].drive.w9 = { found: true, files: v.files, folderId: v.folderId, file: v.files[0]?.name || null };
-    }
+    const folderIds = new Set();
 
-    const merged = Object.values(vendorMap).map(v => ({
-      name: v.name,
-      contact: v.name,
-      email: "",
-      type: "Vendor",
-      dept: "Production",
-      drive: {
-        coi: v.drive.coi || { found: false },
-        w9: v.drive.w9 || { found: false },
-        banking: { found: false },
-        contract: { found: false },
-        invoice: { found: false },
-      },
-    }));
-
-    if (search) {
-      const q = search.toLowerCase();
-      return NextResponse.json({ vendors: merged.filter(v => v.name.toLowerCase().includes(q)) });
+    // First pass: identify vendor folders
+    for (const f of allFiles) {
+      if (f.mimeType === 'application/vnd.google-apps.folder') {
+        folderIds.add(f.id);
+        if (!vendorMap[f.name]) {
+          vendorMap[f.name] = {
+            name: f.name,
+            folderId: f.id,
+            files: [],
+            hasCoi: false,
+            hasW9: false,
+          };
+        }
+      }
     }
 
-    return NextResponse.json({ vendors: merged, coiCount: coiVendors.length, w9Count: w9Vendors.length });
+    // Second pass: categorize files
+    for (const f of allFiles) {
+      if (f.mimeType === 'application/vnd.google-apps.folder') continue;
+
+      const fileName = f.name.toLowerCase();
+      // Check if file is a COI or W9 based on filename
+      const isCoi = fileName.includes('coi') || fileName.includes('certificate of insurance') || fileName.includes('insurance');
+      const isW9 = fileName.includes('w9') || fileName.includes('w-9');
+
+      // Try to associate with a vendor name from the search
+      // Use the search term as the vendor grouping key
+      const vendorKey = q;
+      if (!vendorMap[vendorKey]) {
+        vendorMap[vendorKey] = {
+          name: q,
+          files: [],
+          hasCoi: false,
+          hasW9: false,
+        };
+      }
+
+      vendorMap[vendorKey].files.push({
+        name: f.name,
+        id: f.id,
+        mimeType: f.mimeType,
+        modified: f.modifiedTime,
+        link: f.webViewLink,
+        size: f.size,
+        isCoi,
+        isW9,
+      });
+
+      if (isCoi) vendorMap[vendorKey].hasCoi = true;
+      if (isW9) vendorMap[vendorKey].hasW9 = true;
+    }
+
+    // Convert to array and build drive compliance status
+    const vendors = Object.values(vendorMap).map(v => {
+      const coiFile = v.files.find(f => f.isCoi);
+      const w9File = v.files.find(f => f.isW9);
+
+      return {
+        name: v.name,
+        contact: v.name,
+        email: "",
+        type: "Vendor",
+        dept: "Production",
+        fileCount: v.files.length,
+        files: v.files.slice(0, 10), // Return up to 10 files for preview
+        drive: {
+          coi: coiFile ? { found: true, file: coiFile.name, link: coiFile.link } : { found: false },
+          w9: w9File ? { found: true, file: w9File.name, link: w9File.link } : { found: false },
+          banking: { found: false },
+          contract: { found: false },
+          invoice: { found: false },
+        },
+      };
+    });
+
+    return NextResponse.json({
+      vendors,
+      totalFiles: allFiles.length,
+      query: q,
+    });
   } catch (error) {
     console.error('Drive scan error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

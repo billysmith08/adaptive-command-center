@@ -51,11 +51,42 @@ const THEMES = {
 // ─── ADDRESS INPUT (split fields) ───────────────────────────────────────────
 
 function AddressAutocomplete({ value, onChange, copyToClipboard }) {
+  const inputRef = useRef(null);
+  const autocompleteRef = useRef(null);
+  const [loaded, setLoaded] = useState(typeof window !== 'undefined' && !!window.google?.maps?.places);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    // If Google Maps is already loaded
+    if (window.google?.maps?.places) { setLoaded(true); return; }
+    // Try to load it if we have an API key
+    const key = typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+    if (!key) return;
+    if (document.querySelector('script[src*="maps.googleapis.com"]')) return;
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    script.async = true;
+    script.onload = () => setLoaded(true);
+    document.head.appendChild(script);
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !inputRef.current || autocompleteRef.current) return;
+    try {
+      const ac = new window.google.maps.places.Autocomplete(inputRef.current, { types: ['address'] });
+      ac.addListener('place_changed', () => {
+        const place = ac.getPlace();
+        if (place?.formatted_address) onChange(place.formatted_address);
+      });
+      autocompleteRef.current = ac;
+    } catch (e) { /* graceful fallback to plain input */ }
+  }, [loaded, onChange]);
+
   return (
     <div style={{ flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <span style={{ fontSize: 9, color: "var(--textFaint)", flexShrink: 0 }}>📍</span>
-        <input value={value || ""} onChange={e => onChange(e.target.value)} placeholder="Street, City, State ZIP" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
+        <input ref={inputRef} value={value || ""} onChange={e => onChange(e.target.value)} placeholder="Street, City, State ZIP" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
         {value && <span style={{ fontSize: 7, color: "var(--textGhost)", marginLeft: 2, cursor: "pointer", flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); copyToClipboard && copyToClipboard(value, "Address", e); }}>⧉</span>}
       </div>
     </div>
@@ -102,51 +133,16 @@ const initProjects = () => [
   { id: "p25", code: "26-1113_1114-LOSTMX-KAPPA-MTYMX", name: "Kappa Futur Festival", client: "Lost Nights", status: "Exploration", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-11-13", end: "2026-11-14" }, engagementDates: { start: "", end: "" }, location: "MTYMX", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
 ];
 
-const initVendors = () => [
-  { id: "v1", name: "Panavision LA", type: "Equipment", email: "bookings@panavision.com", contact: "John Mitchell", deptId: "Production", source: "both", compliance: { coi: { done: true, file: "Panavision_COI.pdf", date: "2026-01-28" }, w9: { done: true, file: "Panavision_W9.pdf", date: "2026-01-28" }, invoice: { done: false, file: null, date: null }, banking: { done: true, file: null, date: "2026-01-30" }, contract: { done: true, file: "Panavision_Contract.pdf", date: "2026-02-01" } } },
-  { id: "v2", name: "Harbor Post", type: "Post House", email: "schedule@harborpost.com", contact: "Amy Chen", deptId: "Operations", source: "saturation", compliance: { coi: { done: true, file: "HarborPost_COI.pdf", date: "2026-02-02" }, w9: { done: true, file: "HarborPost_W9.pdf", date: "2026-02-02" }, invoice: { done: true, file: "HarborPost_Invoice.pdf", date: "2026-02-05" }, banking: { done: true, file: null, date: "2026-02-02" }, contract: { done: true, file: "HarborPost_Contract.pdf", date: "2026-02-03" } } },
-  { id: "v3", name: "Company 3", type: "Color", email: "bookings@company3.co", contact: "David Katz", deptId: "Operations", source: "airtable", compliance: { coi: { done: false, file: null, date: null }, w9: { done: true, file: "Company3_W9.pdf", date: "2026-02-01" }, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: true, file: "Company3_Contract.pdf", date: "2026-01-30" } } },
-  { id: "v4", name: "Local 600 Crew", type: "Crew", email: "dispatch@local600.org", contact: "Maria Santos", deptId: "Production", source: "both", compliance: { coi: { done: true, file: "Local600_COI.pdf", date: "2026-01-25" }, w9: { done: true, file: "Local600_W9.pdf", date: "2026-01-25" }, invoice: { done: true, file: "Local600_Invoice.pdf", date: "2026-02-06" }, banking: { done: true, file: null, date: "2026-01-26" }, contract: { done: true, file: "Local600_Contract.pdf", date: "2026-01-27" } } },
-  { id: "v5", name: "FilmLA Permits", type: "Permits", email: "permits@filmla.com", contact: "Office", deptId: "Venue", source: "both", compliance: { coi: { done: true, file: "FilmLA_COI.pdf", date: "2026-02-01" }, w9: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, banking: { done: true, file: null, date: "2026-02-01" }, contract: { done: true, file: "FilmLA_Agreement.pdf", date: "2026-02-02" } } },
-  { id: "v6", name: "SAG Talent Agency", type: "Talent", email: "casting@sag.org", contact: "Lisa Wong", deptId: "Talent", source: "saturation", compliance: { coi: { done: true, file: "SAG_COI.pdf", date: "2026-02-03" }, w9: { done: true, file: "SAG_W9.pdf", date: "2026-02-03" }, invoice: { done: false, file: null, date: null }, banking: { done: true, file: null, date: "2026-02-04" }, contract: { done: false, file: null, date: null } } },
-  { id: "v7", name: "Quixote Rentals", type: "Vehicles", email: "la@quixote.com", contact: "Tom Reeves", deptId: "Transportation", source: "saturation", compliance: { coi: { done: true, file: "Quixote_COI.pdf", date: "2026-02-01" }, w9: { done: true, file: "Quixote_W9.pdf", date: "2026-02-01" }, invoice: { done: true, file: "Quixote_Invoice.pdf", date: "2026-02-07" }, banking: { done: true, file: null, date: "2026-02-01" }, contract: { done: true, file: "Quixote_Contract.pdf", date: "2026-02-02" } } },
-  { id: "v8", name: "Prop House LA", type: "Props", email: "orders@prophousela.com", contact: "Nina Patel", deptId: "Fabrication", source: "airtable", compliance: { coi: { done: false, file: null, date: null }, w9: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } } },
-];
+const initVendors = () => [];
 
-const initWorkback = () => [
-  { id: "wb1", task: "Creative Brief Approved", date: "2026-01-20", depts: ["Production"], status: "Done", owner: "" },
-  { id: "wb2", task: "Director Treatment", date: "2026-01-24", depts: ["Production"], status: "Done", owner: "" },
-  { id: "wb3", task: "Budget Lock", date: "2026-01-28", depts: ["Production", "Finance"], status: "Done", owner: "" },
-  { id: "wb4", task: "Vendor COIs Collected", date: "2026-02-03", depts: ["Production", "Legal"], status: "Done", owner: "" },
-  { id: "wb5", task: "Location Scout", date: "2026-02-05", depts: ["Venue"], status: "Done", owner: "" },
-  { id: "wb6", task: "Casting Selects", date: "2026-02-07", depts: ["Talent"], status: "Done", owner: "" },
-  { id: "wb7", task: "Shot List Final", date: "2026-02-10", depts: ["Production", "Operations"], status: "In Progress", owner: "" },
-  { id: "wb8", task: "Permits Secured", date: "2026-02-13", depts: ["Venue", "Legal"], status: "At Risk", owner: "" },
-  { id: "wb9", task: "Tech Scout", date: "2026-02-14", depts: ["Production", "Venue"], status: "Not Started", owner: "" },
-  { id: "wb10", task: "Callsheet Published", date: "2026-02-16", depts: ["Production"], status: "Not Started", owner: "" },
-  { id: "wb11", task: "EVENT DAY 1", date: "2026-02-18", depts: ["Production"], status: "Not Started", owner: "ALL", isEvent: true },
-  { id: "wb12", task: "EVENT DAY 2", date: "2026-02-19", depts: ["Production"], status: "Not Started", owner: "ALL", isEvent: true },
-  { id: "wb13", task: "EVENT DAY 3", date: "2026-02-20", depts: ["Production"], status: "Not Started", owner: "ALL", isEvent: true },
-  { id: "wb14", task: "Hard Drive Delivery", date: "2026-02-22", depts: ["Operations"], status: "Not Started", owner: "" },
-  { id: "wb15", task: "Rough Cut v1", date: "2026-03-04", depts: ["Operations"], status: "Not Started", owner: "" },
-  { id: "wb16", task: "Final Delivery", date: "2026-03-18", depts: ["Operations", "Production"], status: "Not Started", owner: "" },
-];
+const initWorkback = () => [];
 
 const initROS = () => [
-  { id: "r1", day: 1, time: "5:00 AM", item: "Crew Call — Basecamp", dept: "Production", vendors: ["v7"], location: "3rd St Lot, DTLA", contact: "", owner: "", note: "Parking on 3rd St lot" },
-  { id: "r2", day: 1, time: "6:00 AM", item: "Camera Prep & Build", dept: "Production", vendors: ["v1", "v4"], location: "Stage 4", contact: "John Mitchell", owner: "", note: "ARRI ALEXA 35 + Supremes" },
-  { id: "r3", day: 1, time: "7:00 AM", item: "Art Dept Set Dress", dept: "Fabrication", vendors: ["v8"], location: "Stage 4", contact: "Nina Patel", owner: "", note: "Living room — mid-century" },
-  { id: "r4", day: 1, time: "8:00 AM", item: "🎬 CAMERAS UP — Scene 1A", dept: "Production", vendors: ["v1", "v4"], location: "Stage 4", contact: "", owner: "", note: "Hero product shots" },
-  { id: "r5", day: 1, time: "12:00 PM", item: "LUNCH (1 hour)", dept: "Production", vendors: [], location: "Basecamp", contact: "", owner: "", note: "" },
-  { id: "r6", day: 1, time: "2:00 PM", item: "🎬 Scene 2A — Lifestyle", dept: "Production", vendors: ["v1", "v4"], location: "DTLA Loft", contact: "", owner: "", note: "Natural light + bounce" },
-  { id: "r7", day: 1, time: "6:30 PM", item: "WRAP — Day 1", dept: "Production", vendors: ["v7"], location: "DTLA Loft", contact: "", owner: "", note: "Equipment secured" },
-  { id: "r8", day: 2, time: "4:30 AM", item: "Crew Call — Venice", dept: "Production", vendors: ["v7"], location: "Venice Boardwalk", contact: "", owner: "", note: "Early for sunrise" },
-  { id: "r9", day: 2, time: "5:15 AM", item: "🎬 Sunrise Sequence", dept: "Production", vendors: ["v1", "v4"], location: "Venice Boardwalk", contact: "", owner: "", note: "Golden hour" },
-  { id: "r10", day: 2, time: "12:30 PM", item: "LUNCH", dept: "Production", vendors: [], location: "Studio", contact: "", owner: "", note: "" },
-  { id: "r11", day: 2, time: "5:30 PM", item: "WRAP — Day 2", dept: "Production", vendors: ["v7"], location: "Studio", contact: "", owner: "", note: "" },
-  { id: "r12", day: 3, time: "7:00 AM", item: "Crew Call", dept: "Production", vendors: ["v7"], location: "Studio", contact: "", owner: "", note: "Reduced crew" },
-  { id: "r13", day: 3, time: "8:30 AM", item: "🎬 Product Tabletop", dept: "Production", vendors: ["v1"], location: "Studio", contact: "", owner: "", note: "All colorways" },
-  { id: "r14", day: 3, time: "5:00 PM", item: "FINAL WRAP 🎉", dept: "Production", vendors: ["v7"], location: "Studio", contact: "", owner: "", note: "Strike + walk-through" },
+  { id: "r1", day: 1, dayDate: "", time: "5:00 AM", item: "Crew Call — Basecamp", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" },
+  { id: "r2", day: 1, dayDate: "", time: "6:00 AM", item: "Setup & Build", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" },
+  { id: "r3", day: 1, dayDate: "", time: "8:00 AM", item: "Doors / Start", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" },
+  { id: "r4", day: 1, dayDate: "", time: "12:00 PM", item: "LUNCH", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" },
+  { id: "r5", day: 1, dayDate: "", time: "5:00 PM", item: "WRAP", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" },
 ];
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
@@ -171,19 +167,22 @@ function DeptTag({ dept, small }) {
 
 // ─── REUSABLE INPUTS ─────────────────────────────────────────────────────────
 
-function Dropdown({ value, options, onChange, colors, width }) {
+function Dropdown({ value, options, onChange, colors, width, allowBlank, blankLabel }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
   const sc = colors?.[value];
+  const displayValue = value || blankLabel || "Select...";
+  const isEmpty = !value || value === "Select...";
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block", width: width || "auto" }}>
-      <button onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: sc?.bg || "var(--bgCard)", border: `1px solid ${sc?.dot || "var(--borderSub)"}40`, borderRadius: 6, color: sc?.text || "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", width: "100%", justifyContent: "space-between" }}>
+      <button onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: sc?.bg || "var(--bgCard)", border: `1px solid ${sc?.dot || "var(--borderSub)"}40`, borderRadius: 6, color: isEmpty ? "var(--textGhost)" : (sc?.text || "var(--textSub)"), fontSize: 12, fontWeight: 600, cursor: "pointer", width: "100%", justifyContent: "space-between" }}>
         {sc && <span style={{ width: 6, height: 6, borderRadius: "50%", background: sc.dot }} />}
-        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+        <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayValue}</span>
         <span style={{ fontSize: 8, opacity: 0.5 }}>▼</span>
       </button>
       {open && <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
+        {allowBlank && <div onClick={() => { onChange(""); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— None —</div>}
         {options.map(opt => <div key={opt} onClick={() => { onChange(opt); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: value === opt ? "#ff6b4a" : "var(--textSub)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>{colors?.[opt] && <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[opt].dot }} />}{opt}</div>)}
       </div>}
     </div>
@@ -202,6 +201,7 @@ function MultiDropdown({ values, options, onChange, colorMap, renderLabel }) {
         {values.map(v => <span key={v} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: (colorMap?.[v] || "var(--textMuted)") + "20", color: colorMap?.[v] || "var(--textMuted)", fontWeight: 600, border: `1px solid ${colorMap?.[v] || "var(--textMuted)"}30` }}>{renderLabel ? renderLabel(v) : v}</span>)}
       </div>
       {open && <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 180, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
+        {values.length > 0 && <div onClick={() => { onChange([]); setOpen(false); }} style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— Clear all —</div>}
         {options.map(opt => <div key={opt} onClick={() => toggle(opt)} style={{ padding: "6px 12px", fontSize: 11, color: values.includes(opt) ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}><div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${values.includes(opt) ? "#4ecb71" : "var(--borderActive)"}`, background: values.includes(opt) ? "#4ecb7120" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#4ecb71", flexShrink: 0 }}>{values.includes(opt) ? "✓" : ""}</div>{renderLabel ? renderLabel(opt) : opt}</div>)}
       </div>}
     </div>
@@ -437,14 +437,22 @@ function PocPullDropdown({ contacts, existingPocs, onSelect }) {
   );
 }
 
-function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, onViewContact, copyToClipboard, showAddress }) {
+function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, onViewContact, copyToClipboard, showAddress, onUpdateGlobalContact }) {
+  const syncField = (pi, field, val) => {
+    const arr = [...(items || [])]; arr[pi] = { ...arr[pi], [field]: val }; onUpdate(arr);
+    // Bidirectional: if linked to global, update global too
+    if (arr[pi].fromContacts && onUpdateGlobalContact) {
+      const gContact = contacts?.find(c => c.name === arr[pi].name);
+      if (gContact) onUpdateGlobalContact(gContact.id, field, val);
+    }
+  };
   return (
     <div style={{ marginTop: 10, marginLeft: 1 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8 }}>{label}</span>
         <div style={{ display: "flex", gap: 6 }}>
           <PocPullDropdown contacts={contacts} existingPocs={items} onSelect={(c) => {
-            onUpdate([...(items || []), { name: c.name, phone: c.phone || "", email: c.email || "", address: "", fromContacts: true }]);
+            onUpdate([...(items || []), { name: c.name, phone: c.phone || "", email: c.email || "", address: c.notes?.match(/(?:Home|Office|Address):\s*([^\n·]+)/i)?.[1]?.trim() || "", fromContacts: true }]);
           }} />
           <button onClick={() => onUpdate([...(items || []), { name: "", phone: "", email: "", address: "", fromContacts: false }])} style={{ padding: "3px 8px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 4, color: "#ff6b4a", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>+ Add</button>
         </div>
@@ -452,7 +460,12 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
       {(items || []).length === 0 && (
         <div style={{ fontSize: 11, color: "var(--textGhost)", padding: "4px 0" }}>No contacts added yet</div>
       )}
-      {(items || []).map((poc, pi) => (
+      {(items || []).map((poc, pi) => {
+        // For linked contacts, pull latest info from global
+        const gContact = poc.fromContacts ? contacts?.find(c => c.name === poc.name) : null;
+        const displayPhone = gContact?.phone || poc.phone;
+        const displayEmail = gContact?.email || poc.email;
+        return (
         <div key={pi} style={{ marginBottom: 5, background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px" }}>
             <div onClick={(e) => { if (poc.name && onViewContact) { const c = contacts.find(ct => ct.name === poc.name); onViewContact(c || { name: poc.name, phone: poc.phone, email: poc.email }, e); } }} style={{ width: 22, height: 22, borderRadius: "50%", background: poc.fromContacts ? "#3da5db15" : "#ff6b4a15", border: `1px solid ${poc.fromContacts ? "#3da5db30" : "#ff6b4a30"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: poc.fromContacts ? "#3da5db" : "#ff6b4a", flexShrink: 0, cursor: poc.name ? "pointer" : "default" }}>
@@ -461,12 +474,12 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
             <div style={{ flex: 1, display: "flex", gap: 5, alignItems: "center", flexWrap: "wrap" }}>
               <input value={poc.name} onChange={e => { const arr = [...(items || [])]; arr[pi] = { ...arr[pi], name: e.target.value }; onUpdate(arr); }} placeholder="Name" style={{ flex: "1 1 70px", minWidth: 55, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--text)", fontSize: 11, outline: "none", fontWeight: 600 }} />
               <span style={{ display: "flex", alignItems: "center", flex: "1 1 70px", minWidth: 55 }}>
-                <input value={poc.phone} onChange={e => { const arr = [...(items || [])]; arr[pi] = { ...arr[pi], phone: e.target.value }; onUpdate(arr); }} placeholder="Phone" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
-                {poc.phone && <span style={{ fontSize: 7, color: "var(--textGhost)", marginLeft: 2, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); copyToClipboard && copyToClipboard(poc.phone, "Phone", e); }}>⧉</span>}
+                <input value={displayPhone} onChange={e => syncField(pi, "phone", e.target.value)} placeholder="Phone" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
+                {displayPhone && <span style={{ fontSize: 7, color: "var(--textGhost)", marginLeft: 2, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); copyToClipboard && copyToClipboard(displayPhone, "Phone", e); }}>⧉</span>}
               </span>
               <span style={{ display: "flex", alignItems: "center", flex: "1.5 1 90px", minWidth: 70 }}>
-                <input value={poc.email} onChange={e => { const arr = [...(items || [])]; arr[pi] = { ...arr[pi], email: e.target.value }; onUpdate(arr); }} placeholder="Email" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
-                {poc.email && <span style={{ fontSize: 7, color: "var(--textGhost)", marginLeft: 2, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); copyToClipboard && copyToClipboard(poc.email, "Email", e); }}>⧉</span>}
+                <input value={displayEmail} onChange={e => syncField(pi, "email", e.target.value)} placeholder="Email" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
+                {displayEmail && <span style={{ fontSize: 7, color: "var(--textGhost)", marginLeft: 2, cursor: "pointer" }} onClick={(e) => { e.stopPropagation(); copyToClipboard && copyToClipboard(displayEmail, "Email", e); }}>⧉</span>}
               </span>
             </div>
             {!poc.fromContacts && poc.name && (
@@ -481,7 +494,8 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
             </div>
           )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -498,7 +512,7 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview }) {
 
   const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); const f = e.dataTransfer?.files; if (f?.length) { onFileDrop(vendor.id, compKey.key, f[0], drivePath, compKey.drivePrefix); setJustUploaded(true); setTimeout(() => setJustUploaded(false), 3000); } };
   const handleClick = () => {
-    if (isDone && onPreview) { onPreview({ vendorName: vendor.name, docType: compKey.fullLabel, fileName: compInfo.file || "Document", date: compInfo.date, path: drivePath }); }
+    if (isDone && onPreview) { onPreview({ vendorName: vendor.name, docType: compKey.fullLabel, fileName: compInfo.file || "Document", date: compInfo.date, path: drivePath, link: compInfo.link || null }); }
     else if (!isDone) { const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (e) => { const f = e.target.files[0]; if (f) { onFileDrop(vendor.id, compKey.key, f, drivePath, compKey.drivePrefix); setJustUploaded(true); setTimeout(() => setJustUploaded(false), 3000); } }; input.click(); }
   };
 
@@ -934,12 +948,23 @@ export default function Dashboard({ user, onLogout }) {
   const T = THEMES[darkMode ? "dark" : "light"];
   const [activeProjectId, setActiveProjectId] = useState("p1");
   const [activeTab, setActiveTab] = useState("calendar");
-  const [vendors, setVendors] = useState(initVendors);
+  const [projectVendors, setProjectVendors] = useState({});
+  // Derive vendors for active project — all existing code keeps working
+  const vendors = projectVendors[activeProjectId] || [];
+  const setVendors = (updater) => {
+    setProjectVendors(prev => ({
+      ...prev,
+      [activeProjectId]: typeof updater === 'function' ? updater(prev[activeProjectId] || []) : updater
+    }));
+  };
+  const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   const [workback, setWorkback] = useState(initWorkback);
   const [ros, setROS] = useState(initROS);
+  const [rosDayDates, setRosDayDates] = useState({}); // { 1: "2026-03-20", 2: "2026-03-21", ... }
   const [time, setTime] = useState(new Date());
   const [uploadLog, setUploadLog] = useState([]);
   const [expandedVendor, setExpandedVendor] = useState(null);
+  useEffect(() => { setSelectedVendorIds(new Set()); setExpandedVendor(null); }, [activeProjectId]);
   const [search, setSearch] = useState("");
   const [sidebarW, setSidebarW] = useState(280);
   const [showPrintROS, setShowPrintROS] = useState(false);
@@ -954,6 +979,7 @@ export default function Dashboard({ user, onLogout }) {
   const [clipboardToast, setClipboardToast] = useState(null);
   const [contactPopover, setContactPopover] = useState(null); // { contact, x, y }
   const [showAddContact, setShowAddContact] = useState(false);
+  const [assignContactPopover, setAssignContactPopover] = useState(null); // { contactId, selectedProject, selectedRole }
   const [contacts, setContacts] = useState([
     { id: "ct_billy", name: "Billy Smith", firstName: "Billy", lastName: "Smith", phone: "+1 (310) 986-5581", email: "billy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: +1 (310) 853-3497 · Intl: +1 (424) 375-5699 · Personal: billysmith08@gmail.com · Home: 15 Wavecrest Ave, Venice CA 90291 · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
     { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
@@ -1086,41 +1112,33 @@ export default function Dashboard({ user, onLogout }) {
     setTimeout(() => setClipboardToast(null), 1800);
   };
 
-  // Drive vendor cache — loaded once, then filtered locally
-  const [driveVendorCache, setDriveVendorCache] = useState(null);
+  // Drive vendor search — searches entire Google Drive
   const [driveLoading, setDriveLoading] = useState(false);
   const [driveError, setDriveError] = useState(null);
-
-  const loadDriveVendors = async () => {
-    if (driveVendorCache) return driveVendorCache;
-    setDriveLoading(true);
-    setDriveError(null);
-    try {
-      const res = await fetch('/api/drive/scan');
-      if (!res.ok) throw new Error(`Drive scan failed: ${res.status}`);
-      const data = await res.json();
-      setDriveVendorCache(data.vendors || []);
-      setDriveLoading(false);
-      return data.vendors || [];
-    } catch (err) {
-      console.error('Drive scan error:', err);
-      setDriveError(err.message);
-      setDriveLoading(false);
-      return [];
-    }
-  };
+  const [driveVendorCache, setDriveVendorCache] = useState(null);
 
   const handleVendorSearchChange = (q) => {
     setVendorSearch(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
-    if (!q.trim()) { setDriveResults(null); setVendorSearching(false); return; }
+    if (!q.trim()) { setDriveResults(null); setVendorSearching(false); setDriveError(null); return; }
     setVendorSearching(true);
     searchTimerRef.current = setTimeout(async () => {
-      const driveVendors = await loadDriveVendors();
-      const results = driveVendors.filter(v => v.name.toLowerCase().includes(q.toLowerCase()) || v.contact.toLowerCase().includes(q.toLowerCase()) || v.type.toLowerCase().includes(q.toLowerCase()));
-      setDriveResults(results);
+      setDriveLoading(true);
+      setDriveError(null);
+      try {
+        const res = await fetch(`/api/drive/scan?search=${encodeURIComponent(q.trim())}`);
+        if (!res.ok) throw new Error(`Drive search failed: ${res.status}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        setDriveResults(data.vendors || []);
+      } catch (err) {
+        console.error('Drive search error:', err);
+        setDriveError(err.message);
+        setDriveResults([]);
+      }
+      setDriveLoading(false);
       setVendorSearching(false);
-    }, 500);
+    }, 600);
   };
 
   const importFromDrive = (dv) => {
@@ -1162,10 +1180,12 @@ export default function Dashboard({ user, onLogout }) {
 
   const project = projects.find(p => p.id === activeProjectId) || projects[0];
   const updateProject = (key, val) => setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
+  const updateProject2 = (projId, key, val) => setProjects(prev => prev.map(p => p.id === projId ? { ...p, [key]: val } : p));
+  const updateGlobalContact = (contactId, field, val) => setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
   const updateWB = (id, key, val) => setWorkback(prev => prev.map(w => w.id === id ? { ...w, [key]: val } : w));
   const updateROS = (id, key, val) => setROS(prev => prev.map(r => r.id === id ? { ...r, [key]: val } : r));
   const addWBRow = () => setWorkback(prev => [...prev, { id: `wb_${Date.now()}`, task: "", date: "", depts: [], status: "Not Started", owner: "" }]);
-  const addROSRow = (day) => setROS(prev => [...prev, { id: `r_${Date.now()}`, day, time: "", item: "", dept: "Production", vendors: [], location: "", contact: "", owner: "", note: "" }]);
+  const addROSRow = (day) => { const existingDate = ros.find(r => r.day === day)?.dayDate || ""; setROS(prev => [...prev, { id: `r_${Date.now()}`, day, dayDate: existingDate, time: "", item: "", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" }]); };
 
   const handleFileDrop = async (vendorId, compKey, file, drivePath, basePath) => {
     const vendor = vendors.find(v => v.id === vendorId);
@@ -1204,6 +1224,20 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   const peopleOptions = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];
+  // Event contacts = only people on THIS project (for workback Responsible + ROS Contact/Owner)
+  const eventContactNames = [...new Set([
+    ...project.producers, ...project.managers, ...(project.staff || []),
+    ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
+    ...(project.pocs || []).filter(p => p.name).map(p => p.name),
+    ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
+  ])];
+  // Event contact names: people assigned to THIS project (for Workback Responsible, ROS Contact/Owner)
+  const eventContactNames = [...new Set([
+    ...project.producers, ...project.managers, ...(project.staff || []),
+    ...(project.pocs || []).filter(p => p.name).map(p => p.name),
+    ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
+    ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
+  ])];
   const pctSpent = project.budget > 0 ? (project.spent / project.budget) * 100 : 0;
   const compTotal = vendors.length * 5;
   const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
@@ -1248,7 +1282,7 @@ export default function Dashboard({ user, onLogout }) {
             📅 Adaptive at a Glance
           </button>
           <button onClick={() => setActiveTab("globalContacts")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "globalContacts" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
-            👤 Contacts {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
+            👤 Global Contacts {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
           </button>
           <button onClick={() => { setActiveTab("todoist"); if (!todoistTasks.length && todoistKey) todoistFetch(); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "todoist" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
             ✅ Todoist {todoistTasks.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{todoistTasks.length}</span>}
@@ -1314,7 +1348,7 @@ export default function Dashboard({ user, onLogout }) {
           </div>
           <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-              <div style={{ background: "var(--bgCard)", borderRadius: 7, padding: "8px 10px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>COMPLIANCE</div><div style={{ fontSize: 18, fontWeight: 700, color: compDone / compTotal > 0.8 ? "#4ecb71" : "#dba94e", fontFamily: "'JetBrains Mono', monospace" }}>{Math.round(compDone / compTotal * 100)}%</div></div>
+              <div style={{ background: "var(--bgCard)", borderRadius: 7, padding: "8px 10px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>COMPLIANCE</div><div style={{ fontSize: 18, fontWeight: 700, color: compTotal > 0 && compDone / compTotal > 0.8 ? "#4ecb71" : "#dba94e", fontFamily: "'JetBrains Mono', monospace" }}>{compTotal > 0 ? Math.round(compDone / compTotal * 100) : 0}%</div></div>
               <div style={{ background: "var(--bgCard)", borderRadius: 7, padding: "8px 10px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>CONTRACTORS</div><div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{vendors.length}</div></div>
             </div>
           </div>
@@ -1373,7 +1407,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL CONTACTS</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Contacts</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Global Contacts</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
@@ -1420,15 +1454,52 @@ export default function Dashboard({ user, onLogout }) {
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span onClick={(e) => c.email && copyToClipboard(c.email, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.email) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.email || "—"} {c.email && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11 }}>{c.company || "—"}</span>
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <button onClick={() => {
-                            const p = projects.find(p => p.id === activeProjectId);
-                            if (!p) return;
-                            const already = (p.pocs || []).some(poc => poc.name === c.name) || (p.clientContacts || []).some(poc => poc.name === c.name) || (p.billingContacts || []).some(poc => poc.name === c.name);
-                            if (already) { alert(`${c.name} is already on this project.`); return; }
-                            updateProject("pocs", [...(p.pocs || []), { name: c.name, phone: c.phone || "", email: c.email || "", address: "", fromContacts: true }]);
-                            setClipboardToast({ text: `${c.name} added to project!`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 1800);
-                          }} style={{ padding: "4px 10px", background: "#9b6dff10", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }} title="Add to active project as POC">+ Project</button>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", position: "relative" }}>
+                          <div style={{ position: "relative" }}>
+                            <button onClick={() => setAssignContactPopover(assignContactPopover?.contactId === c.id ? null : { contactId: c.id, selectedProject: activeProjectId, selectedRole: "Point of Contact" })} style={{ padding: "4px 10px", background: assignContactPopover?.contactId === c.id ? "#9b6dff25" : "#9b6dff10", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>+ Project</button>
+                            {assignContactPopover?.contactId === c.id && (
+                              <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.7)", zIndex: 80, width: 280, overflow: "hidden" }}>
+                                <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
+                                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>ASSIGN TO PROJECT</div>
+                                  <select value={assignContactPopover.selectedProject} onChange={e => setAssignContactPopover(prev => ({ ...prev, selectedProject: e.target.value }))} style={{ width: "100%", padding: "6px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }}>
+                                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                  </select>
+                                </div>
+                                <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
+                                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>ROLE</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                    {["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing"].map(r => (
+                                      <button key={r} onClick={() => setAssignContactPopover(prev => ({ ...prev, selectedRole: r }))} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer", background: assignContactPopover.selectedRole === r ? "#9b6dff20" : "var(--bgInput)", border: `1px solid ${assignContactPopover.selectedRole === r ? "#9b6dff40" : "var(--borderSub)"}`, color: assignContactPopover.selectedRole === r ? "#9b6dff" : "var(--textFaint)" }}>{r}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                                <div style={{ padding: "10px 14px" }}>
+                                  <button onClick={() => {
+                                    const targetProject = projects.find(p => p.id === assignContactPopover.selectedProject);
+                                    if (!targetProject) return;
+                                    const role = assignContactPopover.selectedRole;
+                                    const entry = { name: c.name, phone: c.phone || "", email: c.email || "", address: "", fromContacts: true, role };
+                                    const projIdx = projects.findIndex(p => p.id === assignContactPopover.selectedProject);
+                                    if (projIdx < 0) return;
+                                    // Check duplicates
+                                    const allPeople = [...targetProject.producers, ...targetProject.managers, ...(targetProject.staff || []), ...(targetProject.pocs || []).map(p => p.name), ...(targetProject.clientContacts || []).map(p => p.name), ...(targetProject.billingContacts || []).map(p => p.name)];
+                                    if (allPeople.includes(c.name)) { alert(`${c.name} is already on ${targetProject.name}.`); return; }
+                                    // Add based on role
+                                    if (role === "Producer") updateProject2(assignContactPopover.selectedProject, "producers", [...targetProject.producers, c.name]);
+                                    else if (role === "Manager") updateProject2(assignContactPopover.selectedProject, "managers", [...targetProject.managers, c.name]);
+                                    else if (role === "Staff / Crew") updateProject2(assignContactPopover.selectedProject, "staff", [...(targetProject.staff || []), c.name]);
+                                    else if (role === "Client") updateProject2(assignContactPopover.selectedProject, "clientContacts", [...(targetProject.clientContacts || []), entry]);
+                                    else if (role === "Billing") updateProject2(assignContactPopover.selectedProject, "billingContacts", [...(targetProject.billingContacts || []), entry]);
+                                    else updateProject2(assignContactPopover.selectedProject, "pocs", [...(targetProject.pocs || []), entry]);
+                                    setClipboardToast({ text: `${c.name} added to ${targetProject.name} as ${role}!`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 2200);
+                                    setAssignContactPopover(null);
+                                  }} style={{ width: "100%", padding: "8px", background: "#9b6dff", border: "none", borderRadius: 6, color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 11 }}>
+                                    Add to {projects.find(p => p.id === assignContactPopover.selectedProject)?.name?.slice(0, 20) || "Project"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
                           <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setContacts(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
@@ -1578,21 +1649,21 @@ export default function Dashboard({ user, onLogout }) {
                     ))}
 
                     {/* CLIENT CONTACTS */}
-                    <ContactListBlock label="CLIENT" items={project.clientContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
+                    <ContactListBlock label="CLIENT" items={project.clientContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Client", department: "", notes: `Client for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.clientContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("clientContacts", arr);
                     }} />
 
                     {/* POINT OF CONTACT(S) */}
-                    <ContactListBlock label="POINT OF CONTACT(S)" items={project.pocs || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} onUpdate={v => updateProject("pocs", v)} onSaveToGlobal={(poc, pi) => {
+                    <ContactListBlock label="POINT OF CONTACT(S)" items={project.pocs || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("pocs", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "", department: "", notes: `POC for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.pocs || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("pocs", arr);
                     }} />
 
                     {/* BILLING CONTACT */}
-                    <ContactListBlock label="BILLING CONTACT" items={project.billingContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdate={v => updateProject("billingContacts", v)} onSaveToGlobal={(poc, pi) => {
+                    <ContactListBlock label="BILLING CONTACT" items={project.billingContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("billingContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Billing", department: "Finance", notes: `Billing for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.billingContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("billingContacts", arr);
@@ -1700,7 +1771,7 @@ export default function Dashboard({ user, onLogout }) {
                       <DatePicker value={wb.date} onChange={v => updateWB(wb.id, "date", v)} />
                       <EditableText value={wb.task} onChange={v => updateWB(wb.id, "task", v)} fontSize={12} color={wb.isEvent ? "#ff6b4a" : "var(--text)"} fontWeight={wb.isEvent ? 700 : 500} placeholder="Task name..." />
                       <MultiDropdown values={wb.depts} options={DEPT_OPTIONS} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
-                      <Dropdown value={wb.owner || "Select..."} options={peopleOptions} onChange={v => updateWB(wb.id, "owner", v)} width="100%" />
+                      <Dropdown value={wb.owner} options={eventContactNames} onChange={v => updateWB(wb.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                       <Dropdown value={wb.status} options={WB_STATUSES} onChange={v => updateWB(wb.id, "status", v)} colors={Object.fromEntries(WB_STATUSES.map(s => [s, { bg: WB_STATUS_STYLES[s].bg, text: WB_STATUS_STYLES[s].text, dot: WB_STATUS_STYLES[s].text }]))} width="100%" />
                       <button onClick={() => setWorkback(p => p.filter(w => w.id !== wb.id))} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
                     </div>
@@ -1720,10 +1791,17 @@ export default function Dashboard({ user, onLogout }) {
                     <span style={{ fontSize: 14 }}>📄</span> Export PDF
                   </button>
                 </div>
-                {days.map(day => (
+                {days.map(day => {
+                  const dayDate = ros.find(r => r.day === day)?.dayDate || "";
+                  const setDayDate = (newDate) => setROS(prev => prev.map(r => r.day === day ? { ...r, dayDate: newDate } : r));
+                  return (
                   <div key={day} style={{ marginBottom: 24 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, padding: "10px 16px", background: "linear-gradient(90deg, #ff6b4a10, transparent)", borderLeft: "3px solid #ff6b4a", borderRadius: "0 8px 8px 0" }}>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: "#ff6b4a", fontFamily: "'Instrument Sans'" }}>Day {day}</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: "#ff6b4a", fontFamily: "'Instrument Sans'" }}>Day {day}</span>
+                        <input type="date" value={dayDate} onChange={e => setDayDate(e.target.value)} style={{ padding: "4px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: dayDate ? "var(--text)" : "var(--textGhost)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none", colorScheme: "var(--filterScheme)" }} />
+                        {dayDate && <span style={{ fontSize: 11, color: "var(--textMuted)" }}>{new Date(dayDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}</span>}
+                      </div>
                       <button onClick={() => addROSRow(day)} style={{ padding: "5px 12px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Row</button>
                     </div>
                     <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
@@ -1734,11 +1812,11 @@ export default function Dashboard({ user, onLogout }) {
                           <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "65px 1.6fr 0.7fr 1fr 0.9fr 0.7fr 0.7fr 1fr 30px", padding: "6px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isS ? "var(--bgCard)" : isW ? "var(--bgInput)" : "transparent" }}>
                             <EditableText value={entry.time} onChange={v => updateROS(entry.id, "time", v)} fontSize={10} color={isS ? "#ff6b4a" : "var(--textMuted)"} placeholder="Time" />
                             <EditableText value={entry.item} onChange={v => updateROS(entry.id, "item", v)} fontSize={11} color={isS ? "#ff6b4a" : "var(--textSub)"} fontWeight={isS ? 700 : 500} placeholder="Item..." />
-                            <Dropdown value={entry.dept} options={DEPT_OPTIONS} onChange={v => updateROS(entry.id, "dept", v)} width="100%" />
+                            <Dropdown value={entry.dept} options={DEPT_OPTIONS} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
                             <MultiDropdown values={entry.vendors} options={vendors.map(v => v.id)} onChange={v => updateROS(entry.id, "vendors", v)} colorMap={Object.fromEntries(vendors.map(v => [v.id, DEPT_COLORS[v.deptId] || "var(--textMuted)"]))} renderLabel={id => { const v = vendors.find(x => x.id === id); return v ? v.name.split(" ")[0] : id; }} />
                             <EditableText value={entry.location} onChange={v => updateROS(entry.id, "location", v)} fontSize={10} color="var(--textMuted)" placeholder="Location" />
-                            <EditableText value={entry.contact} onChange={v => updateROS(entry.id, "contact", v)} fontSize={10} color="var(--textMuted)" placeholder="Contact" />
-                            <Dropdown value={entry.owner || "Select..."} options={peopleOptions} onChange={v => updateROS(entry.id, "owner", v)} width="100%" />
+                            <Dropdown value={entry.contact} options={eventContactNames} onChange={v => updateROS(entry.id, "contact", v)} width="100%" allowBlank blankLabel="—" />
+                            <Dropdown value={entry.owner} options={eventContactNames} onChange={v => updateROS(entry.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                             <EditableText value={entry.note} onChange={v => updateROS(entry.id, "note", v)} fontSize={10} color="var(--textFaint)" placeholder="Notes..." />
                             <button onClick={() => setROS(p => p.filter(r => r.id !== entry.id))} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 12 }}>×</button>
                           </div>
@@ -1746,7 +1824,8 @@ export default function Dashboard({ user, onLogout }) {
                       })}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -1840,7 +1919,7 @@ export default function Dashboard({ user, onLogout }) {
                   {driveResults && driveResults.length > 0 && (
                     <div style={{ background: "var(--bgInput)", border: "1px solid #dba94e25", borderTop: "none", borderRadius: "0 0 10px 10px", maxHeight: 320, overflowY: "auto", animation: "fadeUp 0.15s ease" }}>
                       <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--borderSub)" }}>
-                        <span style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.5 }}>GOOGLE DRIVE — {driveResults.length} vendor{driveResults.length !== 1 ? "s" : ""} found</span>
+                        <span style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.5 }}>GOOGLE DRIVE — {driveResults.length} result{driveResults.length !== 1 ? "s" : ""}</span>
                       </div>
                       {driveResults.map((dv, di) => {
                         const docKeys = ["coi", "w9", "banking", "contract", "invoice"];
@@ -1851,20 +1930,24 @@ export default function Dashboard({ user, onLogout }) {
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{dv.name}</span>
-                                <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#dba94e15", color: "#dba94e", border: "1px solid #dba94e25", fontWeight: 600 }}>{dv.type}</span>
+                                <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#dba94e15", color: "#dba94e", border: "1px solid #dba94e25", fontWeight: 600 }}>{dv.fileCount || 0} file{dv.fileCount !== 1 ? "s" : ""}</span>
                                 {alreadyAdded && <span style={{ fontSize: 7, padding: "1px 5px", borderRadius: 3, background: "#4ecb7115", color: "#4ecb71", fontWeight: 700 }}>ADDED</span>}
                               </div>
-                              <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 4 }}>{dv.contact} · {dv.email}</div>
+                              {dv.files && dv.files.length > 0 && (
+                                <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 4 }}>
+                                  {dv.files.slice(0, 3).map(f => f.name).join(", ")}{dv.files.length > 3 ? ` +${dv.files.length - 3} more` : ""}
+                                </div>
+                              )}
                               <div style={{ display: "flex", gap: 4 }}>
                                 {docKeys.map(k => (
-                                  <span key={k} title={dv.drive[k]?.found ? `📁 ${dv.drive[k].folder}/${dv.drive[k].file}` : `Not found in Drive`} style={{ fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, background: dv.drive[k]?.found ? "#4ecb7110" : "transparent", color: dv.drive[k]?.found ? "#4ecb71" : "var(--borderActive)" }}>
+                                  <span key={k} title={dv.drive[k]?.found ? `Found: ${dv.drive[k].file}` : `Not found in Drive`} style={{ fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, background: dv.drive[k]?.found ? "#4ecb7110" : "transparent", color: dv.drive[k]?.found ? "#4ecb71" : "var(--borderActive)" }}>
                                     {dv.drive[k]?.found ? "✓" : "·"} {k.toUpperCase()}
                                   </span>
                                 ))}
                               </div>
                             </div>
                             <button onClick={(e) => { e.stopPropagation(); importFromDrive(dv); }} disabled={alreadyAdded} style={{ padding: "6px 12px", background: alreadyAdded ? "var(--bgCard)" : "#dba94e15", border: `1px solid ${alreadyAdded ? "var(--borderSub)" : "#dba94e30"}`, borderRadius: 6, color: alreadyAdded ? "var(--textGhost)" : "#dba94e", cursor: alreadyAdded ? "default" : "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>
-                              {alreadyAdded ? "Added" : `Import ${found}/5`}
+                              {alreadyAdded ? "Added" : `Import`}
                             </button>
                           </div>
                         );
@@ -1886,15 +1969,33 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
                     <span style={{ fontSize: 14, fontWeight: 600 }}>{vendors.length} Contractors / Vendors</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}><ProgressBar pct={(compDone / compTotal) * 100} h={6} /><span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "var(--textMuted)", minWidth: 48 }}>{compDone}/{compTotal}</span></div>
+                    {vendors.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 6 }}><ProgressBar pct={compTotal > 0 ? (compDone / compTotal) * 100 : 0} h={6} /><span style={{ fontSize: 11, fontFamily: "'JetBrains Mono', monospace", color: "var(--textMuted)", minWidth: 48 }}>{compDone}/{compTotal}</span></div>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ fontSize: 11, color: "var(--textFaint)" }}>Drop files onto boxes · auto-saves to Drive</div>
+                    {/* Multi-select controls */}
+                    {vendors.length > 0 && (
+                      <button onClick={() => {
+                        if (selectedVendorIds.size === vendors.length) setSelectedVendorIds(new Set());
+                        else setSelectedVendorIds(new Set(vendors.map(v => v.id)));
+                      }} style={{ padding: "6px 12px", background: selectedVendorIds.size > 0 ? "#3da5db10" : "var(--bgCard)", border: `1px solid ${selectedVendorIds.size > 0 ? "#3da5db30" : "var(--borderSub)"}`, borderRadius: 6, color: selectedVendorIds.size > 0 ? "#3da5db" : "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>
+                        {selectedVendorIds.size === vendors.length ? "Deselect All" : selectedVendorIds.size > 0 ? `${selectedVendorIds.size} Selected` : "Select"}
+                      </button>
+                    )}
+                    {selectedVendorIds.size > 0 && (
+                      <button onClick={() => {
+                        if (confirm(`Delete ${selectedVendorIds.size} vendor${selectedVendorIds.size > 1 ? "s" : ""}? This cannot be undone.`)) {
+                          setVendors(prev => prev.filter(v => !selectedVendorIds.has(v.id)));
+                          setSelectedVendorIds(new Set());
+                        }
+                      }} style={{ padding: "6px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 6, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        🗑 Delete {selectedVendorIds.size}
+                      </button>
+                    )}
                     <button onClick={() => { setVendorForm({ ...emptyVendorForm }); setShowAddVendor(true); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14 }}>+</span> Add Vendor
                     </button>
                     <button onClick={() => {
-                      const link = `${window.location.origin}/vendor-intake?project=${encodeURIComponent("Adaptive")}&token=${Math.random().toString(36).substr(2, 12)}`;
+                      const link = `${window.location.origin}/vendor-intake?project=${encodeURIComponent(project.name || "Adaptive")}&token=${Math.random().toString(36).substr(2, 12)}`;
                       navigator.clipboard.writeText(link).then(() => { setVendorLinkCopied(true); setTimeout(() => setVendorLinkCopied(false), 2500); });
                     }} style={{ padding: "7px 16px", background: vendorLinkCopied ? "#4ecb7115" : "#3da5db15", border: `1px solid ${vendorLinkCopied ? "#4ecb7130" : "#3da5db30"}`, borderRadius: 7, color: vendorLinkCopied ? "#4ecb71" : "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, transition: "all 0.2s" }}>
                       <span style={{ fontSize: 13 }}>{vendorLinkCopied ? "✓" : "🔗"}</span> {vendorLinkCopied ? "Link Copied!" : "Vendor Intake Link"}
@@ -1903,12 +2004,25 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
 
                 <div style={{ display: "grid", gap: 8 }}>
+                  {vendors.length === 0 && (
+                    <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--textFaint)", fontSize: 13 }}>
+                      <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.5 }}>⊕</div>
+                      <div style={{ fontWeight: 600, marginBottom: 6 }}>No vendors for this project yet</div>
+                      <div style={{ fontSize: 11, color: "var(--textGhost)" }}>Search Google Drive above or click "+ Add Vendor" to get started</div>
+                    </div>
+                  )}
                   {vendors.map((v, vi) => {
                     const done = Object.values(v.compliance).filter(c => c.done).length;
                     const isExp = expandedVendor === v.id;
+                    const isSelected = selectedVendorIds.has(v.id);
                     return (
-                      <div key={v.id} style={{ background: "var(--bgInput)", border: done === 5 ? "1px solid var(--borderSub)" : "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden", animation: `fadeUp 0.25s ease ${vi * 0.04}s both` }}>
-                        <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", gap: 16 }}>
+                      <div key={v.id} style={{ background: "var(--bgInput)", border: isSelected ? "1px solid #3da5db40" : "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden", animation: `fadeUp 0.25s ease ${vi * 0.04}s both`, transition: "border-color 0.15s" }}>
+                        <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", gap: 12 }}>
+                          {/* Checkbox */}
+                          <div onClick={(e) => { e.stopPropagation(); setSelectedVendorIds(prev => { const next = new Set(prev); if (next.has(v.id)) next.delete(v.id); else next.add(v.id); return next; }); }}
+                            style={{ width: 20, height: 20, borderRadius: 4, border: `1.5px solid ${isSelected ? "#3da5db" : "var(--borderActive)"}`, background: isSelected ? "#3da5db" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.15s", flexShrink: 0 }}>
+                            {isSelected && <span style={{ color: "#fff", fontSize: 11, fontWeight: 700, lineHeight: 1 }}>✓</span>}
+                          </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                               <span style={{ fontSize: 15, fontWeight: 700 }}>{v.name}</span>
@@ -1936,7 +2050,7 @@ export default function Dashboard({ user, onLogout }) {
                                 const info = v.compliance[ck.key];
                                 const dp = `${ck.drivePrefix}/${v.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim()}/`;
                                 return (
-                                  <div key={ck.key} onClick={() => { if (info.done) setDocPreview({ vendorName: v.name, docType: ck.fullLabel, fileName: info.file || "Document", date: info.date, path: dp }); }} style={{ background: info.done ? "#4ecb7108" : "#e8545408", border: `1px solid ${info.done ? "#4ecb7130" : "#e8545420"}`, borderRadius: 8, padding: 12, cursor: info.done ? "pointer" : "default", transition: "border-color 0.2s" }}>
+                                  <div key={ck.key} onClick={() => { if (info.done) setDocPreview({ vendorName: v.name, docType: ck.fullLabel, fileName: info.file || "Document", date: info.date, path: dp, link: info.link || null }); }} style={{ background: info.done ? "#4ecb7108" : "#e8545408", border: `1px solid ${info.done ? "#4ecb7130" : "#e8545420"}`, borderRadius: 8, padding: 12, cursor: info.done ? "pointer" : "default", transition: "border-color 0.2s" }}>
                                     <div style={{ fontSize: 10, fontWeight: 700, color: info.done ? "#4ecb71" : "#e85454", letterSpacing: 0.5, marginBottom: 6 }}>{ck.fullLabel}</div>
                                     {info.done ? <><div style={{ fontSize: 11, color: "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}><span>📄</span> {info.file || "Received"}</div><div style={{ fontSize: 9, color: "var(--textFaint)" }}>Uploaded {info.date}</div><div style={{ fontSize: 8, color: "#3da5db", marginTop: 4 }}>Click to preview →</div></> : <div style={{ fontSize: 11, color: "#6a4a4a" }}>Not received — drop above</div>}
                                     <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>📁 .../{dp.split("/").slice(-3).join("/")}</div>
@@ -2424,8 +2538,8 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 3, marginLeft: 28 }}>{docPreview.docType} · {docPreview.vendorName}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button style={{ padding: "6px 14px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
-                  <span>↗</span> Open in Drive
+                <button onClick={() => { if (docPreview.link) window.open(docPreview.link, '_blank'); }} style={{ padding: "6px 14px", background: docPreview.link ? "#3da5db15" : "var(--bgCard)", border: `1px solid ${docPreview.link ? "#3da5db30" : "var(--borderSub)"}`, borderRadius: 6, color: docPreview.link ? "#3da5db" : "var(--textGhost)", cursor: docPreview.link ? "pointer" : "default", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                  <span>↗</span> {docPreview.link ? "Open in Drive" : "Local Upload"}
                 </button>
                 <button onClick={() => setDocPreview(null)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
               </div>
@@ -2433,87 +2547,89 @@ export default function Dashboard({ user, onLogout }) {
 
             {/* Document preview body */}
             <div style={{ flex: 1, padding: 24, overflowY: "auto" }}>
-              {/* Simulated PDF preview */}
-              <div style={{ background: "#fafafa", borderRadius: 8, minHeight: 480, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                {/* Page header area */}
-                <div style={{ padding: "32px 40px 20px", borderBottom: "1px solid #e0e0e0" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: "#333", fontFamily: "Georgia, serif" }}>{docPreview.docType}</div>
-                      <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{docPreview.vendorName}</div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 9, color: "#666", fontWeight: 600, letterSpacing: 1 }}>DOCUMENT ID</div>
-                      <div style={{ fontSize: 11, color: "#888", fontFamily: "'JetBrains Mono', monospace" }}>DOC-{Math.random().toString(36).substr(2, 8).toUpperCase()}</div>
-                    </div>
+              {docPreview.link ? (
+                /* Real Drive file — embed preview */
+                <div style={{ background: "#fafafa", borderRadius: 8, minHeight: 480, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <iframe
+                    src={docPreview.link.replace(/\/view.*$/, '/preview')}
+                    style={{ width: "100%", flex: 1, minHeight: 480, border: "none", borderRadius: 8 }}
+                    title={docPreview.fileName}
+                    allow="autoplay"
+                  />
+                  <div style={{ padding: "12px 20px", borderTop: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8f8f8" }}>
+                    <span style={{ fontSize: 10, color: "#666" }}>📁 Google Drive · {docPreview.vendorName}</span>
+                    <span onClick={() => window.open(docPreview.link, '_blank')} style={{ fontSize: 10, color: "#3da5db", cursor: "pointer", fontWeight: 600 }}>Open full file ↗</span>
                   </div>
                 </div>
-
-                {/* Simulated content */}
-                <div style={{ padding: "24px 40px", flex: 1 }}>
-                  {docPreview.docType.includes("W9") && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>REQUEST FOR TAXPAYER IDENTIFICATION NUMBER AND CERTIFICATION</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-                        {[["Name", docPreview.vendorName], ["Business Name", docPreview.vendorName], ["Federal Tax Classification", "LLC"], ["Address", "On file"]].map(([label, val]) => (
-                          <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                            <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                            <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
-                          </div>
-                        ))}
+              ) : (
+                /* Simulated local preview */
+                <div style={{ background: "#fafafa", borderRadius: 8, minHeight: 480, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <div style={{ padding: "32px 40px 20px", borderBottom: "1px solid #e0e0e0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: "#333", fontFamily: "Georgia, serif" }}>{docPreview.docType}</div>
+                        <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{docPreview.vendorName}</div>
                       </div>
-                      <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 6, marginBottom: 16 }}>
-                        <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>Taxpayer Identification Number (TIN)</div>
-                        <div style={{ fontSize: 12, color: "#333" }}>••-•••••{Math.floor(Math.random() * 9000 + 1000)}</div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 9, color: "#666", fontWeight: 600, letterSpacing: 1 }}>DOCUMENT</div>
+                        <div style={{ fontSize: 11, color: "#888", fontFamily: "'JetBrains Mono', monospace" }}>{docPreview.fileName}</div>
                       </div>
-                      <div style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                        <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>Signature</div>
-                        <div style={{ fontSize: 14, color: "#333", fontFamily: "'Brush Script MT', cursive, serif", fontStyle: "italic" }}>{docPreview.vendorName.split(" ")[0]} ____</div>
-                      </div>
-                    </>
-                  )}
-                  {docPreview.docType.includes("COI") && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>CERTIFICATE OF LIABILITY INSURANCE</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-                        {[["Insured", docPreview.vendorName], ["Producer", "Insurance Agency LLC"], ["Policy Number", `GL-${Math.floor(Math.random() * 900000 + 100000)}`], ["Effective Date", "01/01/2026"], ["Expiration Date", "01/01/2027"], ["General Aggregate", "$2,000,000"], ["Each Occurrence", "$1,000,000"], ["Workers Comp", "Statutory Limits"]].map(([label, val]) => (
-                          <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                            <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                            <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-                  {!docPreview.docType.includes("W9") && !docPreview.docType.includes("COI") && (
-                    <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>{docPreview.docType.toUpperCase()}</div>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-                        {[["Vendor", docPreview.vendorName], ["Document Type", docPreview.docType], ["Date Received", docPreview.date], ["Status", "Active"]].map(([label, val]) => (
-                          <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                            <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                            <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
-                          </div>
-                        ))}
-                      </div>
-                      {/* Simulated body text blocks */}
-                      {[1,2,3].map(i => (
-                        <div key={i} style={{ marginBottom: 12 }}>
-                          {[...Array(3 + Math.floor(Math.random()*2))].map((_, j) => (
-                            <div key={j} style={{ height: 8, background: `#e0e0e0`, borderRadius: 3, marginBottom: 5, width: `${60 + Math.random()*38}%` }} />
+                    </div>
+                  </div>
+                  <div style={{ padding: "24px 40px", flex: 1 }}>
+                    {docPreview.docType.includes("W9") && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>REQUEST FOR TAXPAYER IDENTIFICATION NUMBER AND CERTIFICATION</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+                          {[["Name", docPreview.vendorName], ["Business Name", docPreview.vendorName], ["Federal Tax Classification", "LLC"], ["Address", "On file"]].map(([label, val]) => (
+                            <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
+                              <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                              <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
+                            </div>
                           ))}
                         </div>
-                      ))}
-                    </>
-                  )}
+                      </>
+                    )}
+                    {docPreview.docType.includes("COI") && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>CERTIFICATE OF LIABILITY INSURANCE</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+                          {[["Insured", docPreview.vendorName], ["Producer", "Insurance Agency LLC"], ["Effective", "01/01/2026"], ["Expires", "01/01/2027"], ["General Aggregate", "$2,000,000"], ["Each Occurrence", "$1,000,000"]].map(([label, val]) => (
+                            <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
+                              <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                              <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {!docPreview.docType.includes("W9") && !docPreview.docType.includes("COI") && (
+                      <>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>{docPreview.docType.toUpperCase()}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+                          {[["Vendor", docPreview.vendorName], ["Document Type", docPreview.docType], ["Date Received", docPreview.date], ["Status", "Active"]].map(([label, val]) => (
+                            <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
+                              <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
+                              <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
+                            </div>
+                          ))}
+                        </div>
+                        {[1,2,3].map(i => (
+                          <div key={i} style={{ marginBottom: 12 }}>
+                            {[...Array(3)].map((_, j) => (
+                              <div key={j} style={{ height: 8, background: "#e0e0e0", borderRadius: 3, marginBottom: 5, width: `${60 + Math.random()*38}%` }} />
+                            ))}
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                  <div style={{ padding: "12px 40px", borderTop: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 9, color: "#666" }}>Uploaded {docPreview.date}</span>
+                    <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>📁 {docPreview.path}</span>
+                  </div>
                 </div>
-
-                {/* Footer */}
-                <div style={{ padding: "12px 40px", borderTop: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 9, color: "#666" }}>Uploaded {docPreview.date}</span>
-                  <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>→ {docPreview.path}{docPreview.fileName}</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Bottom bar */}
