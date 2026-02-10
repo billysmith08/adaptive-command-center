@@ -1446,18 +1446,18 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* SIDEBAR */}
         {sidebarOpen && (
-        <div style={{ width: sidebarW, minWidth: 220, maxWidth: 440, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bgSub)", position: "relative", flexShrink: 0, transition: "background 0.3s" }}>
+        <div style={{ width: sidebarW, minWidth: 220, maxWidth: 440, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bgSub)", position: "relative", flexShrink: 0, transition: "background 0.3s", overflow: "hidden" }}>
           {/* Resize handle */}
           <div onMouseDown={(e) => {
-            e.preventDefault();
+            e.preventDefault(); e.stopPropagation();
             const startX = e.clientX;
             const startW = sidebarW;
-            const onMove = (ev) => { const newW = Math.max(220, Math.min(440, startW + ev.clientX - startX)); setSidebarW(newW); };
+            const onMove = (ev) => { ev.preventDefault(); const newW = Math.max(220, Math.min(440, startW + ev.clientX - startX)); setSidebarW(newW); };
             const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
             document.addEventListener("mousemove", onMove);
             document.addEventListener("mouseup", onUp);
-          }} style={{ position: "absolute", top: 0, right: -3, bottom: 0, width: 6, cursor: "col-resize", zIndex: 10 }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a30"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} />
-          <div style={{ padding: "14px 12px 10px" }}>
+          }} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 8, cursor: "col-resize", zIndex: 20, background: "transparent" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a30"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} />
+          <div style={{ padding: "14px 12px 10px", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
               <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'" }} />
               <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>
@@ -1471,30 +1471,34 @@ export default function Dashboard({ user, onLogout }) {
               </button>
             )}
           </div>
-          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 6px 12px" }}>
+          <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 6px 12px", minHeight: 0 }}>
             {filteredProjects.map((p, i) => {
               const active = p.id === activeProjectId;
               const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
               const pct = p.budget > 0 ? (p.spent / p.budget) * 100 : 0;
               const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
               const swipe = swipeState[p.id] || { offsetX: 0 };
-              const swipeThreshold = 80;
               return (
                 <div key={p.id} style={{ position: "relative", overflow: "hidden", marginBottom: 2, borderRadius: 8 }}>
-                  {/* Swipe action backgrounds */}
+                  {/* Swipe action buttons revealed behind card */}
                   {isAdmin && swipe.offsetX < -10 && (
-                    <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: Math.abs(swipe.offsetX), display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2, paddingRight: 8, borderRadius: 8 }}>
-                      <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "archive", name: p.name }); setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); }} style={{ padding: "4px 8px", background: "#9b6dff20", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", fontSize: 9, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{p.archived ? "↩" : "📦"}</button>
-                      <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "delete", name: p.name }); setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); }} style={{ padding: "4px 8px", background: "#e8545420", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", fontSize: 9, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>🗑</button>
+                    <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingRight: 8, borderRadius: 8, background: "var(--bgSub)" }}>
+                      <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "archive", name: p.name }); setSwipeState({}); }} style={{ padding: "6px 10px", background: "#9b6dff20", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{p.archived ? "↩ Restore" : "📦 Archive"}</button>
+                      <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "delete", name: p.name }); setSwipeState({}); }} style={{ padding: "6px 10px", background: "#e8545420", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>🗑 Delete</button>
                     </div>
                   )}
                   <div
-                    onClick={() => { if (Math.abs(swipe.offsetX) < 10) { setActiveProjectId(p.id); if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" || activeTab === "macro") setActiveTab("overview"); } }}
-                    onTouchStart={(e) => { if (!isAdmin) return; const touch = e.touches[0]; setSwipeState(prev => ({ ...prev, [p.id]: { startX: touch.clientX, offsetX: 0 } })); }}
-                    onTouchMove={(e) => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw || sw.startX === undefined) return; const diff = e.touches[0].clientX - sw.startX; setSwipeState(prev => ({ ...prev, [p.id]: { ...prev[p.id], offsetX: Math.min(0, diff) } })); }}
-                    onTouchEnd={() => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; if (sw.offsetX < -swipeThreshold) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -120 } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); } }}
-                    onMouseDown={(e) => { if (!isAdmin || e.button !== 0) return; const startX = e.clientX; let currentOffset = 0; const onMove = (ev) => { const diff = ev.clientX - startX; currentOffset = Math.min(0, diff); setSwipeState(prev => ({ ...prev, [p.id]: { startX, offsetX: currentOffset } })); }; const onUp = () => { if (currentOffset < -swipeThreshold) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -120 } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); } document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); }; document.addEventListener("mousemove", onMove); document.addEventListener("mouseup", onUp); }}
-                    style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.2s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1 }}
+                    onTouchStart={(e) => { if (!isAdmin) return; setSwipeState(prev => ({ ...prev, [p.id]: { startX: e.touches[0].clientX, offsetX: 0, swiping: false } })); }}
+                    onTouchMove={(e) => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; const diff = e.touches[0].clientX - sw.startX; if (Math.abs(diff) > 8) { setSwipeState(prev => ({ ...prev, [p.id]: { ...prev[p.id], offsetX: Math.max(-160, Math.min(0, diff)), swiping: true } })); } }}
+                    onTouchEnd={() => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; if (sw.offsetX < -60) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -160, swiping: false } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0, swiping: false } })); } }}
+                    onClick={() => {
+                      const sw = swipeState[p.id];
+                      // If swiped open, close on click
+                      if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
+                      setActiveProjectId(p.id);
+                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" || activeTab === "macro") setActiveTab("overview");
+                    }}
+                    style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
                       <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>{p.client}{p.projectType && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: ptc + "15", color: ptc, border: `1px solid ${ptc}25`, fontWeight: 700, letterSpacing: 0.5 }}>{p.projectType.toUpperCase()}</span>}</span>
@@ -1516,7 +1520,7 @@ export default function Dashboard({ user, onLogout }) {
               );
             })}
           </div>
-          <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
+          <div style={{ padding: 12, borderTop: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               <div style={{ background: "var(--bgCard)", borderRadius: 7, padding: "8px 10px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>COMPLIANCE</div><div style={{ fontSize: 18, fontWeight: 700, color: compTotal > 0 && compDone / compTotal > 0.8 ? "#4ecb71" : "#dba94e", fontFamily: "'JetBrains Mono', monospace" }}>{compTotal > 0 ? Math.round(compDone / compTotal * 100) : 0}%</div></div>
               <div style={{ background: "var(--bgCard)", borderRadius: 7, padding: "8px 10px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>CONTRACTORS</div><div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{vendors.length}</div></div>
