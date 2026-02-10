@@ -949,6 +949,28 @@ export default function Dashboard({ user, onLogout }) {
     }
     return true;
   });
+  // Extract Google Drive folder/file ID from various URL formats
+  const extractDriveId = (input) => {
+    if (!input) return "";
+    const s = input.trim();
+    // drive.google.com/drive/folders/FOLDER_ID
+    const folderMatch = s.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch) return folderMatch[1];
+    // drive.google.com/open?id=ID
+    const openMatch = s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (openMatch) return openMatch[1];
+    // docs.google.com/document/d/ID or docs.google.com/spreadsheets/d/ID
+    const docMatch = s.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    if (docMatch) return docMatch[1];
+    // drive.google.com/file/d/ID
+    const fileMatch = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (fileMatch) return fileMatch[1];
+    // If it looks like a raw ID (no slashes, no dots), return as-is
+    if (/^[a-zA-Z0-9_-]+$/.test(s)) return s;
+    // Fallback: return as-is
+    return s;
+  };
+
   const toggleDarkMode = () => setDarkMode(m => { const next = !m; localStorage.setItem('acc-theme', next ? 'dark' : 'light'); return next; });
   const T = THEMES[darkMode ? "dark" : "light"];
   const [activeProjectId, setActiveProjectId] = useState("p1");
@@ -1234,7 +1256,9 @@ export default function Dashboard({ user, onLogout }) {
       setDriveLoading(true);
       setDriveError(null);
       try {
-        const res = await fetch(`/api/drive/scan?search=${encodeURIComponent(q.trim())}`);
+        const folderIdList = (appSettings.driveConnections || []).map(c => c.folderId).filter(Boolean).join(',');
+        const url = `/api/drive/scan?search=${encodeURIComponent(q.trim())}${folderIdList ? `&folderIds=${encodeURIComponent(folderIdList)}` : ''}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error(`Drive search failed: ${res.status}`);
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -2863,7 +2887,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div key={i} style={{ padding: "10px 12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 6 }}>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
                           <input value={conn.name} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, name: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Label (e.g. Vendors)" style={{ width: 120, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, outline: "none" }} />
-                          <input value={conn.folderId} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Paste Google Drive folder ID here" style={{ flex: 1, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                          <input value={conn.folderId} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} onPaste={(e) => { e.preventDefault(); const pasted = e.clipboardData.getData("text"); const id = extractDriveId(pasted); const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: id }; setAppSettings(updated); setSettingsDirty(true); }} onBlur={(e) => { const id = extractDriveId(e.target.value); if (id !== e.target.value) { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: id }; setAppSettings(updated); setSettingsDirty(true); } }} placeholder="Paste Google Drive folder URL or ID" style={{ flex: 1, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
                           {i > 0 && <button onClick={() => { const updated = { ...appSettings, driveConnections: appSettings.driveConnections.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer" }}>✕</button>}
                         </div>
                         <div style={{ fontSize: 9, color: "var(--textGhost)" }}>From URL: drive.google.com/drive/folders/<strong style={{ color: "var(--textMuted)" }}>THIS_PART_IS_THE_ID</strong></div>
@@ -3224,118 +3248,88 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ DOCUMENT PREVIEW MODAL ═══ */}
       {docPreview && (
         <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(6px)" }} onClick={e => { if (e.target === e.currentTarget) setDocPreview(null); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 720, maxWidth: "90vw", maxHeight: "90vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 800, maxWidth: "92vw", height: "88vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
             {/* Header */}
-            <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+            <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 16 }}>📄</span>
-                  <span style={{ fontSize: 15, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{docPreview.fileName}</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, fontFamily: "'Instrument Sans'", color: "var(--text)" }}>{docPreview.fileName}</span>
                 </div>
-                <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 3, marginLeft: 28 }}>{docPreview.docType} · {docPreview.vendorName}</div>
+                <div style={{ fontSize: 10, color: "var(--textFaint)", marginTop: 2, marginLeft: 28 }}>{docPreview.docType} · {docPreview.vendorName}</div>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button onClick={() => { if (docPreview.link) window.open(docPreview.link, '_blank'); }} style={{ padding: "6px 14px", background: docPreview.link ? "#3da5db15" : "var(--bgCard)", border: `1px solid ${docPreview.link ? "#3da5db30" : "var(--borderSub)"}`, borderRadius: 6, color: docPreview.link ? "#3da5db" : "var(--textGhost)", cursor: docPreview.link ? "pointer" : "default", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
-                  <span>↗</span> {docPreview.link ? "Open in Drive" : "Local Upload"}
-                </button>
+                {docPreview.link && (
+                  <button onClick={() => window.open(docPreview.link, '_blank')} style={{ padding: "6px 14px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
+                    ↗ Open in Drive
+                  </button>
+                )}
                 <button onClick={() => setDocPreview(null)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
               </div>
             </div>
 
-            {/* Document preview body */}
-            <div style={{ flex: 1, padding: 24, overflowY: "auto" }}>
+            {/* Preview body — full height */}
+            <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minHeight: 0 }}>
               {docPreview.link ? (
-                /* Real Drive file — embed preview */
-                <div style={{ background: "#fafafa", borderRadius: 8, minHeight: 480, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <iframe
-                    src={docPreview.link.replace(/\/view.*$/, '/preview')}
-                    style={{ width: "100%", flex: 1, minHeight: 480, border: "none", borderRadius: 8 }}
-                    title={docPreview.fileName}
-                    allow="autoplay"
-                  />
-                  <div style={{ padding: "12px 20px", borderTop: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8f8f8" }}>
-                    <span style={{ fontSize: 10, color: "#666" }}>📁 Google Drive · {docPreview.vendorName}</span>
-                    <span onClick={() => window.open(docPreview.link, '_blank')} style={{ fontSize: 10, color: "#3da5db", cursor: "pointer", fontWeight: 600 }}>Open full file ↗</span>
-                  </div>
-                </div>
+                /* Real Drive file — full iframe embed */
+                <iframe
+                  src={(() => {
+                    const link = docPreview.link;
+                    // Google Drive file links: extract file ID and use preview URL
+                    const fileIdMatch = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                    if (fileIdMatch) return `https://drive.google.com/file/d/${fileIdMatch[1]}/preview`;
+                    // Already a preview link
+                    if (link.includes('/preview')) return link;
+                    // Fallback: try replacing /view with /preview
+                    return link.replace(/\/view.*$/, '/preview');
+                  })()}
+                  style={{ width: "100%", flex: 1, border: "none" }}
+                  title={docPreview.fileName}
+                  allow="autoplay"
+                  sandbox="allow-scripts allow-same-origin allow-popups"
+                />
               ) : (
-                /* Simulated local preview */
-                <div style={{ background: "#fafafa", borderRadius: 8, minHeight: 480, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <div style={{ padding: "32px 40px 20px", borderBottom: "1px solid #e0e0e0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontSize: 20, fontWeight: 700, color: "#333", fontFamily: "Georgia, serif" }}>{docPreview.docType}</div>
-                        <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>{docPreview.vendorName}</div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 9, color: "#666", fontWeight: 600, letterSpacing: 1 }}>DOCUMENT</div>
-                        <div style={{ fontSize: 11, color: "#888", fontFamily: "'JetBrains Mono', monospace" }}>{docPreview.fileName}</div>
-                      </div>
+                /* No Drive link — show clear status, not a fake preview */
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, textAlign: "center" }}>
+                  <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>File Not Connected to Google Drive</div>
+                  <div style={{ fontSize: 12, color: "var(--textMuted)", maxWidth: 400, lineHeight: 1.6, marginBottom: 20 }}>
+                    This document is tracked locally but doesn't have a Google Drive link yet. To enable preview, upload the file to Google Drive and link it to this vendor.
+                  </div>
+                  <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 24px", maxWidth: 420, width: "100%" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "6px 12px", fontSize: 11, textAlign: "left" }}>
+                      <span style={{ color: "var(--textGhost)", fontWeight: 600 }}>File</span>
+                      <span style={{ color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{docPreview.fileName}</span>
+                      <span style={{ color: "var(--textGhost)", fontWeight: 600 }}>Type</span>
+                      <span style={{ color: "var(--textSub)" }}>{docPreview.docType}</span>
+                      <span style={{ color: "var(--textGhost)", fontWeight: 600 }}>Vendor</span>
+                      <span style={{ color: "var(--textSub)" }}>{docPreview.vendorName}</span>
+                      <span style={{ color: "var(--textGhost)", fontWeight: 600 }}>Date</span>
+                      <span style={{ color: "var(--textSub)" }}>{docPreview.date || "—"}</span>
+                      {docPreview.path && <>
+                        <span style={{ color: "var(--textGhost)", fontWeight: 600 }}>Path</span>
+                        <span style={{ color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, wordBreak: "break-all" }}>{docPreview.path}</span>
+                      </>}
                     </div>
                   </div>
-                  <div style={{ padding: "24px 40px", flex: 1 }}>
-                    {docPreview.docType.includes("W9") && (
-                      <>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>REQUEST FOR TAXPAYER IDENTIFICATION NUMBER AND CERTIFICATION</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-                          {[["Name", docPreview.vendorName], ["Business Name", docPreview.vendorName], ["Federal Tax Classification", "LLC"], ["Address", "On file"]].map(([label, val]) => (
-                            <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                              <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                              <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {docPreview.docType.includes("COI") && (
-                      <>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>CERTIFICATE OF LIABILITY INSURANCE</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-                          {[["Insured", docPreview.vendorName], ["Producer", "Insurance Agency LLC"], ["Effective", "01/01/2026"], ["Expires", "01/01/2027"], ["General Aggregate", "$2,000,000"], ["Each Occurrence", "$1,000,000"]].map(([label, val]) => (
-                            <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                              <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                              <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    {!docPreview.docType.includes("W9") && !docPreview.docType.includes("COI") && (
-                      <>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: "#333", marginBottom: 12, letterSpacing: 1 }}>{docPreview.docType.toUpperCase()}</div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-                          {[["Vendor", docPreview.vendorName], ["Document Type", docPreview.docType], ["Date Received", docPreview.date], ["Status", "Active"]].map(([label, val]) => (
-                            <div key={label} style={{ borderBottom: "1px solid #ccc", paddingBottom: 6 }}>
-                              <div style={{ fontSize: 8, color: "#666", fontWeight: 600, marginBottom: 2 }}>{label}</div>
-                              <div style={{ fontSize: 12, color: "#333" }}>{val}</div>
-                            </div>
-                          ))}
-                        </div>
-                        {[1,2,3].map(i => (
-                          <div key={i} style={{ marginBottom: 12 }}>
-                            {[...Array(3)].map((_, j) => (
-                              <div key={j} style={{ height: 8, background: "#e0e0e0", borderRadius: 3, marginBottom: 5, width: `${60 + Math.random()*38}%` }} />
-                            ))}
-                          </div>
-                        ))}
-                      </>
-                    )}
-                  </div>
-                  <div style={{ padding: "12px 40px", borderTop: "1px solid #e0e0e0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 9, color: "#666" }}>Uploaded {docPreview.date}</span>
-                    <span style={{ fontSize: 9, color: "#666", fontFamily: "'JetBrains Mono', monospace" }}>📁 {docPreview.path}</span>
+                  <div style={{ marginTop: 20, display: "flex", gap: 8 }}>
+                    <button onClick={() => {
+                      const v = vendors.find(vv => vv.name === docPreview.vendorName);
+                      if (v) {
+                        const linkUrl = prompt("Paste the Google Drive file URL:");
+                        if (linkUrl && linkUrl.trim()) {
+                          const compKey = COMP_KEYS.find(ck => ck.fullLabel === docPreview.docType);
+                          if (compKey && v.compliance?.[compKey.key]) {
+                            const updated = { ...v, compliance: { ...v.compliance, [compKey.key]: { ...v.compliance[compKey.key], link: linkUrl.trim() } } };
+                            setVendors(prev => prev.map(vv => vv.id === v.id ? updated : vv));
+                            setDocPreview(prev => ({ ...prev, link: linkUrl.trim() }));
+                          }
+                        }
+                      }
+                    }} style={{ padding: "10px 18px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 8, color: "#3da5db", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>🔗 Link Drive File</button>
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Bottom bar */}
-            <div style={{ padding: "12px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
-              <div style={{ display: "flex", gap: 8 }}>
-                <button style={{ padding: "6px 14px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 6, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete</button>
-                <button style={{ padding: "6px 14px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 6, color: "#dba94e", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🔄 Replace</button>
-              </div>
-              <button style={{ padding: "6px 14px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>⬇ Download</button>
             </div>
           </div>
         </div>

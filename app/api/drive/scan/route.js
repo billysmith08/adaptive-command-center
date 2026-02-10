@@ -13,89 +13,136 @@ function getDriveClient() {
   return google.drive({ version: 'v3', auth });
 }
 
+// Recursively get all subfolders of a folder
+async function getAllSubfolders(drive, parentId, depth = 0, maxDepth = 5) {
+  if (depth >= maxDepth) return [];
+  try {
+    const res = await drive.files.list({
+      q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed=false`,
+      fields: 'files(id, name)',
+      pageSize: 100,
+    });
+    const folders = res.data.files || [];
+    const allFolders = [...folders];
+    for (const f of folders) {
+      const subFolders = await getAllSubfolders(drive, f.id, depth + 1, maxDepth);
+      allFolders.push(...subFolders);
+    }
+    return allFolders;
+  } catch (e) {
+    return [];
+  }
+}
+
 export async function GET(request) {
   try {
     const drive = getDriveClient();
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
+    const folderIds = searchParams.get('folderIds'); // comma-separated folder IDs to scope search
 
     if (!search || !search.trim()) {
       return NextResponse.json({ vendors: [], message: 'Provide a search query' });
     }
 
     const q = search.trim();
+    const escapedQ = q.replace(/'/g, "\\'");
+    let allFiles = [];
+    const seenIds = new Set();
 
-    // Search entire Drive for files/folders matching the vendor name
-    // Search by name and fullText across all shared files
-    const nameQuery = `name contains '${q.replace(/'/g, "\\'")}' and trashed=false`;
-    const fullTextQuery = `fullText contains '${q.replace(/'/g, "\\'")}' and trashed=false`;
+    if (folderIds) {
+      // Scoped search: search within specified folders AND all their subfolders
+      const ids = folderIds.split(',').map(s => s.trim()).filter(Boolean);
+      
+      for (const folderId of ids) {
+        try {
+          // Get all subfolders recursively
+          const subfolders = await getAllSubfolders(drive, folderId);
+          const allFolderIds = [folderId, ...subfolders.map(f => f.id)];
+          
+          // Search in each folder for matching files
+          for (const fid of allFolderIds) {
+            try {
+              const res = await drive.files.list({
+                q: `'${fid}' in parents and name contains '${escapedQ}' and trashed=false`,
+                fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+                pageSize: 50,
+              });
+              for (const f of (res.data.files || [])) {
+                if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
+              }
+            } catch (e) { /* skip inaccessible folders */ }
+          }
+        } catch (e) { /* skip inaccessible root folders */ }
+      }
+    }
 
-    const [nameResults, textResults] = await Promise.all([
-      drive.files.list({
+    // Also do unscoped search (catches files the service account can see anywhere)
+    const nameQuery = `name contains '${escapedQ}' and trashed=false`;
+    try {
+      const nameResults = await drive.files.list({
         q: nameQuery,
         fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
         orderBy: 'modifiedTime desc',
         pageSize: 50,
-      }),
-      drive.files.list({
+      });
+      for (const f of (nameResults.data.files || [])) {
+        if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
+      }
+    } catch (e) { /* ignore */ }
+
+    // Also try fullText search
+    try {
+      const fullTextQuery = `fullText contains '${escapedQ}' and trashed=false`;
+      const textResults = await drive.files.list({
         q: fullTextQuery,
         fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
-        orderBy: 'modifiedTime desc',
+        orderBy: 'relevance desc',
         pageSize: 30,
-      }),
-    ]);
-
-    // Merge and deduplicate
-    const allFiles = [...(nameResults.data.files || [])];
-    const seenIds = new Set(allFiles.map(f => f.id));
-    for (const f of (textResults.data.files || [])) {
-      if (!seenIds.has(f.id)) {
-        allFiles.push(f);
-        seenIds.add(f.id);
+      });
+      for (const f of (textResults.data.files || [])) {
+        if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
       }
+    } catch (e) { /* ignore */ }
+
+    // Try to resolve parent folder names for context
+    const parentIds = new Set();
+    for (const f of allFiles) {
+      if (f.parents) f.parents.forEach(pid => parentIds.add(pid));
+    }
+    const parentNames = {};
+    for (const pid of parentIds) {
+      try {
+        const pf = await drive.files.get({ fileId: pid, fields: 'name' });
+        parentNames[pid] = pf.data.name;
+      } catch (e) { /* ignore */ }
     }
 
-    // Group files by likely vendor name
-    // For folders: the folder name itself is the vendor
-    // For files: try to get parent folder name
+    // Group files by vendor name
     const vendorMap = {};
-    const folderIds = new Set();
 
-    // First pass: identify vendor folders
     for (const f of allFiles) {
       if (f.mimeType === 'application/vnd.google-apps.folder') {
-        folderIds.add(f.id);
         if (!vendorMap[f.name]) {
-          vendorMap[f.name] = {
-            name: f.name,
-            folderId: f.id,
-            files: [],
-            hasCoi: false,
-            hasW9: false,
-          };
+          vendorMap[f.name] = { name: f.name, folderId: f.id, folderLink: f.webViewLink, files: [], hasCoi: false, hasW9: false, hasNda: false, hasContract: false };
         }
+        continue;
       }
-    }
-
-    // Second pass: categorize files
-    for (const f of allFiles) {
-      if (f.mimeType === 'application/vnd.google-apps.folder') continue;
 
       const fileName = f.name.toLowerCase();
-      // Check if file is a COI or W9 based on filename
-      const isCoi = fileName.includes('coi') || fileName.includes('certificate of insurance') || fileName.includes('insurance');
+      const isCoi = fileName.includes('coi') || fileName.includes('certificate of insurance') || fileName.includes('insurance') || fileName.includes('comp');
       const isW9 = fileName.includes('w9') || fileName.includes('w-9');
+      const isNda = fileName.includes('nda') || fileName.includes('non-disclosure');
+      const isContract = fileName.includes('contract') || fileName.includes('agreement') || fileName.includes('sow');
 
-      // Try to associate with a vendor name from the search
-      // Use the search term as the vendor grouping key
-      const vendorKey = q;
+      // Determine vendor name from parent folder or search term
+      let vendorKey = q;
+      if (f.parents && f.parents[0] && parentNames[f.parents[0]]) {
+        vendorKey = parentNames[f.parents[0]];
+      }
+
       if (!vendorMap[vendorKey]) {
-        vendorMap[vendorKey] = {
-          name: q,
-          files: [],
-          hasCoi: false,
-          hasW9: false,
-        };
+        vendorMap[vendorKey] = { name: vendorKey, files: [], hasCoi: false, hasW9: false, hasNda: false, hasContract: false };
       }
 
       vendorMap[vendorKey].files.push({
@@ -105,18 +152,22 @@ export async function GET(request) {
         modified: f.modifiedTime,
         link: f.webViewLink,
         size: f.size,
-        isCoi,
-        isW9,
+        parentFolder: f.parents?.[0] ? parentNames[f.parents[0]] : null,
+        isCoi, isW9, isNda, isContract,
       });
 
       if (isCoi) vendorMap[vendorKey].hasCoi = true;
       if (isW9) vendorMap[vendorKey].hasW9 = true;
+      if (isNda) vendorMap[vendorKey].hasNda = true;
+      if (isContract) vendorMap[vendorKey].hasContract = true;
     }
 
-    // Convert to array and build drive compliance status
+    // Convert to array
     const vendors = Object.values(vendorMap).map(v => {
       const coiFile = v.files.find(f => f.isCoi);
       const w9File = v.files.find(f => f.isW9);
+      const ndaFile = v.files.find(f => f.isNda);
+      const contractFile = v.files.find(f => f.isContract);
 
       return {
         name: v.name,
@@ -125,13 +176,13 @@ export async function GET(request) {
         type: "Vendor",
         dept: "Production",
         fileCount: v.files.length,
-        files: v.files.slice(0, 10), // Return up to 10 files for preview
+        folderLink: v.folderLink || null,
+        files: v.files.slice(0, 15),
         drive: {
           coi: coiFile ? { found: true, file: coiFile.name, link: coiFile.link } : { found: false },
           w9: w9File ? { found: true, file: w9File.name, link: w9File.link } : { found: false },
-          banking: { found: false },
-          contract: { found: false },
-          invoice: { found: false },
+          nda: ndaFile ? { found: true, file: ndaFile.name, link: ndaFile.link } : { found: false },
+          contract: contractFile ? { found: true, file: contractFile.name, link: contractFile.link } : { found: false },
         },
       };
     });
@@ -140,6 +191,7 @@ export async function GET(request) {
       vendors,
       totalFiles: allFiles.length,
       query: q,
+      scopedFolders: folderIds ? folderIds.split(',').length : 0,
     });
   } catch (error) {
     console.error('Drive scan error:', error);
