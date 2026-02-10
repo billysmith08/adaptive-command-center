@@ -991,7 +991,9 @@ export default function Dashboard({ user, onLogout }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
   const [swipeState, setSwipeState] = useState({}); // { projectId: { startX, offsetX } }
+  const swipeDraggedRef = useRef(false); // true if a drag just completed, prevents click
   const [archiveConfirm, setArchiveConfirm] = useState(null); // { projectId, action: "archive"|"delete" }
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, projectId, projectName, archived }
   const isAdmin = user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -1391,7 +1393,7 @@ export default function Dashboard({ user, onLogout }) {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s" }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden" }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -1480,7 +1482,7 @@ export default function Dashboard({ user, onLogout }) {
               const swipe = swipeState[p.id] || { offsetX: 0 };
               return (
                 <div key={p.id} style={{ position: "relative", overflow: "hidden", marginBottom: 2, borderRadius: 8 }}>
-                  {/* Swipe action buttons revealed behind card */}
+                  {/* Swipe action buttons revealed behind card (touch swipe) */}
                   {isAdmin && swipe.offsetX < -10 && (
                     <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingRight: 8, borderRadius: 8, background: "var(--bgSub)" }}>
                       <button onClick={(e) => { e.stopPropagation(); setArchiveConfirm({ projectId: p.id, action: "archive", name: p.name }); setSwipeState({}); }} style={{ padding: "6px 10px", background: "#9b6dff20", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", fontSize: 10, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{p.archived ? "↩ Restore" : "📦 Archive"}</button>
@@ -1488,12 +1490,16 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                   )}
                   <div
-                    onTouchStart={(e) => { if (!isAdmin) return; setSwipeState(prev => ({ ...prev, [p.id]: { startX: e.touches[0].clientX, offsetX: 0, swiping: false } })); }}
-                    onTouchMove={(e) => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; const diff = e.touches[0].clientX - sw.startX; if (Math.abs(diff) > 8) { setSwipeState(prev => ({ ...prev, [p.id]: { ...prev[p.id], offsetX: Math.max(-160, Math.min(0, diff)), swiping: true } })); } }}
-                    onTouchEnd={() => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; if (sw.offsetX < -60) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -160, swiping: false } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0, swiping: false } })); } }}
+                    onTouchStart={(e) => { if (!isAdmin) return; setSwipeState(prev => ({ ...prev, [p.id]: { startX: e.touches[0].clientX, offsetX: 0 } })); }}
+                    onTouchMove={(e) => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw || sw.startX === undefined) return; const diff = e.touches[0].clientX - sw.startX; if (Math.abs(diff) > 8) { setSwipeState(prev => ({ ...prev, [p.id]: { ...prev[p.id], offsetX: Math.max(-160, Math.min(0, diff)) } })); } }}
+                    onTouchEnd={() => { if (!isAdmin) return; const sw = swipeState[p.id]; if (!sw) return; if (sw.offsetX < -60) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: -160 } })); } else { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); } }}
+                    onContextMenu={(e) => {
+                      if (!isAdmin) return;
+                      e.preventDefault();
+                      setContextMenu({ x: e.clientX, y: e.clientY, projectId: p.id, projectName: p.name, archived: !!p.archived });
+                    }}
                     onClick={() => {
                       const sw = swipeState[p.id];
-                      // If swiped open, close on click
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
                       if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" || activeTab === "macro") setActiveTab("overview");
@@ -2577,6 +2583,17 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         );
       })()}
+
+      {/* ═══ RIGHT-CLICK CONTEXT MENU ═══ */}
+      {contextMenu && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 190 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}>
+          <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
+            <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
+            <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
+            <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
+          </div>
+        </div>
+      )}
 
       {/* ═══ ARCHIVE / DELETE CONFIRM ═══ */}
       {archiveConfirm && (
