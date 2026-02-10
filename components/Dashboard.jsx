@@ -994,7 +994,18 @@ export default function Dashboard({ user, onLogout }) {
   const swipeDraggedRef = useRef(false); // true if a drag just completed, prevents click
   const [archiveConfirm, setArchiveConfirm] = useState(null); // { projectId, action: "archive"|"delete" }
   const [contextMenu, setContextMenu] = useState(null); // { x, y, projectId, projectName, archived }
-  const isAdmin = user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("users");
+  const [appSettings, setAppSettings] = useState({
+    authorizedUsers: ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"],
+    driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
+    statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
+    projectTypes: ["Brand Event", "Private Event", "Festival", "Live Event", "Internal", "Touring", "Experiential"],
+    departments: [...DEPT_OPTIONS],
+  });
+  const [settingsDirty, setSettingsDirty] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const isAdmin = appSettings.authorizedUsers.includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [w9Scanning, setW9Scanning] = useState(false);
@@ -1273,6 +1284,36 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { if (todoistKey) todoistFetch(todoistKey); }, []);
 
   // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
+  // Load app settings (global)
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_settings')
+          .select('settings')
+          .limit(1)
+          .single();
+        if (data?.settings && Object.keys(data.settings).length > 0) {
+          setAppSettings(prev => ({ ...prev, ...data.settings }));
+        }
+      } catch (e) { console.error('Settings load failed:', e); }
+    })();
+  }, [user]);
+
+  const saveSettings = async (newSettings) => {
+    setSettingsSaving(true);
+    try {
+      const { data: existing } = await supabase.from('app_settings').select('id').limit(1).single();
+      if (existing) {
+        await supabase.from('app_settings').update({ settings: newSettings, updated_at: new Date().toISOString() }).eq('id', existing.id);
+      }
+      setAppSettings(newSettings);
+      setSettingsDirty(false);
+    } catch (e) { console.error('Settings save failed:', e); }
+    setSettingsSaving(false);
+  };
+
   useEffect(() => {
     if (!user) return;
     (async () => {
@@ -1432,6 +1473,13 @@ export default function Dashboard({ user, onLogout }) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* Settings gear (admin only) */}
+          {isAdmin && (
+            <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title="Settings">
+              <span style={{ fontSize: 12 }}>⚙️</span>
+              <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>SETTINGS</span>
+            </button>
+          )}
           {/* Dark/Light toggle */}
           <button onClick={toggleDarkMode} style={{ background: darkMode ? "var(--bgCard)" : "#d8d0b8", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title={darkMode ? "Switch to light mode" : "Switch to dark mode"}>
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
@@ -2584,12 +2632,161 @@ export default function Dashboard({ user, onLogout }) {
         );
       })()}
 
+      {/* ═══ SETTINGS MODAL ═══ */}
+      {showSettings && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { if (!settingsDirty) setShowSettings(false); }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            {/* Header */}
+            <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>⚙️</span>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>Settings</span>
+                </div>
+                <button onClick={() => { if (!settingsDirty) setShowSettings(false); else if (confirm("Discard unsaved changes?")) { setSettingsDirty(false); setShowSettings(false); } }} style={{ background: "none", border: "none", fontSize: 18, color: "var(--textMuted)", cursor: "pointer", padding: 4 }}>✕</button>
+              </div>
+              {/* Tabs */}
+              <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
+                {[["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"]].map(([key, label]) => (
+                  <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {/* Content */}
+            <div style={{ flex: 1, overflowY: "auto", padding: 24, minHeight: 0 }}>
+
+              {/* ── USERS TAB ── */}
+              {settingsTab === "users" && (
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Manage who can access the Command Center. Only emails on this list can log in.</div>
+                  {appSettings.authorizedUsers.map((email, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "var(--bgInput)", borderRadius: 6, marginBottom: 4, border: "1px solid var(--borderSub)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{email}</span>
+                        {(email === "billy@weareadptv.com" || email === "clancy@weareadptv.com") && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5 }}>OWNER</span>}
+                      </div>
+                      {email !== "billy@weareadptv.com" && email !== "clancy@weareadptv.com" && (
+                        <button onClick={() => { const updated = { ...appSettings, authorizedUsers: appSettings.authorizedUsers.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+                    <input id="newUserEmail" type="email" placeholder="Add email address..." style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textSub)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const v = e.target.value.trim().toLowerCase();
+                          if (v && v.includes("@") && !appSettings.authorizedUsers.includes(v)) {
+                            setAppSettings(prev => ({ ...prev, authorizedUsers: [...prev.authorizedUsers, v] }));
+                            setSettingsDirty(true);
+                            e.target.value = "";
+                          }
+                        }
+                      }}
+                    />
+                    <button onClick={() => {
+                      const inp = document.getElementById("newUserEmail");
+                      const v = inp.value.trim().toLowerCase();
+                      if (v && v.includes("@") && !appSettings.authorizedUsers.includes(v)) {
+                        setAppSettings(prev => ({ ...prev, authorizedUsers: [...prev.authorizedUsers, v] }));
+                        setSettingsDirty(true);
+                        inp.value = "";
+                      }
+                    }} style={{ padding: "8px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Add</button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── DRIVE TAB ── */}
+              {settingsTab === "drive" && (
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Connect Google Drive folders for vendor scanning. Share each folder with the service account email below as Editor.</div>
+                  <div style={{ padding: "10px 12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 16 }}>
+                    <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>SERVICE ACCOUNT EMAIL</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 11, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace", wordBreak: "break-all" }}>{appSettings.driveConnections[0]?.serviceEmail || "command-center-drive@adaptive-command-center.iam.gserviceaccount.com"}</span>
+                      <button onClick={() => { navigator.clipboard.writeText(appSettings.driveConnections[0]?.serviceEmail || "command-center-drive@adaptive-command-center.iam.gserviceaccount.com"); setClipboardToast({ text: "Copied!", x: window.innerWidth / 2, y: 60 }); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "var(--textMuted)", cursor: "pointer" }}>📋 Copy</button>
+                    </div>
+                  </div>
+                  {appSettings.driveConnections.map((conn, i) => (
+                    <div key={i} style={{ padding: "12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 6 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
+                        <input value={conn.name} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, name: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Folder name" style={{ width: 120, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, outline: "none" }} />
+                        <input value={conn.folderId} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Google Drive folder ID" style={{ flex: 1, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                        {i > 0 && <button onClick={() => { const updated = { ...appSettings, driveConnections: appSettings.driveConnections.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer" }}>✕</button>}
+                      </div>
+                      <div style={{ fontSize: 9, color: "var(--textGhost)" }}>Paste the folder ID from the Google Drive URL: drive.google.com/drive/folders/<strong>FOLDER_ID_HERE</strong></div>
+                    </div>
+                  ))}
+                  <button onClick={() => { setAppSettings(prev => ({ ...prev, driveConnections: [...prev.driveConnections, { name: "", folderId: "", serviceEmail: prev.driveConnections[0]?.serviceEmail }] })); setSettingsDirty(true); }} style={{ marginTop: 8, padding: "7px 14px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Folder Connection</button>
+                </div>
+              )}
+
+              {/* ── DEFAULTS TAB ── */}
+              {settingsTab === "defaults" && (
+                <div>
+                  {/* Statuses */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Statuses</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                      {appSettings.statuses.map((s, i) => (
+                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                          {s}
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, statuses: prev.statuses.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input placeholder="Add status + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, statuses: [...prev.statuses, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
+                  {/* Project Types */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Types</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                      {appSettings.projectTypes.map((t, i) => (
+                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                          {t}
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, projectTypes: prev.projectTypes.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input placeholder="Add project type + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, projectTypes: [...prev.projectTypes, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
+                  {/* Departments */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Departments</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                      {appSettings.departments.map((d, i) => (
+                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                          {d}
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, departments: prev.departments.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input placeholder="Add department + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, departments: [...prev.departments, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Footer */}
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+              <span style={{ fontSize: 10, color: settingsDirty ? "#f5a623" : "var(--textGhost)", fontWeight: 600 }}>{settingsDirty ? "⚠ Unsaved changes" : "✓ All changes saved"}</span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => { setSettingsDirty(false); setShowSettings(false); }} style={{ padding: "8px 16px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Cancel</button>
+                <button disabled={!settingsDirty || settingsSaving} onClick={() => saveSettings(appSettings)} style={{ padding: "8px 20px", background: settingsDirty ? "#ff6b4a" : "var(--bgInput)", border: "none", borderRadius: 6, color: settingsDirty ? "#fff" : "var(--textGhost)", fontSize: 11, fontWeight: 700, cursor: settingsDirty ? "pointer" : "default", opacity: settingsSaving ? 0.6 : 1 }}>{settingsSaving ? "Saving..." : "Save Changes"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ═══ RIGHT-CLICK CONTEXT MENU ═══ */}
       {contextMenu && (
         <div style={{ position: "fixed", inset: 0, zIndex: 190 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}>
           <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
             <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
-            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const dup = { ...JSON.parse(JSON.stringify(src)), id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: src.name + " (Copy)" }; setProjects(prev => [...prev, dup]); setActiveProjectId(dup.id); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate Project</button>
+            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = { id: newId, name: src.name + " (Copy)", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: src.location || "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: { what: "", where: "", why: "" }, producers: [], managers: [], staff: [], clientContacts: [], pocContacts: [], billingContacts: [], notes: "", archived: false }; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate Project</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
           </div>
