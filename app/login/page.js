@@ -63,13 +63,13 @@ export default function LoginPage() {
         backgroundImage: 'url(/login-bg.jpg)',
         backgroundSize: 'cover',
         backgroundPosition: 'center top',
-        filter: 'brightness(0.35) saturate(1.2)',
+        filter: 'brightness(0.55) saturate(1.3)',
       }} />
       {/* Gradient overlay */}
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'linear-gradient(180deg, rgba(11,11,15,0.3) 0%, rgba(11,11,15,0.7) 100%)',
+        background: 'linear-gradient(180deg, rgba(11,11,15,0.1) 0%, rgba(11,11,15,0.5) 100%)',
       }} />
       <div style={{
         width: 380,
