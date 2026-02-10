@@ -1319,9 +1319,9 @@ export default function Dashboard({ user, onLogout }) {
     (async () => {
       try {
         const { data, error } = await supabase
-          .from('app_state')
+          .from('shared_state')
           .select('state')
-          .eq('user_id', user.id)
+          .eq('id', 'shared')
           .single();
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
         if (data?.state) {
@@ -1332,7 +1332,6 @@ export default function Dashboard({ user, onLogout }) {
           if (s.projectROS) setProjectROS(s.projectROS);
           if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts) setContacts(s.contacts);
-          if (s.activeProjectId) setActiveProjectId(s.activeProjectId);
         }
         setDataLoaded(true);
       } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
@@ -1344,8 +1343,9 @@ export default function Dashboard({ user, onLogout }) {
     setSaveStatus("saving");
     try {
       const { error } = await supabase
-        .from('app_state')
-        .upsert({ user_id: user.id, state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+        .from('shared_state')
+        .update({ state, updated_at: new Date().toISOString(), updated_by: user.id })
+        .eq('id', 'shared');
       if (error) { console.error('Save error:', error); setSaveStatus("error"); }
       else { setSaveStatus("saved"); }
     } catch (e) { console.error('Save failed:', e); setSaveStatus("error"); }
@@ -1355,10 +1355,10 @@ export default function Dashboard({ user, onLogout }) {
     if (!dataLoaded) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId });
+      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts });
     }, 1500);
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId, dataLoaded]);
+  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, dataLoaded]);
 
   const project = projects.find(p => p.id === activeProjectId) || projects[0];
   const updateProject = (key, val) => setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
