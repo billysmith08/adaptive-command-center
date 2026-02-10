@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createClient } from "@/lib/supabase-browser";
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 
@@ -936,6 +937,10 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
 // ─── MAIN DASHBOARD ──────────────────────────────────────────────────────────
 
 export default function Dashboard({ user, onLogout }) {
+  const supabase = createClient();
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
+  const saveTimeoutRef = useRef(null);
   const [projects, setProjects] = useState(initProjects);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -958,9 +963,74 @@ export default function Dashboard({ user, onLogout }) {
     }));
   };
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
-  const [workback, setWorkback] = useState(initWorkback);
-  const [ros, setROS] = useState(initROS);
-  const [rosDayDates, setRosDayDates] = useState({}); // { 1: "2026-03-20", 2: "2026-03-21", ... }
+  // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
+  const [projectWorkback, setProjectWorkback] = useState({});
+  const workback = projectWorkback[activeProjectId] || [];
+  const setWorkback = (updater) => {
+    setProjectWorkback(prev => ({
+      ...prev,
+      [activeProjectId]: typeof updater === 'function' ? updater(prev[activeProjectId] || []) : updater
+    }));
+  };
+  // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
+  const [projectROS, setProjectROS] = useState({});
+  const ros = projectROS[activeProjectId] || [];
+  const setROS = (updater) => {
+    setProjectROS(prev => ({
+      ...prev,
+      [activeProjectId]: typeof updater === 'function' ? updater(prev[activeProjectId] || []) : updater
+    }));
+  };
+  const [rosDayDates, setRosDayDates] = useState({});
+  // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
+  // Load all data from Supabase on mount
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('app_state')
+          .select('state')
+          .eq('user_id', user.id)
+          .single();
+        if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
+        if (data?.state) {
+          const s = data.state;
+          if (s.projects) setProjects(s.projects);
+          if (s.projectVendors) setProjectVendors(s.projectVendors);
+          if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
+          if (s.projectROS) setProjectROS(s.projectROS);
+          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
+          if (s.contacts) setContacts(s.contacts);
+          if (s.activeProjectId) setActiveProjectId(s.activeProjectId);
+        }
+        setDataLoaded(true);
+      } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
+    })();
+  }, [user]);
+
+  // Auto-save whenever data changes (debounced 1.5s)
+  const saveToSupabase = useCallback(async (state) => {
+    if (!user) return;
+    setSaveStatus("saving");
+    try {
+      const { error } = await supabase
+        .from('app_state')
+        .upsert({ user_id: user.id, state, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+      if (error) { console.error('Save error:', error); setSaveStatus("error"); }
+      else { setSaveStatus("saved"); }
+    } catch (e) { console.error('Save failed:', e); setSaveStatus("error"); }
+  }, [user, supabase]);
+
+  useEffect(() => {
+    if (!dataLoaded) return; // Don't save until initial load is done
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId });
+    }, 1500);
+    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
+  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activeProjectId, dataLoaded]);
+
   const [time, setTime] = useState(new Date());
   const [uploadLog, setUploadLog] = useState([]);
   const [expandedVendor, setExpandedVendor] = useState(null);
@@ -1294,7 +1364,7 @@ export default function Dashboard({ user, onLogout }) {
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: "#4ecb71", animation: "glow 2s infinite" }} /><span style={{ fontSize: 10, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>LIVE</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "none" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{saveStatus === "saving" ? "SAVING" : saveStatus === "error" ? "ERROR" : "LIVE"}</span></div>
           <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
           {user && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{user.email}</span>}
           {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
