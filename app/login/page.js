@@ -53,14 +53,35 @@ export default function LoginPage() {
       alignItems: 'center',
       justifyContent: 'center',
       fontFamily: "'Inter', -apple-system, sans-serif",
+      position: 'relative',
+      overflow: 'hidden',
     }}>
+      {/* Background image */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        backgroundImage: 'url(/login-bg.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center top',
+        filter: 'brightness(0.35) saturate(1.2)',
+      }} />
+      {/* Gradient overlay */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'linear-gradient(180deg, rgba(11,11,15,0.3) 0%, rgba(11,11,15,0.7) 100%)',
+      }} />
       <div style={{
         width: 380,
         padding: 40,
-        background: '#111118',
+        background: 'rgba(17,17,24,0.85)',
+        backdropFilter: 'blur(20px)',
+        WebkitBackdropFilter: 'blur(20px)',
         borderRadius: 16,
-        border: '1px solid #1e1e28',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+        border: '1px solid rgba(255,107,74,0.15)',
+        boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
+        position: 'relative',
+        zIndex: 1,
       }}>
         {/* Logo / Title */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>

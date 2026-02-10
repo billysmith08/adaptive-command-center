@@ -923,7 +923,14 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
 
 export default function Dashboard({ user, onLogout }) {
   const [projects, setProjects] = useState(initProjects);
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('acc-theme');
+      return saved !== null ? saved === 'dark' : true;
+    }
+    return true;
+  });
+  const toggleDarkMode = () => setDarkMode(m => { const next = !m; localStorage.setItem('acc-theme', next ? 'dark' : 'light'); return next; });
   const T = THEMES[darkMode ? "dark" : "light"];
   const [activeProjectId, setActiveProjectId] = useState("p1");
   const [activeTab, setActiveTab] = useState("calendar");
@@ -1079,26 +1086,41 @@ export default function Dashboard({ user, onLogout }) {
     setTimeout(() => setClipboardToast(null), 1800);
   };
 
-  // Simulated Drive vendor database (would be real Google Drive API scan)
-  const DRIVE_VENDOR_DB = [
-    { name: "Cam Kirk Studios", contact: "Cam Kirk", email: "cam@camkirkstudios.com", type: "Photography", dept: "Production", drive: { coi: { found: true, file: "Cam_Kirk_COI_2026.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp/Cam Kirk Studios" }, w9: { found: true, file: "Cam_Kirk_W9.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s/Cam Kirk Studios" }, banking: { found: false }, contract: { found: true, file: "Cam_Kirk_Vendor_Agreement.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Contracts/Cam Kirk Studios" }, invoice: { found: false } } },
-    { name: "Sidle Entertainment LLC", contact: "Sidle Team", email: "info@sidleent.com", type: "AV/Tech", dept: "Experience", drive: { coi: { found: true, file: "Sidle_COI_2026.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp/Sidle Entertainment LLC" }, w9: { found: true, file: "Sidle_W9.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s/Sidle Entertainment LLC" }, banking: { found: true, file: "Sidle_Banking.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Banking/Sidle Entertainment LLC" }, contract: { found: true, file: "Sidle_Vendor_Agreement.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Contracts/Sidle Entertainment LLC" }, invoice: { found: false } } },
-    { name: "Thirteen Universe", contact: "Thirteen Team", email: "hello@thirteenuniverse.com", type: "Fabrication", dept: "Fabrication", drive: { coi: { found: false }, w9: { found: true, file: "ThirteenUniverse_W9.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s/Thirteen Universe" }, banking: { found: false }, contract: { found: false }, invoice: { found: false } } },
-    { name: "DJ Mag", contact: "DJ Mag Editorial", email: "ads@djmag.com", type: "Other", dept: "Experience", drive: { coi: { found: false }, w9: { found: false }, banking: { found: false }, contract: { found: true, file: "DJMag_Partnership.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Contracts/DJ Mag" }, invoice: { found: true, file: "DJMag_Invoice_2026.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Invoices/DJ Mag" } } },
-    { name: "Club Space", contact: "Club Space Events", email: "events@clubspace.com", type: "Venue", dept: "Venue", drive: { coi: { found: true, file: "ClubSpace_COI.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp/Club Space" }, w9: { found: false }, banking: { found: false }, contract: { found: true, file: "ClubSpace_Venue_Agreement.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Contracts/Club Space" }, invoice: { found: false } } },
-    { name: "Prospa Management", contact: "Prospa Team", email: "mgmt@prospa.co", type: "Talent", dept: "Talent", drive: { coi: { found: false }, w9: { found: true, file: "Prospa_W9.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s/Prospa Management" }, banking: { found: true, file: "Prospa_Banking.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Banking/Prospa Management" }, contract: { found: true, file: "Prospa_Artist_Agreement.pdf", folder: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Contracts/Prospa Management" }, invoice: { found: false } } },
-  ];
+  // Drive vendor cache — loaded once, then filtered locally
+  const [driveVendorCache, setDriveVendorCache] = useState(null);
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveError, setDriveError] = useState(null);
+
+  const loadDriveVendors = async () => {
+    if (driveVendorCache) return driveVendorCache;
+    setDriveLoading(true);
+    setDriveError(null);
+    try {
+      const res = await fetch('/api/drive/scan');
+      if (!res.ok) throw new Error(`Drive scan failed: ${res.status}`);
+      const data = await res.json();
+      setDriveVendorCache(data.vendors || []);
+      setDriveLoading(false);
+      return data.vendors || [];
+    } catch (err) {
+      console.error('Drive scan error:', err);
+      setDriveError(err.message);
+      setDriveLoading(false);
+      return [];
+    }
+  };
 
   const handleVendorSearchChange = (q) => {
     setVendorSearch(q);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (!q.trim()) { setDriveResults(null); setVendorSearching(false); return; }
     setVendorSearching(true);
-    searchTimerRef.current = setTimeout(() => {
-      const results = DRIVE_VENDOR_DB.filter(v => v.name.toLowerCase().includes(q.toLowerCase()) || v.contact.toLowerCase().includes(q.toLowerCase()) || v.type.toLowerCase().includes(q.toLowerCase()));
+    searchTimerRef.current = setTimeout(async () => {
+      const driveVendors = await loadDriveVendors();
+      const results = driveVendors.filter(v => v.name.toLowerCase().includes(q.toLowerCase()) || v.contact.toLowerCase().includes(q.toLowerCase()) || v.type.toLowerCase().includes(q.toLowerCase()));
       setDriveResults(results);
       setVendorSearching(false);
-    }, 300);
+    }, 500);
   };
 
   const importFromDrive = (dv) => {
@@ -1234,7 +1256,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Dark/Light toggle */}
-          <button onClick={() => setDarkMode(m => !m)} style={{ background: darkMode ? "var(--bgCard)" : "#d8d0b8", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title={darkMode ? "Switch to light mode" : "Switch to dark mode"}>
+          <button onClick={toggleDarkMode} style={{ background: darkMode ? "var(--bgCard)" : "#d8d0b8", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title={darkMode ? "Switch to light mode" : "Switch to dark mode"}>
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
           </button>
@@ -1810,7 +1832,7 @@ export default function Dashboard({ user, onLogout }) {
                       placeholder="Start typing to search Google Drive for vendors..."
                       style={{ width: "100%", padding: "10px 12px 10px 36px", background: "var(--bgInput)", border: `1px solid ${vendorSearch ? "#dba94e30" : "var(--borderSub)"}`, borderRadius: driveResults && driveResults.length > 0 ? "8px 8px 0 0" : 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none", transition: "border-color 0.2s" }}
                     />
-                    {vendorSearching && <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#dba94e", animation: "glow 1s ease infinite" }}>Scanning Drive...</span>}
+                    {vendorSearching && <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#dba94e", animation: "glow 1s ease infinite" }}>{driveLoading ? "Connecting to Drive..." : "Scanning..."}</span>}
                     {vendorSearch && !vendorSearching && <button onClick={() => { setVendorSearch(""); setDriveResults(null); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>}
                   </div>
 
@@ -1849,9 +1871,14 @@ export default function Dashboard({ user, onLogout }) {
                       })}
                     </div>
                   )}
-                  {driveResults && driveResults.length === 0 && vendorSearch.trim() && (
+                  {driveResults && driveResults.length === 0 && vendorSearch.trim() && !driveError && (
                     <div style={{ background: "var(--bgInput)", border: "1px solid #dba94e25", borderTop: "none", borderRadius: "0 0 10px 10px", padding: "12px 16px", textAlign: "center", color: "#4a5a6a", fontSize: 11 }}>
                       No vendors found matching "{vendorSearch}" — try a different name or <span onClick={() => { setVendorForm({ ...emptyVendorForm, company: vendorSearch }); setShowAddVendor(true); setDriveResults(null); setVendorSearch(""); }} style={{ color: "#ff6b4a", cursor: "pointer", textDecoration: "underline" }}>add manually</span>
+                    </div>
+                  )}
+                  {driveError && vendorSearch.trim() && (
+                    <div style={{ background: "var(--bgInput)", border: "1px solid #ff4a4a25", borderTop: "none", borderRadius: "0 0 10px 10px", padding: "12px 16px", textAlign: "center", color: "#ff6b4a", fontSize: 11 }}>
+                      ⚠️ Drive connection issue: {driveError} — <span onClick={() => { setDriveError(null); setDriveVendorCache(null); handleVendorSearchChange(vendorSearch); }} style={{ cursor: "pointer", textDecoration: "underline" }}>retry</span> or <span onClick={() => { setVendorForm({ ...emptyVendorForm, company: vendorSearch }); setShowAddVendor(true); setDriveResults(null); setVendorSearch(""); setDriveError(null); }} style={{ cursor: "pointer", textDecoration: "underline" }}>add manually</span>
                     </div>
                   )}
                 </div>
@@ -2581,11 +2608,17 @@ export default function Dashboard({ user, onLogout }) {
               {/* Drive scan info */}
               <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "12px 16px", marginBottom: 20 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <span style={{ fontSize: 12 }}>🔍</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "#3da5db" }}>Google Drive Auto-Scan</span>
+                  <span style={{ fontSize: 12 }}>{driveVendorCache ? "✅" : driveError ? "⚠️" : "🔍"}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: driveVendorCache ? "#4ecb71" : driveError ? "#ff6b4a" : "#3da5db" }}>
+                    {driveVendorCache ? `Google Drive Connected — ${driveVendorCache.length} vendors found` : driveError ? "Google Drive Error" : "Google Drive Auto-Scan"}
+                  </span>
                 </div>
                 <div style={{ fontSize: 11, color: "var(--textMuted)", lineHeight: 1.6 }}>
-                  Tip: Use the <span style={{ fontWeight: 600, color: "#dba94e" }}>Search Drive</span> bar above the vendor list to find existing vendors and auto-import their COI, W9, and Banking docs. Contracts and invoices are always new per project.
+                  {driveError ? (
+                    <span>Could not connect to Drive: {driveError}. Check that the service account has access to the ADMIN folder.</span>
+                  ) : (
+                    <span>Use the <span style={{ fontWeight: 600, color: "#dba94e" }}>Search Drive</span> bar above the vendor list to find existing vendors and auto-import their COI & W9 docs from Google Drive.</span>
+                  )}
                 </div>
               </div>
 
