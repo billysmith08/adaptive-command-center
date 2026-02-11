@@ -3057,7 +3057,9 @@ export default function Dashboard({ user, onLogout }) {
                         setBackupStatus("backing-up");
                         try {
                           const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "backup" }) });
-                          const data = await res.json();
+                          if (!res.ok) throw new Error(`Server error ${res.status}`);
+                          const text = await res.text();
+                          const data = text ? JSON.parse(text) : {};
                           if (data.error) throw new Error(data.error);
                           setBackupStatus("backed-up");
                           setLastBackup(data.file);
@@ -3071,7 +3073,9 @@ export default function Dashboard({ user, onLogout }) {
                         setBackupStatus("syncing");
                         try {
                           const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sync-contacts" }) });
-                          const data = await res.json();
+                          if (!res.ok) throw new Error(`Server error ${res.status}`);
+                          const text = await res.text();
+                          const data = text ? JSON.parse(text) : {};
                           if (data.error) throw new Error(data.error);
                           setBackupStatus("synced");
                           alert(`Synced ${data.synced} contacts as vCards to Drive`);
@@ -3085,7 +3089,9 @@ export default function Dashboard({ user, onLogout }) {
                         setBackupStatus("loading-history");
                         try {
                           const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "history" }) });
-                          const data = await res.json();
+                          if (!res.ok) throw new Error(`Server error ${res.status}`);
+                          const text = await res.text();
+                          const data = text ? JSON.parse(text) : {};
                           if (data.error) throw new Error(data.error);
                           setVersionHistory(data.history || []);
                           setShowVersionHistory(true);
