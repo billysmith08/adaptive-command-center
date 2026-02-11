@@ -13,33 +13,13 @@ function getDriveClient() {
   return google.drive({ version: 'v3', auth });
 }
 
-// Recursively get all subfolders of a folder
-async function getAllSubfolders(drive, parentId, depth = 0, maxDepth = 5) {
-  if (depth >= maxDepth) return [];
-  try {
-    const res = await drive.files.list({
-      q: `'${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed=false`,
-      fields: 'files(id, name)', supportsAllDrives: true, includeItemsFromAllDrives: true,
-      pageSize: 100,
-    });
-    const folders = res.data.files || [];
-    const allFolders = [...folders];
-    for (const f of folders) {
-      const subFolders = await getAllSubfolders(drive, f.id, depth + 1, maxDepth);
-      allFolders.push(...subFolders);
-    }
-    return allFolders;
-  } catch (e) {
-    return [];
-  }
-}
+const SD = { supportsAllDrives: true, includeItemsFromAllDrives: true };
 
 export async function GET(request) {
   try {
     const drive = getDriveClient();
     const { searchParams } = new URL(request.url);
     const search = searchParams.get('search');
-    const folderIds = searchParams.get('folderIds'); // comma-separated folder IDs to scope search
 
     if (!search || !search.trim()) {
       return NextResponse.json({ vendors: [], message: 'Provide a search query' });
@@ -50,75 +30,63 @@ export async function GET(request) {
     let allFiles = [];
     const seenIds = new Set();
 
-    if (folderIds) {
-      // Scoped search: search within specified folders AND all their subfolders
-      const ids = folderIds.split(',').map(s => s.trim()).filter(Boolean);
-      
-      for (const folderId of ids) {
-        try {
-          // Get all subfolders recursively
-          const subfolders = await getAllSubfolders(drive, folderId);
-          const allFolderIds = [folderId, ...subfolders.map(f => f.id)];
-          
-          // Search in each folder for matching files
-          for (const fid of allFolderIds) {
-            try {
-              const res = await drive.files.list({
-                q: `'${fid}' in parents and name contains '${escapedQ}' and trashed=false`,
-                fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
-                pageSize: 50,
-              });
-              for (const f of (res.data.files || [])) {
-                if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
-              }
-            } catch (e) { /* skip inaccessible folders */ }
-          }
-        } catch (e) { /* skip inaccessible root folders */ }
-      }
-    }
-
-    // Also do unscoped search (catches files the service account can see anywhere)
-    const nameQuery = `name contains '${escapedQ}' and trashed=false`;
+    // Search by name across all Shared Drives (fast — single API call)
     try {
       const nameResults = await drive.files.list({
-        q: nameQuery,
-        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
-        corpora: 'allDrives',
+        q: `name contains '${escapedQ}' and trashed=false`,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+        ...SD, corpora: 'allDrives',
         orderBy: 'modifiedTime desc',
         pageSize: 50,
       });
       for (const f of (nameResults.data.files || [])) {
         if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { console.error('Name search error:', e.message); }
 
-    // Also try fullText search
+    // Also try fullText search (finds content matches)
     try {
-      const fullTextQuery = `fullText contains '${escapedQ}' and trashed=false`;
       const textResults = await drive.files.list({
-        q: fullTextQuery,
-        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)', supportsAllDrives: true, includeItemsFromAllDrives: true,
-        corpora: 'allDrives',
+        q: `fullText contains '${escapedQ}' and trashed=false`,
+        fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+        ...SD, corpora: 'allDrives',
         orderBy: 'relevance desc',
         pageSize: 30,
       });
       for (const f of (textResults.data.files || [])) {
         if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
       }
-    } catch (e) { /* ignore */ }
+    } catch (e) { /* ignore fullText errors */ }
 
-    // Try to resolve parent folder names for context
+    // For any folders found, also list their contents (one level)
+    const folderFiles = allFiles.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+    for (const folder of folderFiles.slice(0, 5)) {
+      try {
+        const contents = await drive.files.list({
+          q: `'${folder.id}' in parents and trashed=false`,
+          fields: 'files(id, name, mimeType, modifiedTime, webViewLink, size, parents)',
+          ...SD,
+          pageSize: 50,
+        });
+        for (const f of (contents.data.files || [])) {
+          if (!seenIds.has(f.id)) { allFiles.push(f); seenIds.add(f.id); }
+        }
+      } catch (e) { /* skip */ }
+    }
+
+    // Resolve parent folder names (batch — only unique parents)
     const parentIds = new Set();
     for (const f of allFiles) {
       if (f.parents) f.parents.forEach(pid => parentIds.add(pid));
     }
     const parentNames = {};
-    for (const pid of parentIds) {
+    const parentPromises = [...parentIds].map(async (pid) => {
       try {
         const pf = await drive.files.get({ fileId: pid, fields: 'name', supportsAllDrives: true });
         parentNames[pid] = pf.data.name;
       } catch (e) { /* ignore */ }
-    }
+    });
+    await Promise.all(parentPromises);
 
     // Group files by vendor name
     const vendorMap = {};
@@ -137,7 +105,6 @@ export async function GET(request) {
       const isNda = fileName.includes('nda') || fileName.includes('non-disclosure');
       const isContract = fileName.includes('contract') || fileName.includes('agreement') || fileName.includes('sow');
 
-      // Determine vendor name from parent folder or search term
       let vendorKey = q;
       if (f.parents && f.parents[0] && parentNames[f.parents[0]]) {
         vendorKey = parentNames[f.parents[0]];
@@ -148,12 +115,8 @@ export async function GET(request) {
       }
 
       vendorMap[vendorKey].files.push({
-        name: f.name,
-        id: f.id,
-        mimeType: f.mimeType,
-        modified: f.modifiedTime,
-        link: f.webViewLink,
-        size: f.size,
+        name: f.name, id: f.id, mimeType: f.mimeType, modified: f.modifiedTime,
+        link: f.webViewLink, size: f.size,
         parentFolder: f.parents?.[0] ? parentNames[f.parents[0]] : null,
         isCoi, isW9, isNda, isContract,
       });
@@ -164,7 +127,6 @@ export async function GET(request) {
       if (isContract) vendorMap[vendorKey].hasContract = true;
     }
 
-    // Convert to array
     const vendors = Object.values(vendorMap).map(v => {
       const coiFile = v.files.find(f => f.isCoi);
       const w9File = v.files.find(f => f.isW9);
@@ -172,13 +134,8 @@ export async function GET(request) {
       const contractFile = v.files.find(f => f.isContract);
 
       return {
-        name: v.name,
-        contact: v.name,
-        email: "",
-        type: "Vendor",
-        dept: "Production",
-        fileCount: v.files.length,
-        folderLink: v.folderLink || null,
+        name: v.name, contact: v.name, email: "", type: "Vendor", dept: "Production",
+        fileCount: v.files.length, folderLink: v.folderLink || null,
         files: v.files.slice(0, 15),
         drive: {
           coi: coiFile ? { found: true, file: coiFile.name, link: coiFile.link } : { found: false },
@@ -189,12 +146,7 @@ export async function GET(request) {
       };
     });
 
-    return NextResponse.json({
-      vendors,
-      totalFiles: allFiles.length,
-      query: q,
-      scopedFolders: folderIds ? folderIds.split(',').length : 0,
-    });
+    return NextResponse.json({ vendors, totalFiles: allFiles.length, query: q });
   } catch (error) {
     console.error('Drive scan error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -2396,7 +2396,7 @@ export default function Dashboard({ user, onLogout }) {
                       placeholder="Start typing to search Google Drive for vendors..."
                       style={{ width: "100%", padding: "10px 12px 10px 36px", background: "var(--bgInput)", border: `1px solid ${vendorSearch ? "#dba94e30" : "var(--borderSub)"}`, borderRadius: driveResults && driveResults.length > 0 ? "8px 8px 0 0" : 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none", transition: "border-color 0.2s" }}
                     />
-                    {vendorSearching && <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#dba94e", animation: "glow 1s ease infinite" }}>{driveLoading ? "Connecting to Drive..." : "Scanning..."}</span>}
+                    {vendorSearching && <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#dba94e", animation: "glow 1s ease infinite" }}>Searching Drive...</span>}
                     {vendorSearch && !vendorSearching && <button onClick={() => { setVendorSearch(""); setDriveResults(null); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>}
                   </div>
 
