@@ -299,7 +299,7 @@ const THEMES = {
 
 // ─── ADDRESS INPUT (split fields) ───────────────────────────────────────────
 
-function AddressAutocomplete({ value, onChange, copyToClipboard }) {
+function AddressAutocomplete({ value, onChange, copyToClipboard, inputStyle, wrapperStyle, showIcon = true, placeholder }) {
   const inputRef = useRef(null);
   const autocompleteRef = useRef(null);
   const [loaded, setLoaded] = useState(typeof window !== 'undefined' && !!window.google?.maps?.places);
@@ -331,11 +331,18 @@ function AddressAutocomplete({ value, onChange, copyToClipboard }) {
     } catch (e) { /* graceful fallback to plain input */ }
   }, [loaded, onChange]);
 
+  const defaultInputStyle = { flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" };
+  const mergedStyle = inputStyle ? { ...defaultInputStyle, ...inputStyle } : defaultInputStyle;
+
+  if (!showIcon) {
+    return <input ref={inputRef} value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder || "Street, City, State ZIP"} style={mergedStyle} />;
+  }
+
   return (
-    <div style={{ flex: 1 }}>
+    <div style={wrapperStyle || { flex: 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
         <span style={{ fontSize: 9, color: "var(--textFaint)", flexShrink: 0 }}>📍</span>
-        <input ref={inputRef} value={value || ""} onChange={e => onChange(e.target.value)} placeholder="Street, City, State ZIP" style={{ flex: 1, padding: "3px 6px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, outline: "none" }} />
+        <input ref={inputRef} value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder || "Street, City, State ZIP"} style={mergedStyle} />
         {value && <span style={{ fontSize: 7, color: "var(--textGhost)", marginLeft: 2, cursor: "pointer", flexShrink: 0 }} onClick={(e) => { e.stopPropagation(); copyToClipboard && copyToClipboard(value, "Address", e); }}>⧉</span>}
       </div>
     </div>
@@ -1609,13 +1616,34 @@ export default function Dashboard({ user, onLogout }) {
     if (exists) {
       setVendors(prev => prev.map(v => v.id === exists.id ? { ...v, compliance: comp, source: "both" } : v));
     } else {
-      setVendors(prev => [...prev, { id: `v_${Date.now()}`, name: dv.name, type: dv.type, email: dv.email, contact: dv.contact, phone: "", title: "", contactType: "Vendor", deptId: dv.dept, source: "drive", compliance: comp }]);
+      setVendors(prev => [...prev, { id: `v_${Date.now()}`, name: dv.name, type: dv.type, email: dv.email, contact: dv.contact, phone: "", title: "", contactType: "Vendor", deptId: dv.dept, source: "drive", address: "", compliance: comp }]);
     }
+    // Auto-add to global contacts if not already there
+    const contactName = dv.contact || dv.name;
+    setContacts(prev => {
+      const contactExists = prev.find(c => c.name.toLowerCase() === contactName.toLowerCase() || (dv.email && c.email?.toLowerCase() === dv.email.toLowerCase()));
+      if (contactExists) return prev;
+      const names = contactName.split(" ");
+      return [...prev, {
+        id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        name: contactName,
+        firstName: names[0] || '',
+        lastName: names.slice(1).join(' ') || '',
+        phone: '',
+        email: dv.email || '',
+        company: dv.name !== contactName ? dv.name : '',
+        position: '',
+        department: dv.dept || '',
+        address: '',
+        notes: [dv.type, 'Imported from Drive'].filter(Boolean).join(' · '),
+        source: "vendor",
+      }];
+    });
     setDriveResults(null);
     setVendorSearch("");
   };
   const CONTACT_TYPES = ["Vendor", "Freelancer", "Agency", "Venue", "Subcontractor", "Supplier"];
-  const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0] };
+  const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0], address: "" };
 
   // Phone formatting: +1 (XXX) XXX-XXXX
   const formatPhone = (val) => {
@@ -1638,13 +1666,15 @@ export default function Dashboard({ user, onLogout }) {
     const name = vendorForm.company || `${vendorForm.firstName} ${vendorForm.lastName}`.trim();
     const contactName = `${vendorForm.firstName} ${vendorForm.lastName}`.trim() || name;
     const w9Done = w9ParsedData?.upload?.success ? { done: true, file: w9ParsedData.fileName, date: new Date().toISOString().split("T")[0], link: w9ParsedData.upload.file?.link } : { done: false, file: null, date: null };
+    const w9Address = w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '';
+    const finalAddress = vendorForm.address || w9Address;
     const newV = {
       id: `v_${Date.now()}`, name, type: vendorForm.resourceType || "Other",
       email: vendorForm.email, contact: contactName,
       phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
       deptId: vendorForm.dept, source: "manual",
       ein: w9ParsedData?.ein || '',
-      address: w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '',
+      address: finalAddress,
       compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
@@ -1652,9 +1682,8 @@ export default function Dashboard({ user, onLogout }) {
     setContacts(prev => {
       const exists = prev.find(c => c.name.toLowerCase() === contactName.toLowerCase() || (vendorForm.email && c.email?.toLowerCase() === vendorForm.email.toLowerCase()));
       if (exists) return prev;
-      const addressStr = w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '';
       return [...prev, {
-        id: `ct_${Date.now()}`,
+        id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
         name: contactName,
         firstName: vendorForm.firstName || '',
         lastName: vendorForm.lastName || '',
@@ -1663,7 +1692,7 @@ export default function Dashboard({ user, onLogout }) {
         company: vendorForm.company || '',
         position: vendorForm.title || '',
         department: vendorForm.dept || '',
-        address: addressStr,
+        address: finalAddress,
         notes: [vendorForm.contactType, vendorForm.resourceType].filter(Boolean).join(' · '),
         source: "vendor",
       }];
@@ -1853,6 +1882,7 @@ export default function Dashboard({ user, onLogout }) {
           contactType: 'Vendor',
           title: p.taxClass || '',
           dept: DEPT_OPTIONS[0],
+          address: [p.address, p.city, p.state, p.zip].filter(Boolean).join(', '),
         });
         
         // Store parsed W9 data for display
@@ -2634,7 +2664,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 14 }}>PROJECT BRIEF</div>
                     {[{ q: "WHAT", key: "name" }, { q: "WHERE", key: "location" }, { q: "WHY", key: "why", multi: true }].map((f, i) => (
-                      <div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>{f.q}</span><EditableText value={project[f.key]} onChange={v => updateProject(f.key, v)} fontSize={12} color="var(--textSub)" multiline={f.multi} /></div>
+                      <div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>{f.q}</span>{f.key === "location" ? <AddressAutocomplete value={project[f.key]} onChange={v => updateProject(f.key, v)} showIcon={false} placeholder="Click to edit" inputStyle={{ padding: "2px 6px", background: "var(--bgInput)", border: "1px solid #ff6b4a40", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} /> : <EditableText value={project[f.key]} onChange={v => updateProject(f.key, v)} fontSize={12} color="var(--textSub)" multiline={f.multi} />}</div>
                     ))}
                     
                     {/* SERVICE NEEDS */}
@@ -2648,21 +2678,21 @@ export default function Dashboard({ user, onLogout }) {
                     {/* CLIENT CONTACTS */}
                     <ContactListBlock label="CLIENT" items={project.clientContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
-                      if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Client", department: "", notes: `Client for ${project.name}`, source: "project" }]); }
+                      if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Client", department: "", address: poc.address || "", notes: `Client for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.clientContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("clientContacts", arr);
                     }} />
 
                     {/* POINT OF CONTACT(S) */}
                     <ContactListBlock label="POINT OF CONTACT(S)" items={project.pocs || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("pocs", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
-                      if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "", department: "", notes: `POC for ${project.name}`, source: "project" }]); }
+                      if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "", department: "", address: poc.address || "", notes: `POC for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.pocs || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("pocs", arr);
                     }} />
 
                     {/* BILLING CONTACT */}
                     <ContactListBlock label="BILLING CONTACT" items={project.billingContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("billingContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
-                      if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Billing", department: "Finance", notes: `Billing for ${project.name}`, source: "project" }]); }
+                      if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Billing", department: "Finance", address: poc.address || "", notes: `Billing for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.billingContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("billingContacts", arr);
                     }} />
                   </div>
@@ -3098,6 +3128,7 @@ export default function Dashboard({ user, onLogout }) {
                                 <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.phone || v.contact, "Phone", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📞 {v.contact}{v.phone ? ` · ${v.phone}` : ""} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>
                                 <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.email, "Email", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📧 {v.email} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>
                                 {v.title && <span>💼 {v.title}</span>}
+                                {v.address && <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.address, "Address", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} title={v.address}>📍 {v.address} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>}
                               </div>
                               <button onClick={() => { if (confirm(`Remove ${v.name}?`)) setVendors(prev => prev.filter(x => x.id !== v.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>Remove</button>
                             </div>
@@ -3228,7 +3259,7 @@ export default function Dashboard({ user, onLogout }) {
                                 {!inGlobal && person.name && (
                                   <button onClick={() => {
                                     const names = person.name.split(" ");
-                                    setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: person.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: person.phone || "", email: person.email || "", company: project.client, position: person.role, department: person.dept || "", notes: `From ${project.name}`, source: "project" }]);
+                                    setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: person.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: person.phone || "", email: person.email || "", company: project.client, position: person.role, department: person.dept || "", address: person.address || "", notes: `From ${project.name}`, source: "project" }]);
                                     setClipboardToast({ text: `${person.name} saved to contacts!`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 1800);
                                   }} style={{ padding: "4px 8px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 5, color: "#4ecb71", cursor: "pointer", fontSize: 9, fontWeight: 600, whiteSpace: "nowrap" }}>↑ Save</button>
                                 )}
@@ -3985,7 +4016,7 @@ export default function Dashboard({ user, onLogout }) {
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
-                <input value={contactForm.address} onChange={e => updateCF("address", e.target.value)} placeholder="123 Main St, City, State ZIP" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                <AddressAutocomplete value={contactForm.address} onChange={v => updateCF("address", v)} showIcon={false} placeholder="123 Main St, City, State ZIP" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div>
@@ -4056,7 +4087,7 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>LOCATION</label>
-                  <input value={newProjectForm.location} onChange={e => updateNPF("location", e.target.value)} placeholder="Los Angeles, Brooklyn, Bali..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                  <AddressAutocomplete value={newProjectForm.location} onChange={v => updateNPF("location", v)} showIcon={false} placeholder="Los Angeles, Brooklyn, Bali..." inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
                 </div>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>STATUS</label>
@@ -4382,7 +4413,13 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Row 5: Department */}
+              {/* Row 5: Address */}
+              <div style={{ marginBottom: 18 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Address</label>
+                <AddressAutocomplete value={vendorForm.address} onChange={v => updateVF("address", v)} showIcon={false} placeholder="123 Main St, City, State ZIP" inputStyle={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", outline: "none" }} />
+              </div>
+
+              {/* Row 6: Department */}
               <div style={{ marginBottom: 24 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Department</label>
                 <select value={vendorForm.dept} onChange={e => updateVF("dept", e.target.value)} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", appearance: "auto" }}>
