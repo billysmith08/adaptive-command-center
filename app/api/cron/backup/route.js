@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
+import { Readable } from 'stream';
 
 function getDriveClient() {
   const auth = new google.auth.GoogleAuth({
@@ -91,7 +92,6 @@ export async function GET(request) {
       fields: 'files(id)', ...SD,
     });
 
-    const { Readable } = await import('stream');
     let fileResult;
     if (existing.data.files?.length > 0) {
       fileResult = await drive.files.update({

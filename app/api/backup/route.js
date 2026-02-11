@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 import { createClient } from '@supabase/supabase-js';
+import { Readable } from 'stream';
 
 function getDriveClient() {
   const auth = new google.auth.GoogleAuth({
@@ -107,7 +108,6 @@ export async function POST(request) {
       const monthFolder = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
       const monthFolderId = await findOrCreateFolder(drive, backupsFolderId, monthFolder);
 
-      const { Readable } = await import('stream');
       const file = await drive.files.create({
         requestBody: { name: fileName, mimeType: 'application/json', parents: [monthFolderId] },
         media: { mimeType: 'application/json', body: Readable.from([stateJson]) },
@@ -159,7 +159,6 @@ export async function POST(request) {
           q: `'${contactsFolderId}' in parents and name = '${vcfName.replace(/'/g, "\\'")}' and trashed=false`,
           fields: 'files(id)', ...SD,
         });
-        const { Readable } = await import('stream');
         const stream = Readable.from([vcf]);
         if (existing.data.files?.length > 0) {
           await drive.files.update({ fileId: existing.data.files[0].id, media: { mimeType: 'text/vcard', body: stream }, ...SD });
