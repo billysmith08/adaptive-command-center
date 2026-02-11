@@ -547,11 +547,9 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
           
           {/* Action buttons */}
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {compInfo.link && (
-              <button onClick={(e) => { e.stopPropagation(); window.open(compInfo.link, '_blank'); }} style={{ padding: "4px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 5, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
-                📂 Open in Drive
-              </button>
-            )}
+            <button onClick={(e) => { e.stopPropagation(); const url = compInfo.link || `https://drive.google.com/drive/search?q=${encodeURIComponent(compInfo.file || compKey.fullLabel)}`; window.open(url, '_blank'); }} style={{ padding: "4px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 5, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+              📂 Open in Drive
+            </button>
             <button onClick={handleUploadClick} style={{ padding: "4px 8px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 5, color: "#dba94e", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
               🔄 Replace
             </button>
@@ -1326,7 +1324,7 @@ export default function Dashboard({ user, onLogout }) {
   const importFromDrive = (dv) => {
     const comp = {};
     ["coi", "w9", "banking", "contract", "invoice"].forEach(k => {
-      comp[k] = dv.drive[k]?.found ? { done: true, file: dv.drive[k].file, date: new Date().toISOString().split("T")[0] } : { done: false, file: null, date: null };
+      comp[k] = dv.drive[k]?.found ? { done: true, file: dv.drive[k].file, date: new Date().toISOString().split("T")[0], link: dv.drive[k].link || null } : { done: false, file: null, date: null, link: null };
     });
     const exists = vendors.find(v => v.name.toLowerCase() === dv.name.toLowerCase());
     if (exists) {
@@ -2541,7 +2539,7 @@ export default function Dashboard({ user, onLogout }) {
                                       <div style={{ fontSize: 11, color: "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}><span>📄</span> {info.file || "Received"}</div>
                                       <div style={{ fontSize: 9, color: "var(--textFaint)", marginBottom: 6 }}>Uploaded {info.date}</div>
                                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                        {info.link && <button onClick={(e) => { e.stopPropagation(); window.open(info.link, '_blank'); }} style={{ padding: "3px 7px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>📂 Open</button>}
+                                        <button onClick={(e) => { e.stopPropagation(); const url = info.link || `https://drive.google.com/drive/search?q=${encodeURIComponent(info.file || ck.fullLabel)}`; window.open(url, '_blank'); }} style={{ padding: "3px 7px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>📂 Open</button>
                                         <button onClick={(e) => { e.stopPropagation(); const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (ev) => { const f = ev.target.files[0]; if (f) handleFileDrop(v.id, ck.key, f, dp, ck.drivePrefix); }; input.click(); }} style={{ padding: "3px 7px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 4, color: "#dba94e", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>🔄 Replace</button>
                                         <button onClick={(e) => { e.stopPropagation(); handleClearCompliance(v.id, ck.key); }} style={{ padding: "3px 7px", background: "#e8545410", border: "1px solid #e8545425", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>✕ Clear</button>
                                       </div>
