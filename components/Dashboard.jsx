@@ -1632,10 +1632,11 @@ export default function Dashboard({ user, onLogout }) {
   const submitVendor = () => {
     if (!vendorForm.company && !vendorForm.firstName) return;
     const name = vendorForm.company || `${vendorForm.firstName} ${vendorForm.lastName}`.trim();
+    const contactName = `${vendorForm.firstName} ${vendorForm.lastName}`.trim() || name;
     const w9Done = w9ParsedData?.upload?.success ? { done: true, file: w9ParsedData.fileName, date: new Date().toISOString().split("T")[0], link: w9ParsedData.upload.file?.link } : { done: false, file: null, date: null };
     const newV = {
       id: `v_${Date.now()}`, name, type: vendorForm.resourceType || "Other",
-      email: vendorForm.email, contact: `${vendorForm.firstName} ${vendorForm.lastName}`.trim(),
+      email: vendorForm.email, contact: contactName,
       phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
       deptId: vendorForm.dept, source: "manual",
       ein: w9ParsedData?.ein || '',
@@ -1643,6 +1644,25 @@ export default function Dashboard({ user, onLogout }) {
       compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
+    // Auto-add to global contacts if not already there
+    setContacts(prev => {
+      const exists = prev.find(c => c.name.toLowerCase() === contactName.toLowerCase() || (vendorForm.email && c.email?.toLowerCase() === vendorForm.email.toLowerCase()));
+      if (exists) return prev;
+      const addressStr = w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '';
+      return [...prev, {
+        id: `ct_${Date.now()}`,
+        name: contactName,
+        firstName: vendorForm.firstName || '',
+        lastName: vendorForm.lastName || '',
+        phone: vendorForm.phone || '',
+        email: vendorForm.email || '',
+        company: vendorForm.company || '',
+        position: vendorForm.title || '',
+        department: vendorForm.dept || '',
+        notes: [vendorForm.contactType, vendorForm.resourceType, addressStr].filter(Boolean).join(' · '),
+        source: "vendor",
+      }];
+    });
     logActivity("vendor", `added "${name}"`, project?.name);
     setVendorForm({ ...emptyVendorForm });
     setW9ParsedData(null);
