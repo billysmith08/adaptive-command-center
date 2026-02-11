@@ -1350,6 +1350,7 @@ export default function Dashboard({ user, onLogout }) {
   }, [user]);
   const [driveTestSearch, setDriveTestSearch] = useState("");
   const isAdmin = appSettings.authorizedUsers.includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
+  const isOwner = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"].includes(user?.email);
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [w9Scanning, setW9Scanning] = useState(false);
@@ -1941,7 +1942,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden" }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -3300,7 +3301,7 @@ export default function Dashboard({ user, onLogout }) {
               </div>
               {/* Tabs */}
               <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
-                {[["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"]].map(([key, label]) => (
+                {[["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
                   <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
                 ))}
               </div>
@@ -3672,6 +3673,97 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                     <input placeholder="Add department + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
                       onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, departments: [...prev.departments, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── BRANDING TAB ── */}
+              {settingsTab === "branding" && isOwner && (
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20, lineHeight: 1.5 }}>Customize the appearance of your Command Center. Only visible to owners (Billy &amp; Clancy).</div>
+
+                  {/* Login Background */}
+                  <div style={{ marginBottom: 24, padding: "16px 18px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>Login Page Background</div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)" }}>Recommended: 1920 × 1080px · JPG/PNG · Under 2MB</div>
+                      </div>
+                      {appSettings.branding?.loginBg && (
+                        <button onClick={async () => {
+                          await fetch("/api/branding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "loginBg", userEmail: user?.email }) });
+                          setAppSettings(prev => ({ ...prev, branding: { ...prev.branding, loginBg: "" } }));
+                        }} style={{ padding: "4px 10px", background: "#e8545412", border: "1px solid #e8545425", borderRadius: 5, color: "#e85454", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>✕ Remove</button>
+                      )}
+                    </div>
+                    {appSettings.branding?.loginBg ? (
+                      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--borderSub)" }}>
+                        <img src={appSettings.branding.loginBg} alt="Login BG" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
+                        <div style={{ position: "absolute", bottom: 6, right: 6, fontSize: 8, padding: "2px 6px", background: "rgba(0,0,0,0.6)", color: "#fff", borderRadius: 4 }}>Current login background</div>
+                      </div>
+                    ) : (
+                      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 100, border: "2px dashed var(--borderSub)", borderRadius: 8, cursor: "pointer", color: "var(--textGhost)", fontSize: 11, gap: 4 }}>
+                        <span style={{ fontSize: 20 }}>📷</span>
+                        <span>Click to upload image</span>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={async (e) => {
+                          const file = e.target.files[0]; if (!file) return;
+                          if (file.size > 3 * 1024 * 1024) { alert("File too large. Please use an image under 3MB."); return; }
+                          const fd = new FormData(); fd.append("file", file); fd.append("type", "loginBg"); fd.append("userEmail", user?.email);
+                          try {
+                            const res = await fetch("/api/branding/upload", { method: "POST", body: fd });
+                            const data = await res.json();
+                            if (data.url) { setAppSettings(prev => ({ ...prev, branding: { ...(prev.branding || {}), loginBg: data.url } })); }
+                            else { alert(data.error || "Upload failed"); }
+                          } catch (err) { alert("Upload error: " + err.message); }
+                        }} />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Dashboard Background */}
+                  <div style={{ marginBottom: 24, padding: "16px 18px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>Dashboard Background</div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)" }}>Recommended: 1920 × 1080px · JPG/PNG · Under 2MB · Subtle/dark images work best</div>
+                      </div>
+                      {appSettings.branding?.dashboardBg && (
+                        <button onClick={async () => {
+                          await fetch("/api/branding", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "dashboardBg", userEmail: user?.email }) });
+                          setAppSettings(prev => ({ ...prev, branding: { ...prev.branding, dashboardBg: "" } }));
+                        }} style={{ padding: "4px 10px", background: "#e8545412", border: "1px solid #e8545425", borderRadius: 5, color: "#e85454", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>✕ Remove</button>
+                      )}
+                    </div>
+                    {appSettings.branding?.dashboardBg ? (
+                      <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--borderSub)" }}>
+                        <img src={appSettings.branding.dashboardBg} alt="Dashboard BG" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
+                        <div style={{ position: "absolute", bottom: 6, right: 6, fontSize: 8, padding: "2px 6px", background: "rgba(0,0,0,0.6)", color: "#fff", borderRadius: 4 }}>Current dashboard background</div>
+                      </div>
+                    ) : (
+                      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 100, border: "2px dashed var(--borderSub)", borderRadius: 8, cursor: "pointer", color: "var(--textGhost)", fontSize: 11, gap: 4 }}>
+                        <span style={{ fontSize: 20 }}>🖼</span>
+                        <span>Click to upload image (optional)</span>
+                        <input type="file" accept="image/jpeg,image/png,image/webp" style={{ display: "none" }} onChange={async (e) => {
+                          const file = e.target.files[0]; if (!file) return;
+                          if (file.size > 3 * 1024 * 1024) { alert("File too large. Please use an image under 3MB."); return; }
+                          const fd = new FormData(); fd.append("file", file); fd.append("type", "dashboardBg"); fd.append("userEmail", user?.email);
+                          try {
+                            const res = await fetch("/api/branding/upload", { method: "POST", body: fd });
+                            const data = await res.json();
+                            if (data.url) { setAppSettings(prev => ({ ...prev, branding: { ...(prev.branding || {}), dashboardBg: data.url } })); }
+                            else { alert(data.error || "Upload failed"); }
+                          } catch (err) { alert("Upload error: " + err.message); }
+                        }} />
+                      </label>
+                    )}
+                  </div>
+
+                  {/* Favicon Info */}
+                  <div style={{ padding: "14px 16px", background: "#3da5db08", border: "1px solid #3da5db20", borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#3da5db", marginBottom: 6 }}>💡 Browser Tab Icon (Favicon)</div>
+                    <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6 }}>
+                      The tab icon is set via a file in the codebase. To change it, replace <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>app/favicon.ico</code> with your own 32×32px .ico file and redeploy. You can generate one at <span style={{ color: "#ff6b4a" }}>favicon.io</span>.
+                    </div>
                   </div>
                 </div>
               )}
