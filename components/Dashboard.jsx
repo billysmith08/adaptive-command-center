@@ -15,6 +15,7 @@ const STATUS_COLORS = {
 };
 
 const DEPT_OPTIONS = ["Experience", "F&B", "Fabrication", "Finance", "Labor & Staff", "Legal", "Operations", "Production", "Talent", "Transportation", "Travel & Accoms", "Venue"];
+const SERVICE_OPTIONS = ["Fabrication", "Event Management & Ops", "Talent Buying", "Production Management", "Production Design", "Experiential Design and mgmt.", "Fabrication & A/V", "Label Event Identity", "CAD Work", "EXPERIENCE", "Tour Direction", "Production Direction", "Full Event Management"];
 const PROJECT_TYPES = ["Brand Event", "Private Event", "Festival", "Live Event", "Internal", "Touring", "Experiential"];
 const PT_COLORS = { "Brand Event": "#dba94e", "Private Event": "#dba94e", Festival: "#e8544e", "Live Event": "#3da5db", Internal: "#4ecb71", Touring: "#9b6dff", Experiential: "#e85494" };
 const DEPT_COLORS = { Talent: "#e85494", Production: "#3da5db", Operations: "#9b6dff", "F&B": "#cb714e", Venue: "#4ecb71", "Travel & Accoms": "#4ecbe8", Experience: "#ff6b4a", "Labor & Staff": "var(--textMuted)", Fabrication: "#dba94e", Transportation: "#e84ecb", Legal: "#a0a0ff", Finance: "#4ecb71" };
@@ -2038,7 +2039,7 @@ export default function Dashboard({ user, onLogout }) {
                   <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
                     <thead>
                       <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
-                        {["Project", "Status", "Date(s)", "Client", "Project Type", "Project Ref", "Location", "Project Code", "Notes", "Services Needed"].map(h => (
+                        {["Project", "Status", "Date(s)", "Client", "Project Type", "Location", "Producer(s)", "Manager(s)", "Services Needed", "Brief", "Project Code"].map(h => (
                           <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", position: "sticky", top: 0, background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
                         ))}
                       </tr>
@@ -2078,10 +2079,9 @@ export default function Dashboard({ user, onLogout }) {
                             <td style={{ padding: "10px 12px" }}>
                               {p.projectType ? <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: ptc + "18", color: ptc, border: `1px solid ${ptc}30`, whiteSpace: "nowrap" }}>{p.projectType}</span> : <span style={{ color: "var(--textGhost)" }}>–</span>}
                             </td>
-                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap" }}>{projRef}</td>
-                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap" }}>{locRef}</td>
-                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{p.code || "–"}</td>
-                            <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.notes ? p.notes.split("\n")[0].slice(0, 40) : "–"}</td>
+                            <td style={{ padding: "10px 12px", color: "var(--textFaint)", whiteSpace: "nowrap", fontSize: 10 }}>{p.location || "–"}</td>
+                            <td style={{ padding: "10px 12px", color: "var(--textSub)", fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.producers?.length ? p.producers.join(", ") : "–"}</td>
+                            <td style={{ padding: "10px 12px", color: "var(--textSub)", fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.managers?.length ? p.managers.join(", ") : "–"}</td>
                             <td style={{ padding: "10px 12px" }}>
                               <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                 {(p.services || []).map((s, i) => (
@@ -2090,6 +2090,8 @@ export default function Dashboard({ user, onLogout }) {
                                 {(!p.services || p.services.length === 0) && <span style={{ color: "var(--textGhost)" }}>–</span>}
                               </div>
                             </td>
+                            <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.why || "–"}</td>
+                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{p.code || "–"}</td>
                           </tr>
                         );
                       })}
@@ -2125,6 +2127,14 @@ export default function Dashboard({ user, onLogout }) {
                     {[{ q: "WHAT", key: "name" }, { q: "WHERE", key: "location" }, { q: "WHY", key: "why", multi: true }].map((f, i) => (
                       <div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>{f.q}</span><EditableText value={project[f.key]} onChange={v => updateProject(f.key, v)} fontSize={12} color="var(--textSub)" multiline={f.multi} /></div>
                     ))}
+                    
+                    {/* SERVICE NEEDS */}
+                    <div style={{ marginBottom: 12 }}>
+                      <span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>SERVICES</span>
+                      <div style={{ marginTop: 4 }}>
+                        <MultiDropdown values={project.services || []} options={SERVICE_OPTIONS} onChange={v => updateProject("services", v)} />
+                      </div>
+                    </div>
 
                     {/* CLIENT CONTACTS */}
                     <ContactListBlock label="CLIENT" items={project.clientContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
@@ -3335,6 +3345,12 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT BRIEF / WHY</label>
                 <textarea value={newProjectForm.why} onChange={e => updateNPF("why", e.target.value)} rows={2} placeholder="Spring product launch — hero content for social + OLV" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
+              </div>
+
+              {/* Row 4b: SERVICES */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>SERVICE NEEDS</label>
+                <MultiDropdown values={newProjectForm.services || []} options={SERVICE_OPTIONS} onChange={v => updateNPF("services", v)} />
               </div>
 
               {/* Row 5: Budget + Tour toggle */}
