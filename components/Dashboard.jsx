@@ -844,17 +844,18 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
   // ── Build event spans ──
   const spans = [];
   projects.forEach((proj, pi) => {
+    if (proj.archived) return;
     const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
-    if (proj.engagementDates.start && proj.engagementDates.end)
+    if (proj.engagementDates?.start && proj.engagementDates?.end)
       spans.push({ id: `eng_${proj.id}`, label: proj.name, color, start: proj.engagementDates.start, end: proj.engagementDates.end, projId: proj.id, type: "project" });
-    if (!proj.isTour && proj.eventDates.start && proj.eventDates.end)
+    if (!proj.isTour && proj.eventDates?.start && proj.eventDates?.end)
       spans.push({ id: `evt_${proj.id}`, label: `★ EVENT: ${proj.name}`, color, start: proj.eventDates.start, end: proj.eventDates.end, projId: proj.id, type: "event" });
   });
 
   // Sub-events indexed by date for calendar markers
   const subEventsByDate = {};
   projects.forEach((proj, pi) => {
-    if (!proj.subEvents) return;
+    if (proj.archived || !proj.subEvents) return;
     const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
     proj.subEvents.forEach(se => {
       (subEventsByDate[se.date] = subEventsByDate[se.date] || []).push({ ...se, projId: proj.id, projName: proj.name, color });
@@ -1008,14 +1009,15 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
         }
 
         const isContextual = calView === "day" || calView === "week";
-        const visibleProjects = isContextual ? projects.filter((p, i) => {
-          const es = p.eventDates.start, ee = p.eventDates.end || p.eventDates.start;
-          const ns = p.engagementDates.start, ne = p.engagementDates.end || p.engagementDates.start;
+        const activeNonArchived = projects.filter(p => !p.archived);
+        const visibleProjects = activeNonArchived.filter((p, i) => {
+          const es = p.eventDates?.start, ee = p.eventDates?.end || p.eventDates?.start;
+          const ns = p.engagementDates?.start, ne = p.engagementDates?.end || p.engagementDates?.start;
           const eventOverlap = es && (es <= viewEnd && ee >= viewStart);
           const engOverlap = ns && (ns <= viewEnd && ne >= viewStart);
           const subOverlap = p.subEvents && p.subEvents.some(se => se.date >= viewStart && se.date <= viewEnd);
           return eventOverlap || engOverlap || subOverlap;
-        }) : projects;
+        });
 
         const visibleIndexMap = visibleProjects.map(vp => projects.indexOf(vp));
 
