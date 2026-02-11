@@ -14,6 +14,8 @@ export default function LoginPage() {
   const [resetSent, setResetSent] = useState(false);
   const [signupSuccess, setSignupSuccess] = useState(false);
   const [bgUrl, setBgUrl] = useState('');
+  const [showPass, setShowPass] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const supabase = createClient();
 
@@ -34,6 +36,7 @@ export default function LoginPage() {
 
   const handleSignup = async (e) => {
     e.preventDefault();
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
     setLoading(true);
     setError('');
     const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/dashboard` } });
@@ -89,8 +92,11 @@ export default function LoginPage() {
             </div>
             <div style={{ marginBottom: 8 }}>
               <label style={{ fontSize: 10, fontWeight: 700, color: '#6a6a7a', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>PASSWORD</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required style={inputStyle}
-                onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
+              <div style={{ position: 'relative' }}>
+                <input type={showPass ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required style={{ ...inputStyle, paddingRight: 40 }}
+                  onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
+                <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#6a6a7a', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }} title={showPass ? "Hide password" : "Show password"}>{showPass ? '🙈' : '👁'}</button>
+              </div>
             </div>
             <div style={{ textAlign: 'right', marginBottom: 20 }}>
               <span onClick={() => { setMode('reset'); setError(''); }} style={{ fontSize: 11, color: '#ff6b4a80', cursor: 'pointer' }}
@@ -122,10 +128,21 @@ export default function LoginPage() {
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@adaptivebydesign.com" required style={inputStyle}
                   onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
               </div>
-              <div style={{ marginBottom: 20 }}>
+              <div style={{ marginBottom: 16 }}>
                 <label style={{ fontSize: 10, fontWeight: 700, color: '#6a6a7a', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>PASSWORD</label>
-                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={inputStyle}
+                <div style={{ position: 'relative' }}>
+                  <input type={showPass ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={{ ...inputStyle, paddingRight: 40 }}
+                    onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
+                  <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: '#6a6a7a', cursor: 'pointer', fontSize: 13, padding: 0, lineHeight: 1 }} title={showPass ? "Hide password" : "Show password"}>{showPass ? '🙈' : '👁'}</button>
+                </div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: '#6a6a7a', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>CONFIRM PASSWORD</label>
+                <input type={showPass ? "text" : "password"} value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Re-enter password" required minLength={6} style={inputStyle}
                   onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
+                {confirmPassword && password !== confirmPassword && (
+                  <div style={{ fontSize: 10, color: '#e85454', marginTop: 4 }}>Passwords do not match</div>
+                )}
               </div>
               {error && <div style={{ padding: '8px 12px', background: '#e8545412', border: '1px solid #e8545430', borderRadius: 6, color: '#e85454', fontSize: 12, marginBottom: 16 }}>{error}</div>}
               <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px 0', background: loading ? '#ff6b4a60' : '#ff6b4a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, letterSpacing: 0.5, cursor: loading ? 'wait' : 'pointer', fontFamily: "'Inter', sans-serif" }}>
