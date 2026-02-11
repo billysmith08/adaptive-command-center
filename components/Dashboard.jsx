@@ -4274,6 +4274,9 @@ export default function Dashboard({ user, onLogout }) {
                     {w9ParsedData.upload?.success && (
                       <span style={{ fontSize: 9, padding: "2px 6px", background: "#4ecb7115", color: "#4ecb71", borderRadius: 4, fontWeight: 700, marginLeft: "auto" }}>✓ UPLOADED TO DRIVE</span>
                     )}
+                    {w9ParsedData.upload && !w9ParsedData.upload.success && (
+                      <span style={{ fontSize: 9, padding: "2px 6px", background: "#e8545415", color: "#e85454", borderRadius: 4, fontWeight: 700, marginLeft: "auto" }} title={w9ParsedData.upload.error || ''}>✕ DRIVE UPLOAD FAILED</span>
+                    )}
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 16px", fontSize: 11, color: "var(--textSub)" }}>
                     {w9ParsedData.name && <div><span style={{ color: "var(--textFaint)" }}>Name:</span> {w9ParsedData.name}</div>}
