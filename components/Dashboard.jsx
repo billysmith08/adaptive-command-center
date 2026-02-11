@@ -1075,6 +1075,10 @@ export default function Dashboard({ user, onLogout }) {
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [backupStatus, setBackupStatus] = useState(null);
+  const [lastBackup, setLastBackup] = useState(null);
+  const [versionHistory, setVersionHistory] = useState([]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [driveDiag, setDriveDiag] = useState(null); // diagnostics result
   const [driveDiagLoading, setDriveDiagLoading] = useState(false);
   const [driveTestSearch, setDriveTestSearch] = useState("");
@@ -3029,6 +3033,82 @@ export default function Dashboard({ user, onLogout }) {
                     ))}
                     <button onClick={() => { setAppSettings(prev => ({ ...prev, driveConnections: [...prev.driveConnections, { name: "", folderId: "" }] })); setSettingsDirty(true); }} style={{ marginTop: 6, padding: "7px 14px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Folder</button>
                   </div>
+
+                  {/* ── DATA PROTECTION ── */}
+                  <div style={{ marginTop: 28, borderTop: "2px solid var(--borderSub)", paddingTop: 20 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>🛡️ Data Protection</div>
+                    <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>Auto-backups run at 12 PM & 12 AM daily to Shared Drive → Internal → Command.Center</div>
+
+                    {/* Backup path info */}
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>AUTOMATIC BACKUP LOCATION</div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--textSub)" }}>
+                        📁 Shared Drive → Internal → <strong>Command.Center</strong> → Backups → <em>YYYY-MM</em>
+                      </div>
+                      <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--textSub)", marginTop: 4 }}>
+                        👥 Shared Drive → Internal → <strong>Command.Center</strong> → Contacts → <em>*.vcf</em>
+                      </div>
+                      <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 8 }}>Runs automatically via Vercel Cron at 12:00 PM and 12:00 AM Pacific. Contacts sync as vCards with each backup.</div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 16 }}>
+                      <button onClick={async () => {
+                        setBackupStatus("backing-up");
+                        try {
+                          const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "backup" }) });
+                          const data = await res.json();
+                          if (data.error) throw new Error(data.error);
+                          setBackupStatus("backed-up");
+                          setLastBackup(data.file);
+                          setTimeout(() => setBackupStatus(null), 3000);
+                        } catch (e) { alert("Backup failed: " + e.message); setBackupStatus(null); }
+                      }} style={{ padding: "10px 14px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 8, color: "#4ecb71", cursor: "pointer", fontSize: 11, fontWeight: 600, textAlign: "center" }}>
+                        {backupStatus === "backing-up" ? "⏳ Backing up..." : backupStatus === "backed-up" ? "✅ Done!" : "💾 Backup Now"}
+                      </button>
+
+                      <button onClick={async () => {
+                        setBackupStatus("syncing");
+                        try {
+                          const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "sync-contacts" }) });
+                          const data = await res.json();
+                          if (data.error) throw new Error(data.error);
+                          setBackupStatus("synced");
+                          alert(`Synced ${data.synced} contacts as vCards to Drive`);
+                          setTimeout(() => setBackupStatus(null), 3000);
+                        } catch (e) { alert("Sync failed: " + e.message); setBackupStatus(null); }
+                      }} style={{ padding: "10px 14px", background: "#3da5db10", border: "1px solid #3da5db30", borderRadius: 8, color: "#3da5db", cursor: "pointer", fontSize: 11, fontWeight: 600, textAlign: "center" }}>
+                        {backupStatus === "syncing" ? "⏳ Syncing..." : backupStatus === "synced" ? "✅ Done!" : "👥 Sync Contacts Now"}
+                      </button>
+
+                      <button onClick={async () => {
+                        setBackupStatus("loading-history");
+                        try {
+                          const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "history" }) });
+                          const data = await res.json();
+                          if (data.error) throw new Error(data.error);
+                          setVersionHistory(data.history || []);
+                          setShowVersionHistory(true);
+                          setBackupStatus(null);
+                        } catch (e) { alert("Could not load history: " + e.message); setBackupStatus(null); }
+                      }} style={{ padding: "10px 14px", background: "#dba94e10", border: "1px solid #dba94e30", borderRadius: 8, color: "#dba94e", cursor: "pointer", fontSize: 11, fontWeight: 600, textAlign: "center" }}>
+                        {backupStatus === "loading-history" ? "⏳ Loading..." : "🕐 Version History"}
+                      </button>
+                    </div>
+
+                    {lastBackup && (
+                      <div style={{ background: "#4ecb7108", border: "1px solid #4ecb7120", borderRadius: 8, padding: 10, fontSize: 10, color: "var(--textSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span>Last backup: <strong>{lastBackup.name}</strong> ({lastBackup.sizeKb} KB)</span>
+                        {lastBackup.link && <a href={lastBackup.link} target="_blank" rel="noopener noreferrer" style={{ color: "#3da5db", fontWeight: 600, textDecoration: "none" }}>Open in Drive →</a>}
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 12, fontSize: 9, color: "var(--textGhost)", lineHeight: 1.6 }}>
+                      ⚡ <strong>Version history</strong> — every save auto-snapshots to Supabase (last 200 kept). Restore from Version History.<br />
+                      💾 <strong>Drive backups</strong> — JSON files organized by month. Auto at 12 PM + 12 AM, or click "Backup Now".<br />
+                      👥 <strong>Contact sync</strong> — all contacts written as .vcf vCards, updated in place if they already exist.
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -3470,6 +3550,64 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ VERSION HISTORY MODAL ═══ */}
+      {showVersionHistory && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(6px)" }} onClick={e => { if (e.target === e.currentTarget) setShowVersionHistory(false); }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 600, maxWidth: "92vw", maxHeight: "80vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", color: "var(--text)" }}>🕐 Version History</div>
+                <div style={{ fontSize: 10, color: "var(--textFaint)", marginTop: 2 }}>{versionHistory.length} snapshots available</div>
+              </div>
+              <button onClick={() => setShowVersionHistory(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", padding: "12px 20px" }}>
+              {versionHistory.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 40, color: "var(--textGhost)" }}>
+                  <div style={{ fontSize: 32, marginBottom: 10 }}>📋</div>
+                  <div style={{ fontSize: 12 }}>No version history yet. History is created automatically with every save.</div>
+                  <div style={{ fontSize: 10, marginTop: 8, color: "var(--textGhost)" }}>Run the migration <code>005_state_history.sql</code> in Supabase to enable.</div>
+                </div>
+              ) : versionHistory.map((v, i) => {
+                const d = new Date(v.saved_at);
+                const timeAgo = (() => {
+                  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+                  if (mins < 1) return "just now";
+                  if (mins < 60) return `${mins}m ago`;
+                  if (mins < 1440) return `${Math.round(mins / 60)}h ago`;
+                  return `${Math.round(mins / 1440)}d ago`;
+                })();
+                return (
+                  <div key={v.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid var(--borderSub)", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                    <div>
+                      <div style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>
+                        {d.toLocaleDateString("en-US", { month: "short", day: "numeric" })} at {d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                        <span style={{ fontSize: 9, color: "var(--textGhost)", marginLeft: 8 }}>{timeAgo}</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: "var(--textFaint)", marginTop: 2 }}>
+                        {v.save_reason === "pre-restore" ? "🔄 Pre-restore snapshot" : "💾 Auto-save"}
+                      </div>
+                    </div>
+                    <button onClick={async () => {
+                      if (!confirm(`Restore to this version from ${d.toLocaleString()}? Current state will be saved as a snapshot first.`)) return;
+                      try {
+                        const res = await fetch("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "restore", versionId: v.id }) });
+                        const data = await res.json();
+                        if (data.error) throw new Error(data.error);
+                        alert("Restored! Refreshing page...");
+                        window.location.reload();
+                      } catch (e) { alert("Restore failed: " + e.message); }
+                    }} style={{ padding: "5px 12px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 5, color: "#dba94e", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>
+                      ↩ Restore
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
