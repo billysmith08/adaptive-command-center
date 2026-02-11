@@ -2479,12 +2479,12 @@ export default function Dashboard({ user, onLogout }) {
                 ) : (
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                     <div style={{ overflowX: "auto" }}>
-                    <div style={{ minWidth: 1280 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 140px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                    <div style={{ minWidth: 1320 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
                       <span>NAME</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
                     </div>
                     {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 140px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
@@ -2552,28 +2552,65 @@ export default function Dashboard({ user, onLogout }) {
                           <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setContacts(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
-                        {/* DOCS column - show compliance doc links from matching vendor */}
+                        {/* DOCS column - functional upload buttons synced with vendor compliance */}
                         {(() => {
+                          const vendorName = c.vendorName || c.company || c.name;
                           const matchVendor = vendors.find(v => {
                             const vn = v.name.toLowerCase();
                             return vn === (c.name || "").toLowerCase() || vn === (c.company || "").toLowerCase() || vn === (c.vendorName || "").toLowerCase();
                           });
                           const comp = matchVendor?.compliance || {};
-                          const docTypes = [
-                            { key: "coi", label: "COI", color: "#4ecb71" },
-                            { key: "w9", label: "W9", color: "#3da5db" },
-                            { key: "banking", label: "BANK", color: "#dba94e" },
-                            { key: "invoice", label: "INV", color: "#9b6dff" },
-                            { key: "contract", label: "CTR", color: "#ff6b4a" },
+                          const docBtns = [
+                            { key: "coi", label: "COI", color: "#4ecb71", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp" },
+                            { key: "w9", label: "W9", color: "#3da5db", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s" },
+                            { key: "banking", label: "BANK", color: "#dba94e", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Banking" },
                           ];
-                          const hasDocs = docTypes.some(d => comp[d.key]?.done);
+                          const handleContactDocUpload = (docKey, prefix) => {
+                            const input = document.createElement("input");
+                            input.type = "file";
+                            input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx";
+                            input.onchange = (ev) => {
+                              const f = ev.target.files[0];
+                              if (!f) return;
+                              // Find or auto-create a vendor entry
+                              let vid = matchVendor?.id;
+                              if (!vid) {
+                                vid = `v_${Date.now()}`;
+                                const newV = {
+                                  id: vid, name: vendorName, type: c.resourceType || "Other",
+                                  email: c.email, contact: c.name, phone: c.phone, title: c.position,
+                                  contactType: "", deptId: c.department, source: "contacts",
+                                  ein: "", address: c.address || "",
+                                  compliance: { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } }
+                                };
+                                setVendors(prev => [...prev, newV]);
+                              }
+                              const drivePath = `${prefix}/${vendorName}/`;
+                              handleFileDrop(vid, docKey, f, drivePath, prefix);
+                            };
+                            input.click();
+                          };
                           return (
-                            <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
-                              {hasDocs ? docTypes.map(d => comp[d.key]?.done ? (
-                                <span key={d.key} onClick={() => comp[d.key]?.link && window.open(comp[d.key].link, "_blank")} style={{ padding: "2px 6px", background: `${d.color}15`, border: `1px solid ${d.color}30`, borderRadius: 3, fontSize: 8, fontWeight: 700, color: d.color, cursor: comp[d.key]?.link ? "pointer" : "default", whiteSpace: "nowrap" }} title={comp[d.key]?.file || d.label}>✓ {d.label}</span>
-                              ) : null) : matchVendor ? (
-                                <span style={{ fontSize: 8, color: "var(--textGhost)", fontStyle: "italic" }}>No docs yet</span>
-                              ) : <span style={{ fontSize: 9, color: "var(--textGhost)" }}>—</span>}
+                            <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                              {docBtns.map(d => {
+                                const done = comp[d.key]?.done;
+                                const uploading = comp[d.key]?.uploading;
+                                return (
+                                  <button key={d.key}
+                                    onClick={() => done && comp[d.key]?.link ? window.open(comp[d.key].link, "_blank") : handleContactDocUpload(d.key, d.prefix)}
+                                    title={done ? `${comp[d.key]?.file || d.label} — click to open` : `Upload ${d.label}`}
+                                    style={{
+                                      padding: "3px 7px", borderRadius: 4, fontSize: 8, fontWeight: 700, cursor: "pointer",
+                                      background: done ? `${d.color}15` : "var(--bgCard)",
+                                      border: `1px solid ${done ? d.color + "40" : "var(--borderSub)"}`,
+                                      color: done ? d.color : "var(--textGhost)",
+                                      whiteSpace: "nowrap", lineHeight: 1.4,
+                                      opacity: uploading ? 0.5 : 1,
+                                    }}>
+                                    {uploading ? "⏳" : done ? "✓" : "+"} {d.label}
+                                  </button>
+                                );
+                              })}
                             </div>
                           );
                         })()}
