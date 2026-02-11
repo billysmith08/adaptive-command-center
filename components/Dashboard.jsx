@@ -2022,6 +2022,7 @@ export default function Dashboard({ user, onLogout }) {
           --filterScheme: ${T.filterScheme};
         }
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--scrollThumb); border-radius: 4px; }
+        .pac-container { z-index: 100000 !important; }
         @keyframes glow { 0%, 100% { box-shadow: 0 0 4px #4ecb71; } 50% { box-shadow: 0 0 12px #4ecb71; } }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         * { transition: background-color 0.25s, border-color 0.25s, color 0.15s; }
