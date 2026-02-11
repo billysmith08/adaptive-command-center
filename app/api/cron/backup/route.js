@@ -126,6 +126,7 @@ export async function GET(request) {
           c.phone ? `TEL;TYPE=CELL:${c.phone}` : '',
           c.company ? `ORG:${c.company}` : '',
           c.position ? `TITLE:${c.position}` : '',
+          c.address ? `ADR;TYPE=WORK:;;${c.address.replace(/,/g, ';')};;;` : '',
           c.notes ? `NOTE:${c.notes.replace(/\n/g, '\\n')}` : '',
           'END:VCARD',
         ].filter(Boolean).join('\r\n');

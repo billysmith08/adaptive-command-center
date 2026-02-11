@@ -1422,8 +1422,10 @@ export default function Dashboard({ user, onLogout }) {
     const email = get("EMAIL");
     const org = get("ORG").replace(/;/g, " ").trim();
     const title = get("TITLE");
+    const adr = get("ADR");
+    const address = adr ? adr.split(";").filter(Boolean).join(", ") : "";
     const nameParts = fn.split(" ");
-    return { name: fn, firstName: nameParts[0] || "", lastName: nameParts.slice(1).join(" ") || "", phone: tel, email, company: org, position: title, department: "", notes: "" };
+    return { name: fn, firstName: nameParts[0] || "", lastName: nameParts.slice(1).join(" ") || "", phone: tel, email, company: org, position: title, department: "", address, notes: "" };
   };
 
   const handleVCardUpload = (e) => {
@@ -1465,6 +1467,7 @@ export default function Dashboard({ user, onLogout }) {
       const companyIdx = headers.findIndex(h => h === "company" || h === "organization" || h === "org");
       const positionIdx = headers.findIndex(h => h === "position" || h === "title" || h === "job title" || h === "role");
       const deptIdx = headers.findIndex(h => h === "department" || h === "dept");
+      const addressIdx = headers.findIndex(h => h === "address" || h === "street" || h === "location" || h === "mailing address");
       const notesIdx = headers.findIndex(h => h === "notes" || h === "note" || h === "comments");
       // Parse each row (handle quoted fields with commas)
       const parseCSVRow = (row) => {
@@ -1494,6 +1497,7 @@ export default function Dashboard({ user, onLogout }) {
           company: companyIdx >= 0 ? (cols[companyIdx] || "") : "",
           position: positionIdx >= 0 ? (cols[positionIdx] || "") : "",
           department: deptIdx >= 0 ? (cols[deptIdx] || "") : "",
+          address: addressIdx >= 0 ? (cols[addressIdx] || "") : "",
           notes: notesIdx >= 0 ? (cols[notesIdx] || "") : "",
           source: "csv"
         });
@@ -1512,7 +1516,7 @@ export default function Dashboard({ user, onLogout }) {
     e.target.value = "";
   };
 
-  const emptyContact = { name: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", notes: "", source: "manual" };
+  const emptyContact = { name: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", notes: "", source: "manual" };
   const [contactForm, setContactForm] = useState({ ...emptyContact });
   const updateCF = (k, v) => setContactForm(p => ({ ...p, [k]: v }));
   const submitContact = () => {
@@ -1659,7 +1663,8 @@ export default function Dashboard({ user, onLogout }) {
         company: vendorForm.company || '',
         position: vendorForm.title || '',
         department: vendorForm.dept || '',
-        notes: [vendorForm.contactType, vendorForm.resourceType, addressStr].filter(Boolean).join(' · '),
+        address: addressStr,
+        notes: [vendorForm.contactType, vendorForm.resourceType].filter(Boolean).join(' · '),
         source: "vendor",
       }];
     });
@@ -2271,11 +2276,11 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 ) : (
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "2.2fr 1.2fr 1.2fr 1.8fr 1fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                      <span>NAME</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>COMPANY</span><span>ACTIONS</span>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.1fr 1.6fr 1.4fr 0.9fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                      <span>NAME</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span>
                     </div>
-                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2.2fr 1.2fr 1.2fr 1.8fr 1fr auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1.1fr 1.6fr 1.4fr 0.9fr auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
@@ -2288,6 +2293,7 @@ export default function Dashboard({ user, onLogout }) {
                         <span style={{ color: "var(--textMuted)", fontSize: 11 }}>{c.position || "—"}</span>
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span onClick={(e) => c.email && copyToClipboard(c.email, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.email) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.email || "—"} {c.email && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
+                        <span onClick={(e) => c.address && copyToClipboard(c.address, "Address", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.address ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.address) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"} title={c.address || ""}>{c.address || "—"} {c.address && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11 }}>{c.company || "—"}</span>
                         <div style={{ display: "flex", gap: 6, alignItems: "center", position: "relative" }}>
                           <div style={{ position: "relative" }}>
@@ -3895,7 +3901,7 @@ export default function Dashboard({ user, onLogout }) {
       {contactPopover && (() => {
         const c = contactPopover.contact;
         const maxX = typeof window !== "undefined" ? window.innerWidth - 300 : 400;
-        const maxY = typeof window !== "undefined" ? window.innerHeight - 260 : 400;
+        const maxY = typeof window !== "undefined" ? window.innerHeight - 300 : 400;
         const x = Math.min(contactPopover.x, maxX);
         const y = Math.min(contactPopover.y, maxY);
         return (
@@ -3923,6 +3929,11 @@ export default function Dashboard({ user, onLogout }) {
               {c.email && (
                 <div onClick={(e) => copyToClipboard(c.email, "Email", e)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.currentTarget.style.color = "var(--text)"} onMouseLeave={e => e.currentTarget.style.color = "var(--textSub)"}>
                   <span style={{ fontSize: 13 }}>📧</span> {c.email} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: "auto" }}>Click to copy</span>
+                </div>
+              )}
+              {c.address && (
+                <div onClick={(e) => copyToClipboard(c.address, "Address", e)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.currentTarget.style.color = "var(--text)"} onMouseLeave={e => e.currentTarget.style.color = "var(--textSub)"}>
+                  <span style={{ fontSize: 13 }}>📍</span> <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.address}</span> <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: "auto", flexShrink: 0 }}>Click to copy</span>
                 </div>
               )}
               {c.department && (
@@ -3971,6 +3982,10 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><input value={contactForm.phone} onChange={e => updateCF("phone", formatPhone(e.target.value))} placeholder="+1 (555) 123-4567" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={contactForm.email} onChange={e => updateCF("email", e.target.value)} placeholder="name@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
+                <input value={contactForm.address} onChange={e => updateCF("address", e.target.value)} placeholder="123 Main St, City, State ZIP" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div>
