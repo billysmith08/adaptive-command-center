@@ -2554,11 +2554,12 @@ export default function Dashboard({ user, onLogout }) {
                         </div>
                         {/* DOCS column - functional upload buttons synced with vendor compliance */}
                         {(() => {
-                          const vendorName = c.vendorName || c.company || c.name;
+                          const contactVendorName = c.vendorName || c.company || c.name;
                           const matchVendor = vendors.find(v => {
                             const vn = v.name.toLowerCase();
                             return vn === (c.name || "").toLowerCase() || vn === (c.company || "").toLowerCase() || vn === (c.vendorName || "").toLowerCase();
                           });
+                          const useVendorName = contactVendorName;
                           const comp = matchVendor?.compliance || {};
                           const docBtns = [
                             { key: "coi", label: "COI", color: "#4ecb71", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp" },
@@ -2572,12 +2573,12 @@ export default function Dashboard({ user, onLogout }) {
                             input.onchange = (ev) => {
                               const f = ev.target.files[0];
                               if (!f) return;
-                              // Find or auto-create a vendor entry
+                              // Find or auto-create a vendor entry for THIS contact
                               let vid = matchVendor?.id;
                               if (!vid) {
                                 vid = `v_${Date.now()}`;
                                 const newV = {
-                                  id: vid, name: vendorName, type: c.resourceType || "Other",
+                                  id: vid, name: useVendorName, type: c.resourceType || "Other",
                                   email: c.email, contact: c.name, phone: c.phone, title: c.position,
                                   contactType: "", deptId: c.department, source: "contacts",
                                   ein: "", address: c.address || "",
@@ -2585,7 +2586,7 @@ export default function Dashboard({ user, onLogout }) {
                                 };
                                 setVendors(prev => [...prev, newV]);
                               }
-                              const drivePath = `${prefix}/${vendorName}/`;
+                              const drivePath = `${prefix}/${useVendorName}/`;
                               handleFileDrop(vid, docKey, f, drivePath, prefix);
                             };
                             input.click();

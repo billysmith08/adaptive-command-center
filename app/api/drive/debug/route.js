@@ -1,191 +1,146 @@
 import { NextResponse } from 'next/server';
 import { google } from 'googleapis';
 
+const SHARED_DRIVE_NAME = 'ADPTV LLC';
+
 export async function GET() {
-  const results = { steps: [], errors: [], success: false };
-  
+  const results = { steps: [], ready: false };
+
   try {
     // Step 1: Check env vars
     const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
     const key = process.env.GOOGLE_PRIVATE_KEY;
-    const projectId = process.env.GOOGLE_PROJECT_ID;
-    
+    const project = process.env.GOOGLE_PROJECT_ID;
     results.steps.push({
-      step: '1. Environment Variables',
-      serviceEmail: email ? `${email.slice(0, 20)}...` : 'MISSING',
-      privateKey: key ? `Present (${key.length} chars, starts with ${key.slice(0, 30)}...)` : 'MISSING',
-      projectId: projectId || 'MISSING',
+      step: 'env_check',
+      email: email ? `${email.slice(0, 20)}...` : 'MISSING',
+      keyPresent: !!key,
+      keyLength: key?.length || 0,
+      project: project || 'MISSING',
     });
-    
+
     if (!email || !key) {
-      results.errors.push('Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY');
+      results.error = 'Missing GOOGLE_SERVICE_ACCOUNT_EMAIL or GOOGLE_PRIVATE_KEY';
       return NextResponse.json(results);
     }
 
     // Step 2: Authenticate
-    let drive;
-    try {
-      const auth = new google.auth.GoogleAuth({
-        credentials: {
-          client_email: email,
-          private_key: key.replace(/\\n/g, '\n'),
-          project_id: projectId,
-        },
-        scopes: ['https://www.googleapis.com/auth/drive'],
-      });
-      drive = google.drive({ version: 'v3', auth });
-      results.steps.push({ step: '2. Authentication', status: 'OK' });
-    } catch (authErr) {
-      results.steps.push({ step: '2. Authentication', status: 'FAILED', error: authErr.message });
-      results.errors.push(`Auth failed: ${authErr.message}`);
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: email,
+        private_key: key.replace(/\\n/g, '\n'),
+        project_id: project,
+      },
+      scopes: ['https://www.googleapis.com/auth/drive'],
+    });
+    const drive = google.drive({ version: 'v3', auth });
+    results.steps.push({ step: 'auth', status: 'ok' });
+
+    // Step 3: Find ADPTV LLC shared drive
+    const drivesRes = await drive.drives.list({ pageSize: 50 });
+    const allDrives = drivesRes.data.drives || [];
+    results.steps.push({ step: 'list_drives', count: allDrives.length, drives: allDrives.map(d => ({ name: d.name, id: d.id })) });
+
+    const targetDrive = allDrives.find(d => d.name === SHARED_DRIVE_NAME) || allDrives.find(d => d.name.toLowerCase().includes('adptv'));
+    if (!targetDrive) {
+      results.error = `Shared drive "${SHARED_DRIVE_NAME}" not found. Service account ${email} must be added as a member of the shared drive.`;
       return NextResponse.json(results);
     }
+    const driveId = targetDrive.id;
+    results.steps.push({ step: 'find_drive', status: 'found', driveId, driveName: targetDrive.name });
 
-    // Step 3: List Shared Drives
-    try {
-      const drivesRes = await drive.drives.list({ pageSize: 20, fields: 'drives(id, name)' });
-      const sharedDrives = drivesRes.data.drives || [];
-      results.steps.push({
-        step: '3. Shared Drives',
-        count: sharedDrives.length,
-        drives: sharedDrives.map(d => ({ id: d.id, name: d.name })),
-      });
-      
-      if (sharedDrives.length === 0) {
-        results.errors.push('No shared drives found. The service account needs to be added as a member of the ADPTV LLC shared drive.');
-      }
-    } catch (driveErr) {
-      results.steps.push({ step: '3. Shared Drives', status: 'FAILED', error: driveErr.message });
-      results.errors.push(`Can't list drives: ${driveErr.message}`);
-    }
-
-    // Step 4: Try to find "ADMIN" folder
     const SD = { supportsAllDrives: true, includeItemsFromAllDrives: true };
-    
-    try {
-      const adminRes = await drive.files.list({
-        q: "name='ADMIN' and mimeType='application/vnd.google-apps.folder' and trashed=false",
-        fields: 'files(id, name, driveId, parents)',
+
+    // Step 4: List root folders
+    const rootRes = await drive.files.list({
+      q: `'${driveId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      fields: 'files(id, name)',
+      ...SD,
+      corpora: 'drive',
+      driveId,
+      pageSize: 50,
+    });
+    const rootFolders = (rootRes.data.files || []).map(f => ({ name: f.name, id: f.id }));
+    results.steps.push({ step: 'root_folders', count: rootFolders.length, folders: rootFolders });
+
+    // Step 5: Navigate W9 path
+    const w9Path = ['ADMIN', 'External Vendors (W9 & Work Comp)', 'Dec 2025 - Dec 2026', '2026 W9s'];
+    let parentId = driveId;
+    let w9Ok = true;
+    for (let i = 0; i < w9Path.length; i++) {
+      const seg = w9Path[i];
+      const res = await drive.files.list({
+        q: `name='${seg.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`,
+        fields: 'files(id, name)',
         ...SD,
-        corpora: 'allDrives',
+        corpora: 'drive',
+        driveId,
       });
-      const adminFolders = adminRes.data.files || [];
-      results.steps.push({
-        step: '4. Find ADMIN folder',
-        found: adminFolders.length,
-        folders: adminFolders.map(f => ({ id: f.id, name: f.name, driveId: f.driveId, parents: f.parents })),
-      });
-      
-      if (adminFolders.length === 0) {
-        results.errors.push('Cannot find ADMIN folder. Service account may not have access to the shared drive.');
-      }
-    } catch (e) {
-      results.steps.push({ step: '4. Find ADMIN folder', status: 'FAILED', error: e.message });
-    }
-
-    // Step 5: Navigate full path segment by segment
-    const targetPath = 'ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s';
-    const parts = targetPath.split('/');
-    let currentParentId = null;
-    let pathNavigation = [];
-    
-    for (const part of parts) {
-      try {
-        let query = `name='${part.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        if (currentParentId) query += ` and '${currentParentId}' in parents`;
-        
-        const res = await drive.files.list({
-          q: query,
-          fields: 'files(id, name, driveId, parents)',
+      const folder = res.data.files?.[0];
+      if (folder) {
+        parentId = folder.id;
+        results.steps.push({ step: `w9_path[${i}]`, segment: seg, status: 'found', folderId: folder.id });
+      } else {
+        // List what's actually there
+        const debugRes = await drive.files.list({
+          q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          fields: 'files(id, name)',
           ...SD,
-          corpora: 'allDrives',
+          corpora: 'drive',
+          driveId,
+          pageSize: 50,
         });
-        
-        const folder = res.data.files?.[0];
-        if (folder) {
-          currentParentId = folder.id;
-          pathNavigation.push({ segment: part, status: 'FOUND', id: folder.id, driveId: folder.driveId });
-        } else {
-          pathNavigation.push({ segment: part, status: 'NOT FOUND', query });
-          results.errors.push(`Path breaks at "${part}". Previous segments found OK.`);
-          break;
-        }
-      } catch (e) {
-        pathNavigation.push({ segment: part, status: 'ERROR', error: e.message });
+        const existing = (debugRes.data.files || []).map(f => f.name);
+        results.steps.push({ step: `w9_path[${i}]`, segment: seg, status: 'NOT_FOUND', parentId, existingFolders: existing });
+        w9Ok = false;
         break;
       }
     }
-    
-    results.steps.push({ step: '5. Navigate W9 path', path: targetPath, navigation: pathNavigation });
 
-    // Step 6: Also try COI path
-    const coiPath = 'ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp';
-    const coiParts = coiPath.split('/');
-    let coiParentId = null;
-    let coiNavigation = [];
-    
-    for (const part of coiParts) {
-      try {
-        let query = `name='${part.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        if (coiParentId) query += ` and '${coiParentId}' in parents`;
-        
-        const res = await drive.files.list({
-          q: query,
-          fields: 'files(id, name, driveId)',
+    // Step 6: Navigate COI path
+    const coiPath = ['ADMIN', 'External Vendors (W9 & Work Comp)', 'Dec 2025 - Dec 2026', '2026 COIs & Workers Comp'];
+    parentId = driveId;
+    let coiOk = true;
+    for (let i = 0; i < coiPath.length; i++) {
+      const seg = coiPath[i];
+      const res = await drive.files.list({
+        q: `name='${seg.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`,
+        fields: 'files(id, name)',
+        ...SD,
+        corpora: 'drive',
+        driveId,
+      });
+      const folder = res.data.files?.[0];
+      if (folder) {
+        parentId = folder.id;
+        results.steps.push({ step: `coi_path[${i}]`, segment: seg, status: 'found', folderId: folder.id });
+      } else {
+        const debugRes = await drive.files.list({
+          q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          fields: 'files(id, name)',
           ...SD,
-          corpora: 'allDrives',
+          corpora: 'drive',
+          driveId,
+          pageSize: 50,
         });
-        
-        const folder = res.data.files?.[0];
-        if (folder) {
-          coiParentId = folder.id;
-          coiNavigation.push({ segment: part, status: 'FOUND', id: folder.id });
-        } else {
-          coiNavigation.push({ segment: part, status: 'NOT FOUND' });
-          break;
-        }
-      } catch (e) {
-        coiNavigation.push({ segment: part, status: 'ERROR', error: e.message });
+        const existing = (debugRes.data.files || []).map(f => f.name);
+        results.steps.push({ step: `coi_path[${i}]`, segment: seg, status: 'NOT_FOUND', parentId, existingFolders: existing });
+        coiOk = false;
         break;
       }
     }
-    
-    results.steps.push({ step: '6. Navigate COI path', path: coiPath, navigation: coiNavigation });
 
-    // Step 7: If we found the W9 folder, try listing its contents
-    if (currentParentId) {
-      try {
-        const listRes = await drive.files.list({
-          q: `'${currentParentId}' in parents and trashed=false`,
-          fields: 'files(id, name, mimeType)',
-          ...SD,
-        });
-        results.steps.push({
-          step: '7. W9 folder contents',
-          folderId: currentParentId,
-          items: (listRes.data.files || []).map(f => ({ name: f.name, type: f.mimeType === 'application/vnd.google-apps.folder' ? 'folder' : 'file' })),
-        });
-      } catch (e) {
-        results.steps.push({ step: '7. W9 folder contents', status: 'ERROR', error: e.message });
-      }
-    }
+    results.ready = w9Ok && coiOk;
+    results.w9Path = w9Ok ? 'OK' : 'BROKEN';
+    results.coiPath = coiOk ? 'OK' : 'BROKEN';
+    results.summary = results.ready 
+      ? '✅ All paths verified. Drive uploads should work.'
+      : `❌ Issues found. W9 path: ${results.w9Path}, COI path: ${results.coiPath}. Check folder names match exactly.`;
 
-    // Step 8: Test creating a folder (dry run - just check if we can)
-    if (currentParentId) {
-      results.steps.push({
-        step: '8. Ready to create vendor folders',
-        status: 'OK',
-        w9BaseFolderId: currentParentId,
-        coiBaseFolderId: coiParentId,
-        message: 'Both paths resolved. Upload should work.',
-      });
-      results.success = true;
-    }
-
-    return NextResponse.json(results);
   } catch (err) {
-    results.errors.push(`Unexpected error: ${err.message}`);
+    results.error = err.message;
     results.stack = err.stack;
-    return NextResponse.json(results, { status: 500 });
   }
+
+  return NextResponse.json(results);
 }

@@ -15,6 +15,7 @@ function getDriveClient() {
 }
 
 const SD = { supportsAllDrives: true, includeItemsFromAllDrives: true };
+const SHARED_DRIVE_NAME = 'ADPTV LLC';
 
 export async function POST(request) {
   const steps = [];
@@ -47,21 +48,51 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: `Google Auth failed: ${authErr.message}`, steps }, { status: 500 });
     }
 
-    // Step 3: Navigate the folder path segment by segment
+    // Step 3: Find the ADPTV LLC shared drive
+    let sharedDriveId = null;
+    try {
+      const drivesRes = await drive.drives.list({ pageSize: 50 });
+      const allDrives = drivesRes.data.drives || [];
+      steps.push({ step: 'listDrives', status: 'ok', count: allDrives.length, names: allDrives.map(d => d.name) });
+      
+      const targetDrive = allDrives.find(d => d.name === SHARED_DRIVE_NAME);
+      if (targetDrive) {
+        sharedDriveId = targetDrive.id;
+        steps.push({ step: 'findDrive', status: 'found', driveId: sharedDriveId, driveName: SHARED_DRIVE_NAME });
+      } else {
+        const partialMatch = allDrives.find(d => d.name.toLowerCase().includes('adptv'));
+        if (partialMatch) {
+          sharedDriveId = partialMatch.id;
+          steps.push({ step: 'findDrive', status: 'partial_match', driveId: sharedDriveId, driveName: partialMatch.name });
+        } else {
+          steps.push({ step: 'findDrive', status: 'NOT_FOUND', searched: SHARED_DRIVE_NAME, available: allDrives.map(d => d.name) });
+          return NextResponse.json({ 
+            success: false, 
+            error: `Shared drive "${SHARED_DRIVE_NAME}" not found. Available drives: ${allDrives.map(d => d.name).join(', ') || 'none'}. Make sure the service account (${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}) is added as a member of the shared drive.`,
+            steps 
+          }, { status: 404 });
+        }
+      }
+    } catch (driveErr) {
+      steps.push({ step: 'listDrives', status: 'error', error: driveErr.message });
+      return NextResponse.json({ success: false, error: `Failed to list shared drives: ${driveErr.message}`, steps }, { status: 500 });
+    }
+
+    // Step 4: Navigate folder path within the shared drive
     const pathParts = basePath.split('/').filter(Boolean);
-    let currentParentId = null;
+    let currentParentId = sharedDriveId; // Start from the shared drive root
     
     for (let i = 0; i < pathParts.length; i++) {
       const part = pathParts[i];
       try {
-        let query = `name='${part.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-        if (currentParentId) query += ` and '${currentParentId}' in parents`;
+        const query = `name='${part.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${currentParentId}' in parents`;
         
         const res = await drive.files.list({
           q: query,
           fields: 'files(id, name, parents)',
           ...SD,
-          corpora: 'allDrives',
+          corpora: 'drive',
+          driveId: sharedDriveId,
         });
         
         const folder = res.data.files?.[0];
@@ -69,10 +100,25 @@ export async function POST(request) {
           currentParentId = folder.id;
           steps.push({ step: `navigate[${i}]`, segment: part, status: 'found', folderId: folder.id });
         } else {
-          steps.push({ step: `navigate[${i}]`, segment: part, status: 'NOT_FOUND', query });
+          // List what IS in the parent to help debug
+          let subfolders = [];
+          try {
+            const debugList = await drive.files.list({
+              q: `'${currentParentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+              fields: 'files(id, name)',
+              ...SD,
+              corpora: 'drive',
+              driveId: sharedDriveId,
+              pageSize: 50,
+            });
+            subfolders = (debugList.data.files || []).map(f => f.name);
+          } catch (_) {}
+          
+          steps.push({ step: `navigate[${i}]`, segment: part, status: 'NOT_FOUND', parentId: currentParentId, existingSubfolders: subfolders });
+          
           return NextResponse.json({ 
             success: false, 
-            error: `Folder not found: "${part}" (step ${i + 1} of path "${basePath}"). Make sure this exact folder exists in Google Drive and the service account has access.`,
+            error: `Folder not found: "${part}" (step ${i + 1} of path "${basePath}"). Found these folders instead: ${subfolders.join(', ') || 'none'}. Check the exact folder name in the "${SHARED_DRIVE_NAME}" shared drive.`,
             steps 
           }, { status: 404 });
         }
@@ -86,7 +132,7 @@ export async function POST(request) {
       }
     }
 
-    // Step 4: Find or create vendor subfolder
+    // Step 5: Find or create vendor subfolder
     let vendorFolderId;
     let folderCreated = false;
     
@@ -96,6 +142,8 @@ export async function POST(request) {
         q: vendorQuery,
         fields: 'files(id, name)',
         ...SD,
+        corpora: 'drive',
+        driveId: sharedDriveId,
       });
       
       const existingFolder = vendorRes.data.files?.[0];
@@ -104,7 +152,6 @@ export async function POST(request) {
         vendorFolderId = existingFolder.id;
         steps.push({ step: 'vendorFolder', status: 'found_existing', folderId: vendorFolderId, name: vendorName });
       } else {
-        // Create the vendor folder
         const createRes = await drive.files.create({
           requestBody: {
             name: vendorName,
@@ -127,7 +174,7 @@ export async function POST(request) {
       }, { status: 500 });
     }
 
-    // Step 5: Upload the file
+    // Step 6: Upload the file
     try {
       const buffer = Buffer.from(await file.arrayBuffer());
       
