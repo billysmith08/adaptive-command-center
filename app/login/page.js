@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [mode, setMode] = useState('login');
   const [resetSent, setResetSent] = useState(false);
+  const [signupSuccess, setSignupSuccess] = useState(false);
 
   const supabase = createClient();
 
@@ -22,6 +23,15 @@ export default function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { setError(error.message); setLoading(false); }
     else { window.location.href = '/dashboard'; }
+  };
+
+  const handleSignup = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const { error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: `${window.location.origin}/dashboard` } });
+    if (error) { setError(error.message); setLoading(false); }
+    else { setSignupSuccess(true); setLoading(false); }
   };
 
   const handleReset = async (e) => {
@@ -83,7 +93,44 @@ export default function LoginPage() {
             <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px 0', background: loading ? '#ff6b4a60' : '#ff6b4a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, letterSpacing: 0.5, cursor: loading ? 'wait' : 'pointer', fontFamily: "'Inter', sans-serif" }}>
               {loading ? 'SIGNING IN...' : 'SIGN IN'}
             </button>
+            <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#6a6a7a' }}>
+              Don't have an account?{' '}
+              <span onClick={() => { setMode('signup'); setError(''); }} style={{ color: '#ff6b4a', cursor: 'pointer', fontWeight: 600 }}
+                onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>Sign up</span>
+            </div>
           </form>
+        ) : mode === 'signup' ? (
+          signupSuccess ? (
+            <div style={{ textAlign: 'center', padding: '20px 0' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+              <div style={{ color: '#4ecb71', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Account created!</div>
+              <div style={{ color: '#6a6a7a', fontSize: 12, lineHeight: 1.5 }}>Check your email at <span style={{ color: '#e0e0e8' }}>{email}</span> to confirm your account.</div>
+              <div style={{ color: '#5a5a6a', fontSize: 11, lineHeight: 1.5, marginTop: 10, padding: '10px 14px', background: '#ffffff06', borderRadius: 6, border: '1px solid #ffffff08' }}>After confirming, an admin (Billy or Clancy) will need to approve your access before you can use the Command Center.</div>
+              <button type="button" onClick={() => { setMode('login'); setSignupSuccess(false); setError(''); }} style={{ marginTop: 20, padding: '10px 24px', background: '#ff6b4a', border: 'none', borderRadius: 8, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>Back to sign in</button>
+            </div>
+          ) : (
+            <form onSubmit={handleSignup}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: '#6a6a7a', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>EMAIL</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@adaptivebydesign.com" required style={inputStyle}
+                  onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, fontWeight: 700, color: '#6a6a7a', letterSpacing: 0.5, display: 'block', marginBottom: 6 }}>PASSWORD</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Min 6 characters" required minLength={6} style={inputStyle}
+                  onFocus={e => e.target.style.borderColor = '#ff6b4a40'} onBlur={e => e.target.style.borderColor = '#1e1e28'} />
+              </div>
+              {error && <div style={{ padding: '8px 12px', background: '#e8545412', border: '1px solid #e8545430', borderRadius: 6, color: '#e85454', fontSize: 12, marginBottom: 16 }}>{error}</div>}
+              <button type="submit" disabled={loading} style={{ width: '100%', padding: '12px 0', background: loading ? '#ff6b4a60' : '#ff6b4a', border: 'none', borderRadius: 8, color: '#fff', fontSize: 13, fontWeight: 700, letterSpacing: 0.5, cursor: loading ? 'wait' : 'pointer', fontFamily: "'Inter', sans-serif" }}>
+                {loading ? 'CREATING ACCOUNT...' : 'SIGN UP'}
+              </button>
+              <div style={{ textAlign: 'center', marginTop: 16, fontSize: 12, color: '#6a6a7a' }}>
+                Already have an account?{' '}
+                <span onClick={() => { setMode('login'); setError(''); }} style={{ color: '#ff6b4a', cursor: 'pointer', fontWeight: 600 }}
+                  onMouseEnter={e => e.target.style.textDecoration = 'underline'} onMouseLeave={e => e.target.style.textDecoration = 'none'}>Sign in</span>
+              </div>
+            </form>
+          )
         ) : (
           <form onSubmit={handleReset}>
             {resetSent ? (

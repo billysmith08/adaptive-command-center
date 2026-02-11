@@ -1317,6 +1317,7 @@ export default function Dashboard({ user, onLogout }) {
   const [settingsTab, setSettingsTab] = useState("users");
   const [appSettings, setAppSettings] = useState({
     authorizedUsers: ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"],
+    pendingUsers: [],
     driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
     statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
     projectTypes: ["Brand Event", "Private Event", "Festival", "Live Event", "Internal", "Touring", "Experiential"],
@@ -1884,6 +1885,60 @@ export default function Dashboard({ user, onLogout }) {
     { id: "vendors", label: "Contractors/Vendors", icon: "⊕" },
     { id: "contacts", label: "Event Contacts", icon: "👤" },
   ];
+
+  // ─── APPROVAL GATE ─────────────────────────────────────────────
+  const ADMIN_EMAILS = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"];
+  const isUserAuthorized = appSettings.authorizedUsers?.includes(user?.email) || ADMIN_EMAILS.includes(user?.email);
+  const pendingRef = useRef(false);
+
+  useEffect(() => {
+    if (!dataLoaded || !user?.email || isUserAuthorized || pendingRef.current) return;
+    // Auto-register as pending if not already
+    const already = (appSettings.pendingUsers || []).some(p => p.email === user.email);
+    if (!already) {
+      pendingRef.current = true;
+      const updated = {
+        ...appSettings,
+        pendingUsers: [...(appSettings.pendingUsers || []), { email: user.email, requestedAt: new Date().toISOString() }]
+      };
+      saveSettings(updated);
+    }
+  }, [dataLoaded, user, isUserAuthorized]);
+
+  const approveUser = async (email) => {
+    const updated = {
+      ...appSettings,
+      authorizedUsers: [...(appSettings.authorizedUsers || []), email],
+      pendingUsers: (appSettings.pendingUsers || []).filter(p => p.email !== email),
+    };
+    await saveSettings(updated);
+  };
+
+  const denyUser = async (email) => {
+    const updated = {
+      ...appSettings,
+      pendingUsers: (appSettings.pendingUsers || []).filter(p => p.email !== email),
+    };
+    await saveSettings(updated);
+  };
+
+  if (dataLoaded && !isUserAuthorized) {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0b0b0f", fontFamily: "'DM Sans', sans-serif" }}>
+        <div style={{ width: 420, padding: 48, background: "rgba(17,17,24,0.95)", borderRadius: 16, border: "1px solid rgba(255,107,74,0.15)", textAlign: "center" }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>⏳</div>
+          <div style={{ fontSize: 22, fontWeight: 700, color: "#e0e0e8", marginBottom: 8 }}>Awaiting Approval</div>
+          <div style={{ fontSize: 13, color: "#6a6a7a", lineHeight: 1.6, marginBottom: 24 }}>
+            Your account <span style={{ color: "#ff6b4a", fontWeight: 600 }}>{user?.email}</span> has been registered but requires approval from an admin before you can access the Command Center.
+          </div>
+          <div style={{ fontSize: 11, color: "#4a4a5a", padding: "12px 16px", background: "#ffffff06", borderRadius: 8, border: "1px solid #ffffff08", lineHeight: 1.5 }}>
+            An admin has been notified of your request. You'll be able to access the dashboard once approved.
+          </div>
+          <button onClick={onLogout} style={{ marginTop: 24, padding: "10px 28px", background: "transparent", border: "1px solid #2a2a3a", borderRadius: 8, color: "#6a6a7a", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif" }}>Sign Out</button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden" }}>
@@ -3256,7 +3311,29 @@ export default function Dashboard({ user, onLogout }) {
               {/* ── USERS TAB ── */}
               {settingsTab === "users" && (
                 <div>
-                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Manage who can access the Command Center. Only emails on this list can log in.</div>
+                  {/* ── PENDING APPROVALS ── */}
+                  {(appSettings.pendingUsers || []).length > 0 && (
+                    <div style={{ marginBottom: 20, padding: "14px 16px", background: "#f5a62308", border: "1px solid #f5a62330", borderRadius: 10 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#f5a623", letterSpacing: 0.5, marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#f5a623", display: "inline-block", animation: "glow 2s infinite" }} />
+                        PENDING APPROVAL ({(appSettings.pendingUsers || []).length})
+                      </div>
+                      {(appSettings.pendingUsers || []).map((p, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "var(--bgCard)", borderRadius: 6, marginBottom: 4, border: "1px solid var(--borderSub)" }}>
+                          <div>
+                            <span style={{ fontSize: 13, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{p.email}</span>
+                            <span style={{ fontSize: 9, color: "var(--textGhost)", marginLeft: 8 }}>requested {new Date(p.requestedAt).toLocaleDateString()}</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button onClick={() => approveUser(p.email)} style={{ padding: "4px 12px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 5, color: "#4ecb71", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✓ Approve</button>
+                            <button onClick={() => denyUser(p.email)} style={{ padding: "4px 10px", background: "#e8545412", border: "1px solid #e8545425", borderRadius: 5, color: "#e85454", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>✕ Deny</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Manage who can access the Command Center. New sign-ups require approval from an admin.</div>
                   {appSettings.authorizedUsers.map((email, i) => (
                     <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "var(--bgInput)", borderRadius: 6, marginBottom: 4, border: "1px solid var(--borderSub)" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
