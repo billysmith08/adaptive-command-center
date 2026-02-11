@@ -263,7 +263,7 @@ const STATUS_COLORS = {
 
 const DEPT_OPTIONS = ["Experience", "F&B", "Fabrication", "Finance", "Labor & Staff", "Legal", "Operations", "Production", "Talent", "Transportation", "Travel & Accoms", "Venue"];
 const SERVICE_OPTIONS = ["Fabrication", "Event Management & Ops", "Talent Buying", "Production Management", "Production Design", "Experiential Design and mgmt.", "Fabrication & A/V", "Label Event Identity", "CAD Work", "EXPERIENCE", "Tour Direction", "Production Direction", "Full Event Management"];
-const PROJECT_TYPES = ["Brand Event", "Private Event", "Festival", "Live Event", "Internal", "Touring", "Experiential"];
+const PROJECT_TYPES = ["Brand Event", "Experiential", "Festival", "Internal", "Live Event", "Private Event", "Touring"];
 const PT_COLORS = { "Brand Event": "#dba94e", "Private Event": "#dba94e", Festival: "#e8544e", "Live Event": "#3da5db", Internal: "#4ecb71", Touring: "#9b6dff", Experiential: "#e85494" };
 const DEPT_COLORS = { Talent: "#e85494", Production: "#3da5db", Operations: "#9b6dff", "F&B": "#cb714e", Venue: "#4ecb71", "Travel & Accoms": "#4ecbe8", Experience: "#ff6b4a", "Labor & Staff": "var(--textMuted)", Fabrication: "#dba94e", Transportation: "#e84ecb", Legal: "#a0a0ff", Finance: "#4ecb71" };
 const WB_STATUSES = ["Not Started", "In Progress", "At Risk", "Done"];
@@ -626,8 +626,8 @@ function EditableBudget({ value, onSave }) {
   return <div onClick={() => { setVal(String(value)); setEditing(true); }} style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6 }}><span>{"$" + value.toLocaleString("en-US")}</span><span style={{ fontSize: 11, color: "var(--textFaint)", opacity: 0, transition: "opacity 0.2s" }} ref={el => { if (el) { el.parentNode.onmouseenter = () => el.style.opacity = 1; el.parentNode.onmouseleave = () => el.style.opacity = 0; }}}>✏</span></div>;
 }
 
-function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, onCreateContact }) {
-  const PROJECT_ROLES = ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"];
+function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, onCreateContact, projectRoles: propsRoles }) {
+  const PROJECT_ROLES = (propsRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort();
   const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8" };
   const [addOpen, setAddOpen] = useState(false);
   const [addQ, setAddQ] = useState("");
@@ -1449,9 +1449,10 @@ export default function Dashboard({ user, onLogout }) {
     pendingUsers: [],
     driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
     statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
-    projectTypes: ["Brand Event", "Private Event", "Festival", "Live Event", "Internal", "Touring", "Experiential"],
+    projectTypes: ["Brand Event", "Experiential", "Festival", "Internal", "Live Event", "Private Event", "Touring"],
     departments: [...DEPT_OPTIONS],
-    resourceTypes: ["Equipment", "Crew", "Post House", "Color", "Talent", "Catering", "Vehicles", "Props", "Fabrication", "Venue", "Permits", "Staffing", "Security", "AV/Tech", "Floral", "Decor", "Photography", "Videography", "DJ/Music", "Lighting", "Other"],
+    resourceTypes: ["AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"],
+    projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -1765,7 +1766,7 @@ export default function Dashboard({ user, onLogout }) {
     setDriveResults(null);
     setVendorSearch("");
   };
-  const CONTACT_TYPES = ["Vendor", "Freelancer", "Agency", "Venue", "Subcontractor", "Supplier"];
+  const CONTACT_TYPES = ["Agency", "Freelancer", "Subcontractor", "Supplier", "Vendor", "Venue"];
   const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0], address: "" };
 
   // Phone formatting: +1 (XXX) XXX-XXXX
@@ -1801,25 +1802,39 @@ export default function Dashboard({ user, onLogout }) {
       compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
-    // Auto-add to global contacts if not already there
+    // Auto-add vendor AND contact person to global contacts
     setContacts(prev => {
-      const exists = prev.find(c => c.name.toLowerCase() === contactName.toLowerCase() || (vendorForm.email && c.email?.toLowerCase() === vendorForm.email.toLowerCase()));
-      if (exists) return prev;
-      return [...prev, {
-        id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-        name: contactName,
-        firstName: vendorForm.firstName || '',
-        lastName: vendorForm.lastName || '',
-        phone: vendorForm.phone || '',
-        email: vendorForm.email || '',
-        company: vendorForm.company || '',
-        position: vendorForm.title || '',
-        department: vendorForm.dept || '',
-        address: finalAddress,
-        resourceType: vendorForm.resourceType || '',
-        notes: [vendorForm.contactType, vendorForm.resourceType].filter(Boolean).join(' · '),
-        source: "vendor",
-      }];
+      const additions = [];
+      // Add vendor/company as a contact
+      const vendorExists = prev.find(c => c.name.toLowerCase() === name.toLowerCase());
+      if (!vendorExists) {
+        additions.push({
+          id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+          name, firstName: '', lastName: '',
+          phone: vendorForm.phone || '', email: vendorForm.email || '',
+          company: vendorForm.company || '', position: '',
+          department: vendorForm.dept || '', address: finalAddress,
+          resourceType: vendorForm.resourceType || '',
+          notes: [vendorForm.contactType, vendorForm.resourceType].filter(Boolean).join(' · '),
+          source: "vendor",
+        });
+      }
+      // Also add the contact person if different from vendor name
+      if (contactName && contactName !== name) {
+        const personExists = prev.find(c => c.name.toLowerCase() === contactName.toLowerCase());
+        if (!personExists) {
+          additions.push({
+            id: `ct_${Date.now() + 1}_${Math.random().toString(36).substr(2, 4)}`,
+            name: contactName, firstName: vendorForm.firstName || '', lastName: vendorForm.lastName || '',
+            phone: vendorForm.phone || '', email: vendorForm.email || '',
+            company: vendorForm.company || name, position: vendorForm.title || '',
+            department: vendorForm.dept || '', address: finalAddress,
+            resourceType: vendorForm.resourceType || '',
+            notes: '', source: "vendor",
+          });
+        }
+      }
+      return additions.length ? [...prev, ...additions] : prev;
     });
     logActivity("vendor", `added "${name}"`, project?.name);
     setVendorForm({ ...emptyVendorForm });
@@ -1846,7 +1861,15 @@ export default function Dashboard({ user, onLogout }) {
           .limit(1)
           .single();
         if (data?.settings && Object.keys(data.settings).length > 0) {
-          setAppSettings(prev => ({ ...prev, ...data.settings }));
+          // Clean empty strings from arrays
+          const cleaned = { ...data.settings };
+          ['statuses'].forEach(k => {
+            if (Array.isArray(cleaned[k])) cleaned[k] = cleaned[k].filter(Boolean);
+          });
+          ['projectTypes', 'departments', 'resourceTypes', 'projectRoles'].forEach(k => {
+            if (Array.isArray(cleaned[k])) cleaned[k] = cleaned[k].filter(Boolean).sort();
+          });
+          setAppSettings(prev => ({ ...prev, ...cleaned }));
         }
       } catch (e) { console.error('Settings load failed:', e); }
     })();
@@ -1854,12 +1877,20 @@ export default function Dashboard({ user, onLogout }) {
 
   const saveSettings = async (newSettings) => {
     setSettingsSaving(true);
+    // Clean empty strings from arrays before saving
+    const cleaned = { ...newSettings };
+    ['statuses'].forEach(k => {
+      if (Array.isArray(cleaned[k])) cleaned[k] = cleaned[k].filter(Boolean);
+    });
+    ['projectTypes', 'departments', 'resourceTypes', 'projectRoles'].forEach(k => {
+      if (Array.isArray(cleaned[k])) cleaned[k] = cleaned[k].filter(Boolean).sort();
+    });
     try {
       const { data: existing } = await supabase.from('app_settings').select('id').limit(1).single();
       if (existing) {
-        await supabase.from('app_settings').update({ settings: newSettings, updated_at: new Date().toISOString() }).eq('id', existing.id);
+        await supabase.from('app_settings').update({ settings: cleaned, updated_at: new Date().toISOString() }).eq('id', existing.id);
       }
-      setAppSettings(newSettings);
+      setAppSettings(cleaned);
       setSettingsDirty(false);
     } catch (e) { console.error('Settings save failed:', e); }
     setSettingsSaving(false);
@@ -2363,7 +2394,7 @@ export default function Dashboard({ user, onLogout }) {
                     <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={22} fontWeight={700} color="var(--text)" /></h1>
                     <select value={project.projectType || ""} onChange={e => updateProject("projectType", e.target.value)} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, fontWeight: 700, cursor: "pointer", outline: "none", appearance: "auto", background: (PT_COLORS[project.projectType] || "var(--textMuted)") + "15", border: `1px solid ${(PT_COLORS[project.projectType] || "var(--textMuted)")}30`, color: PT_COLORS[project.projectType] || "var(--textMuted)", letterSpacing: 0.5 }}>
                       <option value="">No Type</option>
-                      {PROJECT_TYPES.map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+                      {PROJECT_TYPES.slice().sort().map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
                     </select>
                   </div>
                 </div>
@@ -2474,7 +2505,7 @@ export default function Dashboard({ user, onLogout }) {
                                 <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
                                   <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8, marginBottom: 6 }}>ROLE</div>
                                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                    {["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing"].map(r => (
+                                    {(appSettings.projectRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort().map(r => (
                                       <button key={r} onClick={() => setAssignContactPopover(prev => ({ ...prev, selectedRole: r }))} style={{ padding: "3px 8px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer", background: assignContactPopover.selectedRole === r ? "#9b6dff20" : "var(--bgInput)", border: `1px solid ${assignContactPopover.selectedRole === r ? "#9b6dff40" : "var(--borderSub)"}`, color: assignContactPopover.selectedRole === r ? "#9b6dff" : "var(--textFaint)" }}>{r}</button>
                                     ))}
                                   </div>
@@ -3279,7 +3310,7 @@ export default function Dashboard({ user, onLogout }) {
             {activeTab === "contacts" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 {(() => {
-                  const PROJECT_ROLES = ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"];
+                  const PROJECT_ROLES = (appSettings.projectRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort();
                   const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8" };
 
                   const teamPeople = [...project.producers.map(n => ({ name: n, role: "Producer", source: "producers" })), ...project.managers.map(n => ({ name: n, role: "Manager", source: "managers" })), ...(project.staff || []).map(n => ({ name: n, role: "Staff / Crew", source: "staff" }))];
@@ -3333,7 +3364,7 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts, roles, depts..." style={{ padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 220 }} />
-                        <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={DEPT_OPTIONS} onCreateContact={(c) => {
+                        <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={DEPT_OPTIONS} projectRoles={appSettings.projectRoles} onCreateContact={(c) => {
                           setContacts(prev => {
                             if (prev.find(x => x.name.toLowerCase() === c.name.toLowerCase())) return prev;
                             return [...prev, { ...c, id: c.id || `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }];
@@ -3887,17 +3918,31 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   {/* Resource Types */}
                   <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Vendor Resource Types</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Resource Types</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {(appSettings.resourceTypes || []).map((rt, i) => (
+                      {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map((rt, i) => (
                         <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {rt}
-                          <button onClick={() => { setAppSettings(prev => ({ ...prev, resourceTypes: prev.resourceTypes.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, resourceTypes: prev.resourceTypes.filter(v => v !== rt) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
                     <input placeholder="Add resource type + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
                       onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, resourceTypes: [...(prev.resourceTypes || []), e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
+                  {/* Project Roles */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Roles</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                      {(appSettings.projectRoles || []).map((r, i) => (
+                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                          {r}
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, projectRoles: prev.projectRoles.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input placeholder="Add role + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, projectRoles: [...(prev.projectRoles || []), e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
                 </div>
               )}
@@ -4129,8 +4174,8 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD / EDIT CONTACT MODAL ═══ */}
       {showAddContact && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddContact(false); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 520, animation: "fadeUp 0.25s ease" }}>
-            <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 520, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.25s ease" }}>
+            <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{contactForm.id ? "Edit Contact" : "Add Contact"}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <label style={{ padding: "5px 12px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
@@ -4140,7 +4185,7 @@ export default function Dashboard({ user, onLogout }) {
                 <button onClick={() => setShowAddContact(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18 }}>✕</button>
               </div>
             </div>
-            <div style={{ padding: "20px 28px 24px" }}>
+            <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME</label><input value={contactForm.firstName} onChange={e => updateCF("firstName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME</label><input value={contactForm.lastName} onChange={e => updateCF("lastName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
@@ -4153,7 +4198,7 @@ export default function Dashboard({ user, onLogout }) {
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
                 <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                   <option value="">Select...</option>
-                  {(appSettings.resourceTypes || []).map(rt => <option key={rt} value={rt}>{rt}</option>)}
+                  {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map(rt => <option key={rt} value={rt}>{rt}</option>)}
                 </select>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
@@ -4245,7 +4290,7 @@ export default function Dashboard({ user, onLogout }) {
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT TYPE</label>
                   <select value={newProjectForm.projectType || ""} onChange={e => updateNPF("projectType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: `1px solid ${(PT_COLORS[newProjectForm.projectType] || "var(--borderSub)")}40`, borderRadius: 7, color: PT_COLORS[newProjectForm.projectType] || "var(--text)", fontSize: 12, fontWeight: 600, outline: "none" }}>
                     <option value="">Select type...</option>
-                    {PROJECT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    {PROJECT_TYPES.slice().sort().map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
@@ -4518,7 +4563,7 @@ export default function Dashboard({ user, onLogout }) {
                   <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Resource Type</label>
                   <select value={vendorForm.resourceType} onChange={e => updateVF("resourceType", e.target.value)} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", appearance: "auto" }}>
                     <option value="">Select...</option>
-                    {(appSettings.resourceTypes || []).map(rt => <option key={rt} value={rt}>{rt}</option>)}
+                    {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map(rt => <option key={rt} value={rt}>{rt}</option>)}
                   </select>
                 </div>
               </div>

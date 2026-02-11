@@ -26,7 +26,7 @@ const COUNTRY_CODES = [
   { code: '+63', label: 'PH', flag: '🇵🇭' },
 ];
 
-const RESOURCE_TYPES = ["Equipment", "Crew", "Post House", "Color", "Talent", "Catering", "Vehicles", "Props", "Fabrication", "Venue", "Permits", "Staffing", "Security", "AV/Tech", "Floral", "Decor", "Photography", "Videography", "DJ/Music", "Lighting", "Other"];
+const RESOURCE_TYPES = ["AV/Tech", "Catering", "Color", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Post House", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"];
 
 function VendorIntakeForm() {
   const params = useSearchParams();
