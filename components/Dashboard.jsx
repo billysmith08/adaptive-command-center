@@ -1328,6 +1328,23 @@ export default function Dashboard({ user, onLogout }) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [driveDiag, setDriveDiag] = useState(null); // diagnostics result
   const [driveDiagLoading, setDriveDiagLoading] = useState(false);
+  // ─── ACTIVITY FEED ──────────────────────────────────────────────
+  const [activityLog, setActivityLog] = useState([]);
+  const [showActivityFeed, setShowActivityFeed] = useState(false);
+  const [lastSeenActivity, setLastSeenActivity] = useState(0);
+  const logActivity = useCallback((action, detail, projectName) => {
+    if (!user) return;
+    const entry = {
+      id: `act_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+      user: user.email?.split("@")[0] || "unknown",
+      email: user.email,
+      action,
+      detail,
+      project: projectName || "",
+      ts: Date.now(),
+    };
+    setActivityLog(prev => [entry, ...prev].slice(0, 200));
+  }, [user]);
   const [driveTestSearch, setDriveTestSearch] = useState("");
   const isAdmin = appSettings.authorizedUsers.includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const [showPrintROS, setShowPrintROS] = useState(false);
@@ -1531,6 +1548,7 @@ export default function Dashboard({ user, onLogout }) {
     setProjects(prev => [...prev, newP]);
     setActiveProjectId(newP.id);
     setActiveTab("overview");
+    logActivity("updated", `created project "${newP.name}"`, newP.name);
     setShowAddProject(false);
     setNewProjectForm({ ...emptyProject });
   };
@@ -1606,6 +1624,7 @@ export default function Dashboard({ user, onLogout }) {
       compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
+    logActivity("vendor", `added "${name}"`, project?.name);
     setVendorForm({ ...emptyVendorForm });
     setW9ParsedData(null);
     setShowAddVendor(false);
@@ -1663,6 +1682,7 @@ export default function Dashboard({ user, onLogout }) {
           if (s.projectROS) setProjectROS(s.projectROS);
           if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts) setContacts(s.contacts);
+          if (s.activityLog) setActivityLog(s.activityLog);
         }
         setDataLoaded(true);
       } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
@@ -1686,18 +1706,37 @@ export default function Dashboard({ user, onLogout }) {
     if (!dataLoaded) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts });
+      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog });
     }, 1500);
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, dataLoaded]);
+  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, dataLoaded]);
 
   const project = projects.find(p => p.id === activeProjectId) || projects[0];
-  const updateProject = (key, val) => setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
+  const updateProject = (key, val) => {
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
+    if (["status", "location", "client", "name"].includes(key)) {
+      logActivity("updated", `${key} → "${val}"`, project?.name);
+    }
+  };
   const updateProject2 = (projId, key, val) => setProjects(prev => prev.map(p => p.id === projId ? { ...p, [key]: val } : p));
   const updateGlobalContact = (contactId, field, val) => setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
-  const updateWB = (id, key, val) => setWorkback(prev => prev.map(w => w.id === id ? { ...w, [key]: val } : w));
-  const updateROS = (id, key, val) => setROS(prev => prev.map(r => r.id === id ? { ...r, [key]: val } : r));
-  const addWBRow = () => setWorkback(prev => [...prev, { id: `wb_${Date.now()}`, task: "", date: "", depts: [], status: "Not Started", owner: "" }]);
+  const updateWB = (id, key, val) => {
+    setWorkback(prev => prev.map(w => w.id === id ? { ...w, [key]: val } : w));
+    if (key === "status") {
+      const wb = workback.find(w => w.id === id);
+      logActivity("workback", `"${wb?.task || "task"}" → ${val}`, project?.name);
+    }
+  };
+  const updateROS = (id, key, val) => {
+    setROS(prev => prev.map(r => r.id === id ? { ...r, [key]: val } : r));
+    if (["item", "time"].includes(key)) {
+      logActivity("run of show", `updated ${key}`, project?.name);
+    }
+  };
+  const addWBRow = () => {
+    setWorkback(prev => [...prev, { id: `wb_${Date.now()}`, task: "", date: "", depts: [], status: "Not Started", owner: "" }]);
+    logActivity("workback", "added new row", project?.name);
+  };
   const addROSRow = (day) => { const existingDate = ros.find(r => r.day === day)?.dayDate || ""; setROS(prev => [...prev, { id: `r_${Date.now()}`, day, dayDate: existingDate, time: "", item: "", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" }]); };
 
   const handleFileDrop = async (vendorId, compKey, file, drivePath, basePath) => {
@@ -1706,6 +1745,7 @@ export default function Dashboard({ user, onLogout }) {
     
     // Immediately update UI optimistically
     setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], uploading: true } } }));
+    logActivity("vendor", `uploaded ${compKey} for "${vendor?.name}"`, project?.name);
     
     // Upload to Google Drive via API
     try {
@@ -1890,6 +1930,58 @@ export default function Dashboard({ user, onLogout }) {
               <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>SETTINGS</span>
             </button>
           )}
+          {/* Activity Feed Bell */}
+          <div style={{ position: "relative" }}>
+            <button onClick={() => { setShowActivityFeed(!showActivityFeed); if (!showActivityFeed) setLastSeenActivity(Date.now()); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "5px 9px", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", gap: 4 }} title="Activity Feed">
+              <span style={{ fontSize: 14 }}>🔔</span>
+              {activityLog.filter(a => a.ts > lastSeenActivity && a.email !== user?.email).length > 0 && (
+                <span style={{ position: "absolute", top: -2, right: -2, width: 16, height: 16, borderRadius: "50%", background: "#ff4444", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {Math.min(activityLog.filter(a => a.ts > lastSeenActivity && a.email !== user?.email).length, 99)}
+                </span>
+              )}
+            </button>
+            {showActivityFeed && (
+              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 380, maxHeight: 480, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)", zIndex: 1000, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Activity Feed</span>
+                  <button onClick={() => setShowActivityFeed(false)} style={{ background: "none", border: "none", color: "var(--textMuted)", cursor: "pointer", fontSize: 16 }}>×</button>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+                  {activityLog.length === 0 ? (
+                    <div style={{ padding: 30, textAlign: "center", color: "var(--textGhost)", fontSize: 12 }}>No activity yet. Changes will appear here.</div>
+                  ) : activityLog.slice(0, 50).map(a => {
+                    const isMe = a.email === user?.email;
+                    const timeAgo = (() => {
+                      const diff = Date.now() - a.ts;
+                      if (diff < 60000) return "just now";
+                      if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+                      if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+                      return `${Math.floor(diff / 86400000)}d ago`;
+                    })();
+                    const actionIcon = a.action === "workback" ? "◄" : a.action === "run of show" ? "▶" : a.action === "vendor" ? "⊕" : a.action === "updated" ? "✎" : "•";
+                    return (
+                      <div key={a.id} style={{ padding: "10px 16px", borderBottom: "1px solid var(--calLine)", display: "flex", gap: 10, alignItems: "flex-start", background: (!isMe && a.ts > lastSeenActivity) ? "#ff6b4a06" : "transparent" }}>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: isMe ? "#3da5db18" : "#ff6b4a18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: isMe ? "#3da5db" : "#ff6b4a", flexShrink: 0, marginTop: 2 }}>
+                          {a.user?.[0]?.toUpperCase() || "?"}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 12, color: "var(--text)", lineHeight: 1.4 }}>
+                            <span style={{ fontWeight: 700, color: isMe ? "#3da5db" : "#ff6b4a" }}>{a.user}</span>
+                            <span style={{ color: "var(--textMuted)" }}> {actionIcon} {a.action}: </span>
+                            <span style={{ color: "var(--textSub)" }}>{a.detail}</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, marginTop: 3 }}>
+                            {a.project && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 4, background: "var(--bgInput)", color: "var(--textFaint)", fontWeight: 600 }}>{a.project}</span>}
+                            <span style={{ fontSize: 9, color: "var(--textGhost)" }}>{timeAgo}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
           {/* Dark/Light toggle */}
           <button onClick={toggleDarkMode} style={{ background: darkMode ? "var(--bgCard)" : "#d8d0b8", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title={darkMode ? "Switch to light mode" : "Switch to dark mode"}>
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
@@ -2277,6 +2369,73 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ MACRO PROJECT VIEW ═══ */}
             {activeTab === "macro" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
+                {/* ── DASHBOARD STATS ── */}
+                {(() => {
+                  const activeProjects = projects.filter(p => !p.archived && p.status !== "Complete");
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
+                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => items.map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
+                  const overdueWB = allWB.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today);
+                  const dueThisWeek = allWB.filter(w => {
+                    if (!w.date || w.status === "Done") return false;
+                    const d = new Date(w.date + "T12:00:00");
+                    return d >= today && d <= weekFromNow;
+                  });
+                  const allVendors = Object.values(projectVendors).flat();
+                  const totalCompItems = allVendors.length * 5;
+                  const doneCompItems = allVendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
+                  const compPct = totalCompItems > 0 ? Math.round((doneCompItems / totalCompItems) * 100) : 0;
+                  const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
+                  const totalSpent = projects.reduce((s, p) => s + (p.spent || 0), 0);
+                  const upcoming = projects.filter(p => {
+                    if (p.archived || p.status === "Complete") return false;
+                    const d = p.eventDates?.start;
+                    if (!d) return false;
+                    const evtDate = new Date(d + "T12:00:00");
+                    return evtDate >= today && evtDate <= new Date(today.getTime() + 30 * 86400000);
+                  });
+
+                  return (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 22 }}>
+                      {/* Active Projects */}
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
+                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>ACTIVE PROJECTS</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>{activeProjects.length}</div>
+                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{upcoming.length} event{upcoming.length !== 1 ? "s" : ""} in next 30 days</div>
+                      </div>
+                      {/* Overdue Items */}
+                      <div style={{ background: overdueWB.length > 0 ? "#e854540a" : "var(--bgInput)", border: `1px solid ${overdueWB.length > 0 ? "#e8545430" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
+                        <div style={{ fontSize: 9, color: overdueWB.length > 0 ? "#e85454" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>OVERDUE TASKS</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: overdueWB.length > 0 ? "#e85454" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{overdueWB.length}</div>
+                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{overdueWB.length > 0 ? `across ${new Set(overdueWB.map(w => w._pid)).size} project${new Set(overdueWB.map(w => w._pid)).size !== 1 ? "s" : ""}` : "all on track ✓"}</div>
+                      </div>
+                      {/* Due This Week */}
+                      <div style={{ background: dueThisWeek.length > 0 ? "#f5a6230a" : "var(--bgInput)", border: `1px solid ${dueThisWeek.length > 0 ? "#f5a62330" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
+                        <div style={{ fontSize: 9, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>DUE THIS WEEK</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{dueThisWeek.length}</div>
+                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{dueThisWeek.length > 0 ? dueThisWeek.slice(0, 2).map(w => w.task || "untitled").join(", ") : "clear week"}</div>
+                      </div>
+                      {/* Vendor Compliance */}
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
+                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>VENDOR COMPLIANCE</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", fontFamily: "'Instrument Sans'" }}>{compPct}%</div>
+                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{doneCompItems}/{totalCompItems} docs collected</div>
+                        <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${compPct}%`, background: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", borderRadius: 2, transition: "width 0.5s" }} />
+                        </div>
+                      </div>
+                      {/* Total Budget */}
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
+                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>TOTAL BUDGET</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>${totalBudget > 999999 ? `${(totalBudget / 1000000).toFixed(1)}M` : totalBudget > 999 ? `${(totalBudget / 1000).toFixed(0)}K` : totalBudget.toLocaleString()}</div>
+                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>${totalSpent.toLocaleString()} spent ({totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0}%)</div>
+                        {totalBudget > 0 && <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${Math.min(100, (totalSpent / totalBudget) * 100)}%`, background: (totalSpent / totalBudget) > 0.9 ? "#e85454" : (totalSpent / totalBudget) > 0.7 ? "#f5a623" : "#4ecb71", borderRadius: 2, transition: "width 0.5s" }} />
+                        </div>}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL PROJECTS</div>
@@ -2525,16 +2684,41 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
                 <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "100px 2fr 1.2fr 1fr 1fr 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
-                  {workback.map((wb, i) => (
-                    <div key={wb.id} style={{ display: "grid", gridTemplateColumns: "100px 2fr 1.2fr 1fr 1fr 36px", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wb.isEvent ? "#ff6b4a0a" : "transparent", borderLeft: wb.isEvent ? "3px solid #ff6b4a40" : "3px solid transparent" }}>
-                      <DatePicker value={wb.date} onChange={v => updateWB(wb.id, "date", v)} />
+                  {workback.map((wb, i) => {
+                    // Deadline color-coding
+                    const wbDeadlineStyle = (() => {
+                      if (!wb.date || wb.status === "Done") return { borderLeft: wb.isEvent ? "3px solid #ff6b4a40" : "3px solid transparent", bg: wb.isEvent ? "#ff6b4a0a" : "transparent" };
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const dueDate = new Date(wb.date + "T23:59:59");
+                      const daysUntil = Math.ceil((dueDate - today) / 86400000);
+                      if (daysUntil < 0) return { borderLeft: "3px solid #e85454", bg: "#e854540a" }; // overdue - red
+                      if (daysUntil <= 7) return { borderLeft: "3px solid #f5a623", bg: "#f5a6230a" }; // due this week - yellow
+                      return { borderLeft: wb.isEvent ? "3px solid #ff6b4a40" : "3px solid #4ecb7130", bg: wb.isEvent ? "#ff6b4a0a" : "transparent" }; // on track - green accent
+                    })();
+                    const overdueLabel = (() => {
+                      if (!wb.date || wb.status === "Done") return null;
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const dueDate = new Date(wb.date + "T23:59:59");
+                      const daysUntil = Math.ceil((dueDate - today) / 86400000);
+                      if (daysUntil < 0) return { text: `${Math.abs(daysUntil)}d overdue`, color: "#e85454" };
+                      if (daysUntil === 0) return { text: "due today", color: "#f5a623" };
+                      if (daysUntil <= 7) return { text: `${daysUntil}d left`, color: "#f5a623" };
+                      return null;
+                    })();
+                    return (
+                    <div key={wb.id} style={{ display: "grid", gridTemplateColumns: "100px 2fr 1.2fr 1fr 1fr 36px", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wbDeadlineStyle.bg, borderLeft: wbDeadlineStyle.borderLeft }}>
+                      <div style={{ position: "relative" }}>
+                        <DatePicker value={wb.date} onChange={v => updateWB(wb.id, "date", v)} />
+                        {overdueLabel && <div style={{ fontSize: 8, fontWeight: 700, color: overdueLabel.color, marginTop: 2 }}>{overdueLabel.text}</div>}
+                      </div>
                       <EditableText value={wb.task} onChange={v => updateWB(wb.id, "task", v)} fontSize={12} color={wb.isEvent ? "#ff6b4a" : "var(--text)"} fontWeight={wb.isEvent ? 700 : 500} placeholder="Task name..." />
                       <MultiDropdown values={wb.depts} options={DEPT_OPTIONS} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
                       <Dropdown value={wb.owner} options={eventContactNames} onChange={v => updateWB(wb.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                       <Dropdown value={wb.status} options={WB_STATUSES} onChange={v => updateWB(wb.id, "status", v)} colors={Object.fromEntries(WB_STATUSES.map(s => [s, { bg: WB_STATUS_STYLES[s].bg, text: WB_STATUS_STYLES[s].text, dot: WB_STATUS_STYLES[s].text }]))} width="100%" />
                       <button onClick={() => setWorkback(p => p.filter(w => w.id !== wb.id))} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
