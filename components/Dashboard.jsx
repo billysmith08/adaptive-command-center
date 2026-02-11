@@ -1646,7 +1646,7 @@ export default function Dashboard({ user, onLogout }) {
     e.target.value = "";
   };
 
-  const emptyContact = { name: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual" };
+  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual" };
   const [contactForm, setContactForm] = useState({ ...emptyContact });
   const updateCF = (k, v) => setContactForm(p => ({ ...p, [k]: v }));
   const submitContact = () => {
@@ -1975,13 +1975,13 @@ export default function Dashboard({ user, onLogout }) {
     const vendor = vendors.find(v => v.id === vendorId);
     const fileName = typeof file === 'string' ? file : file.name;
     
-    // Immediately update UI optimistically
+    // Immediately update UI optimistically (show uploading state)
     setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], uploading: true } } }));
-    logActivity("vendor", `uploaded ${compKey} for "${vendor?.name}"`, project?.name);
+    logActivity("vendor", `uploading ${compKey} for "${vendor?.name}"`, project?.name);
     
     // Upload to Google Drive via API
-    try {
-      if (typeof file !== 'string') {
+    if (typeof file !== 'string') {
+      try {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('vendorName', vendor?.name || 'Unknown');
@@ -1992,20 +1992,32 @@ export default function Dashboard({ user, onLogout }) {
         const data = await res.json();
         
         if (data.success) {
+          // SUCCESS — update with Drive link
           setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], link: data.file?.link, uploading: false } } }));
           setUploadLog(prev => [{ id: Date.now(), vendorName: vendor?.name, compKey, fileName, drivePath, time: new Date().toLocaleTimeString(), folderCreated: data.folder?.created, vendorFolder: vendor?.name }, ...prev].slice(0, 20));
+          logActivity("vendor", `✅ uploaded ${compKey} for "${vendor?.name}" to Drive`, project?.name);
+          return;
+        } else {
+          // API returned error — REVERT the checkmark and show error
+          const errMsg = data.error || 'Upload failed - unknown error';
+          console.error('Drive upload API error:', errMsg, data);
+          setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: false, file: null, date: null, uploading: false, error: errMsg } } }));
+          setClipboardToast({ text: `❌ Drive upload failed: ${errMsg}`, x: window.innerWidth / 2, y: 60 });
+          setTimeout(() => setClipboardToast(null), 5000);
           return;
         }
+      } catch (err) {
+        // Network error or crash — REVERT and show error
+        console.error('Drive upload exception:', err);
+        setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: false, file: null, date: null, uploading: false, error: err.message } } }));
+        setClipboardToast({ text: `❌ Drive upload failed: ${err.message}`, x: window.innerWidth / 2, y: 60 });
+        setTimeout(() => setClipboardToast(null), 5000);
+        return;
       }
-    } catch (err) {
-      console.error('Drive upload failed, keeping local state:', err);
     }
     
-    // Fallback: just update local state
-    const vendorFolder = vendor?.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim();
-    const folderCreated = !uploadLog.some(l => l.drivePath === drivePath);
+    // Only reach here for string file names (manual entry, not actual file upload)
     setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], uploading: false } } }));
-    setUploadLog(prev => [{ id: Date.now(), vendorName: vendor?.name, compKey, fileName, drivePath, time: new Date().toLocaleTimeString(), folderCreated, vendorFolder }, ...prev].slice(0, 20));
   };
 
   const handleClearCompliance = (vendorId, compKey) => {
@@ -2467,12 +2479,12 @@ export default function Dashboard({ user, onLogout }) {
                 ) : (
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                     <div style={{ overflowX: "auto" }}>
-                    <div style={{ minWidth: 1100 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                      <span>NAME</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span>
+                    <div style={{ minWidth: 1280 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 140px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                      <span>NAME</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
                     </div>
                     {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 140px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
@@ -2540,6 +2552,31 @@ export default function Dashboard({ user, onLogout }) {
                           <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setContacts(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
+                        {/* DOCS column - show compliance doc links from matching vendor */}
+                        {(() => {
+                          const matchVendor = vendors.find(v => {
+                            const vn = v.name.toLowerCase();
+                            return vn === (c.name || "").toLowerCase() || vn === (c.company || "").toLowerCase() || vn === (c.vendorName || "").toLowerCase();
+                          });
+                          const comp = matchVendor?.compliance || {};
+                          const docTypes = [
+                            { key: "coi", label: "COI", color: "#4ecb71" },
+                            { key: "w9", label: "W9", color: "#3da5db" },
+                            { key: "banking", label: "BANK", color: "#dba94e" },
+                            { key: "invoice", label: "INV", color: "#9b6dff" },
+                            { key: "contract", label: "CTR", color: "#ff6b4a" },
+                          ];
+                          const hasDocs = docTypes.some(d => comp[d.key]?.done);
+                          return (
+                            <div style={{ display: "flex", gap: 3, flexWrap: "wrap", alignItems: "center" }}>
+                              {hasDocs ? docTypes.map(d => comp[d.key]?.done ? (
+                                <span key={d.key} onClick={() => comp[d.key]?.link && window.open(comp[d.key].link, "_blank")} style={{ padding: "2px 6px", background: `${d.color}15`, border: `1px solid ${d.color}30`, borderRadius: 3, fontSize: 8, fontWeight: 700, color: d.color, cursor: comp[d.key]?.link ? "pointer" : "default", whiteSpace: "nowrap" }} title={comp[d.key]?.file || d.label}>✓ {d.label}</span>
+                              ) : null) : matchVendor ? (
+                                <span style={{ fontSize: 8, color: "var(--textGhost)", fontStyle: "italic" }}>No docs yet</span>
+                              ) : <span style={{ fontSize: 9, color: "var(--textGhost)" }}>—</span>}
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                     </div>
@@ -4186,13 +4223,22 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
             <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>VENDOR / COMPANY NAME</label>
+                <input value={contactForm.vendorName || contactForm.company || ""} onChange={e => { updateCF("vendorName", e.target.value); updateCF("company", e.target.value); }} placeholder="e.g. GDRB, Collins Visual Media..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME</label><input value={contactForm.firstName} onChange={e => updateCF("firstName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME</label><input value={contactForm.lastName} onChange={e => updateCF("lastName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>POSITION / TITLE</label><input value={contactForm.position} onChange={e => updateCF("position", e.target.value)} placeholder="Executive Producer, DP, PM..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY</label><input value={contactForm.company} onChange={e => updateCF("company", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
+                  <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                    <option value="">Select...</option>
+                    {DEPT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
@@ -4209,25 +4255,20 @@ export default function Dashboard({ user, onLogout }) {
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
                 <AddressAutocomplete value={contactForm.address} onChange={v => updateCF("address", v)} showIcon={false} placeholder="123 Main St, City, State ZIP" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-                <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
-                  <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
-                    <option value="">Select...</option>
-                    {DEPT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
-                </div>
+              <div style={{ marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>NOTES</label><input value={contactForm.notes} onChange={e => updateCF("notes", e.target.value)} placeholder="Any notes..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
                 <button onClick={() => setShowAddContact(false)} style={{ padding: "9px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
                 <button onClick={() => {
-                  const name = contactForm.name || `${contactForm.firstName} ${contactForm.lastName}`.trim();
+                  const personName = `${contactForm.firstName} ${contactForm.lastName}`.trim();
+                  const name = contactForm.vendorName || personName || contactForm.company;
                   if (!name) return;
+                  const saveData = { ...contactForm, name, company: contactForm.vendorName || contactForm.company };
                   if (contactForm.id) {
-                    setContacts(prev => prev.map(c => c.id === contactForm.id ? { ...contactForm, name } : c));
+                    setContacts(prev => prev.map(c => c.id === contactForm.id ? saveData : c));
                   } else {
-                    setContacts(prev => [...prev, { ...contactForm, name, id: `ct_${Date.now()}` }]);
+                    setContacts(prev => [...prev, { ...saveData, id: `ct_${Date.now()}` }]);
                   }
                   setContactForm({ ...emptyContact });
                   setShowAddContact(false);
