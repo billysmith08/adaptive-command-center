@@ -1,6 +1,253 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase-browser";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import Underline from "@tiptap/extension-underline";
+import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
+import TextAlign from "@tiptap/extension-text-align";
+import Highlight from "@tiptap/extension-highlight";
+import Color from "@tiptap/extension-color";
+import TextStyle from "@tiptap/extension-text-style";
+
+// ─── RICH TEXT EDITOR ────────────────────────────────────────────────────────
+
+const TIPTAP_STYLES = `
+.tiptap-editor .ProseMirror { outline: none; min-height: 160px; padding: 12px 14px; font-size: 13px; line-height: 1.7; color: var(--textSub); font-family: 'Inter', 'DM Sans', sans-serif; }
+.tiptap-editor .ProseMirror p { margin: 0 0 6px 0; }
+.tiptap-editor .ProseMirror h1 { font-size: 20px; font-weight: 700; margin: 16px 0 8px 0; color: var(--text); }
+.tiptap-editor .ProseMirror h2 { font-size: 16px; font-weight: 600; margin: 14px 0 6px 0; color: var(--text); }
+.tiptap-editor .ProseMirror h3 { font-size: 14px; font-weight: 600; margin: 12px 0 4px 0; color: var(--text); }
+.tiptap-editor .ProseMirror ul, .tiptap-editor .ProseMirror ol { padding-left: 24px; margin: 4px 0; }
+.tiptap-editor .ProseMirror li { margin: 2px 0; }
+.tiptap-editor .ProseMirror blockquote { border-left: 3px solid var(--borderSub); padding-left: 14px; margin: 8px 0; color: var(--textMuted); font-style: italic; }
+.tiptap-editor .ProseMirror a { color: #3da5db; text-decoration: underline; cursor: pointer; }
+.tiptap-editor .ProseMirror mark { background: #ffe06640; padding: 1px 3px; border-radius: 2px; }
+.tiptap-editor .ProseMirror code { background: var(--bgInput); padding: 2px 6px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.tiptap-editor .ProseMirror pre { background: var(--bgInput); border: 1px solid var(--borderSub); border-radius: 6px; padding: 12px; margin: 8px 0; }
+.tiptap-editor .ProseMirror pre code { background: none; padding: 0; }
+.tiptap-editor .ProseMirror hr { border: none; border-top: 1px solid var(--borderSub); margin: 12px 0; }
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before { content: attr(data-placeholder); color: var(--textGhost); pointer-events: none; float: left; height: 0; }
+.tiptap-editor .ProseMirror .text-left { text-align: left; }
+.tiptap-editor .ProseMirror .text-center { text-align: center; }
+.tiptap-editor .ProseMirror .text-right { text-align: right; }
+`;
+
+function ToolbarBtn({ active, onClick, children, title }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        padding: "4px 7px", background: active ? "var(--borderSub)" : "transparent",
+        border: "1px solid transparent", borderRadius: 4, color: active ? "var(--text)" : "var(--textMuted)",
+        cursor: "pointer", fontSize: 13, fontWeight: active ? 700 : 400, lineHeight: 1,
+        display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 26, height: 26,
+        transition: "all 0.15s",
+      }}
+      onMouseEnter={e => { if (!active) e.target.style.background = "var(--bgHover)"; }}
+      onMouseLeave={e => { if (!active) e.target.style.background = "transparent"; }}
+    >{children}</button>
+  );
+}
+
+function ToolbarSep() {
+  return <div style={{ width: 1, height: 18, background: "var(--borderSub)", margin: "0 4px" }} />;
+}
+
+function RichTextEditor({ content, onChange, placeholder }) {
+  const [linkUrl, setLinkUrl] = useState("");
+  const [showLinkInput, setShowLinkInput] = useState(false);
+  const debounceRef = useRef(null);
+
+  // Convert plain text to HTML paragraphs if needed
+  const normalizeContent = (c) => {
+    if (!c) return "";
+    // Already HTML
+    if (c.includes("<p>") || c.includes("<h") || c.includes("<ul>") || c.includes("<ol>") || c.includes("<br")) return c;
+    // Plain text — convert newlines to paragraphs
+    return c.split("\n").filter(l => l.trim() !== "").map(l => `<p>${l}</p>`).join("") || "";
+  };
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
+      Underline,
+      Link.configure({ openOnClick: false, HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" } }),
+      Placeholder.configure({ placeholder: placeholder || "Write notes, updates, action items..." }),
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
+      Highlight.configure({ multicolor: false }),
+      TextStyle,
+      Color,
+    ],
+    content: normalizeContent(content) || "",
+    onUpdate: ({ editor }) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        const html = editor.getHTML();
+        if (html === "<p></p>") onChange("");
+        else onChange(html);
+      }, 400);
+    },
+  });
+
+  // Sync external content changes (e.g., switching projects)
+  useEffect(() => {
+    if (editor && content !== undefined) {
+      const currentContent = editor.getHTML();
+      const normalized = normalizeContent(content);
+      if (normalized !== currentContent && !(normalized === "" && currentContent === "<p></p>")) {
+        editor.commands.setContent(normalized, false);
+      }
+    }
+  }, [content, editor]);
+
+  if (!editor) return null;
+
+  const addLink = () => {
+    if (linkUrl) {
+      const url = linkUrl.startsWith("http") ? linkUrl : `https://${linkUrl}`;
+      editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
+    } else {
+      editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    }
+    setShowLinkInput(false);
+    setLinkUrl("");
+  };
+
+  return (
+    <div className="tiptap-editor" style={{ position: "relative" }}>
+      <style>{TIPTAP_STYLES}</style>
+      {/* ── Toolbar ── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 2, flexWrap: "wrap",
+        padding: "6px 8px", borderBottom: "1px solid var(--borderSub)",
+        background: "var(--bgInput)", borderRadius: "8px 8px 0 0",
+      }}>
+        {/* Text style */}
+        <ToolbarBtn title="Bold (⌘B)" active={editor.isActive("bold")} onClick={() => editor.chain().focus().toggleBold().run()}>
+          <strong>B</strong>
+        </ToolbarBtn>
+        <ToolbarBtn title="Italic (⌘I)" active={editor.isActive("italic")} onClick={() => editor.chain().focus().toggleItalic().run()}>
+          <em>I</em>
+        </ToolbarBtn>
+        <ToolbarBtn title="Underline (⌘U)" active={editor.isActive("underline")} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+          <span style={{ textDecoration: "underline" }}>U</span>
+        </ToolbarBtn>
+        <ToolbarBtn title="Strikethrough" active={editor.isActive("strike")} onClick={() => editor.chain().focus().toggleStrike().run()}>
+          <span style={{ textDecoration: "line-through" }}>S</span>
+        </ToolbarBtn>
+        <ToolbarBtn title="Highlight" active={editor.isActive("highlight")} onClick={() => editor.chain().focus().toggleHighlight().run()}>
+          <span style={{ background: "#ffe066", padding: "0 3px", borderRadius: 2, color: "#333", fontSize: 11 }}>H</span>
+        </ToolbarBtn>
+
+        <ToolbarSep />
+
+        {/* Headings */}
+        <ToolbarBtn title="Heading 1" active={editor.isActive("heading", { level: 1 })} onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}>
+          H1
+        </ToolbarBtn>
+        <ToolbarBtn title="Heading 2" active={editor.isActive("heading", { level: 2 })} onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}>
+          H2
+        </ToolbarBtn>
+        <ToolbarBtn title="Heading 3" active={editor.isActive("heading", { level: 3 })} onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()}>
+          H3
+        </ToolbarBtn>
+
+        <ToolbarSep />
+
+        {/* Lists */}
+        <ToolbarBtn title="Bullet List" active={editor.isActive("bulletList")} onClick={() => editor.chain().focus().toggleBulletList().run()}>
+          •≡
+        </ToolbarBtn>
+        <ToolbarBtn title="Numbered List" active={editor.isActive("orderedList")} onClick={() => editor.chain().focus().toggleOrderedList().run()}>
+          1.
+        </ToolbarBtn>
+        <ToolbarBtn title="Blockquote" active={editor.isActive("blockquote")} onClick={() => editor.chain().focus().toggleBlockquote().run()}>
+          ❝
+        </ToolbarBtn>
+
+        <ToolbarSep />
+
+        {/* Alignment */}
+        <ToolbarBtn title="Align Left" active={editor.isActive({ textAlign: "left" })} onClick={() => editor.chain().focus().setTextAlign("left").run()}>
+          ≡
+        </ToolbarBtn>
+        <ToolbarBtn title="Align Center" active={editor.isActive({ textAlign: "center" })} onClick={() => editor.chain().focus().setTextAlign("center").run()}>
+          ≡
+        </ToolbarBtn>
+        <ToolbarBtn title="Align Right" active={editor.isActive({ textAlign: "right" })} onClick={() => editor.chain().focus().setTextAlign("right").run()}>
+          ≡
+        </ToolbarBtn>
+
+        <ToolbarSep />
+
+        {/* Link */}
+        <ToolbarBtn title="Insert Link" active={editor.isActive("link")} onClick={() => {
+          if (editor.isActive("link")) { editor.chain().focus().unsetLink().run(); }
+          else { setShowLinkInput(!showLinkInput); }
+        }}>
+          🔗
+        </ToolbarBtn>
+
+        {/* Divider */}
+        <ToolbarBtn title="Horizontal Rule" onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+          ―
+        </ToolbarBtn>
+
+        {/* Code */}
+        <ToolbarBtn title="Code" active={editor.isActive("code")} onClick={() => editor.chain().focus().toggleCode().run()}>
+          {"</>"}
+        </ToolbarBtn>
+
+        {/* Undo/Redo */}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
+          <ToolbarBtn title="Undo (⌘Z)" onClick={() => editor.chain().focus().undo().run()}>↩</ToolbarBtn>
+          <ToolbarBtn title="Redo (⌘⇧Z)" onClick={() => editor.chain().focus().redo().run()}>↪</ToolbarBtn>
+        </div>
+      </div>
+
+      {/* ── Link input popup ── */}
+      {showLinkInput && (
+        <div style={{
+          position: "absolute", top: 42, left: 8, zIndex: 50,
+          display: "flex", gap: 6, padding: "8px 10px",
+          background: "var(--bgCard)", border: "1px solid var(--borderSub)",
+          borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+        }}>
+          <input
+            type="text" value={linkUrl} onChange={e => setLinkUrl(e.target.value)}
+            placeholder="https://..."
+            onKeyDown={e => e.key === "Enter" && addLink()}
+            autoFocus
+            style={{
+              width: 240, padding: "6px 10px", fontSize: 12,
+              background: "var(--bgInput)", border: "1px solid var(--borderSub)",
+              borderRadius: 6, color: "var(--text)", outline: "none",
+            }}
+          />
+          <button onClick={addLink} style={{
+            padding: "6px 12px", background: "#3da5db", border: "none", borderRadius: 6,
+            color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer",
+          }}>Add</button>
+          <button onClick={() => { setShowLinkInput(false); setLinkUrl(""); }} style={{
+            padding: "6px 10px", background: "transparent", border: "1px solid var(--borderSub)",
+            borderRadius: 6, color: "var(--textMuted)", fontSize: 11, cursor: "pointer",
+          }}>✕</button>
+        </div>
+      )}
+
+      {/* ── Editor area ── */}
+      <div style={{
+        background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderTop: "none",
+        borderRadius: "0 0 8px 8px", minHeight: 160,
+      }}>
+        <EditorContent editor={editor} />
+      </div>
+    </div>
+  );
+}
 
 // ─── CONSTANTS ───────────────────────────────────────────────────────────────
 
@@ -2178,14 +2425,14 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ marginTop: 22 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 10 }}>PROJECT NOTES & UPDATES</div>
-                    <textarea
-                      value={project.notes || ""}
-                      onChange={e => updateProject("notes", e.target.value)}
-                      placeholder={"Write updates, tag team members with @name...\n\nExample:\n@Billy — confirmed venue contract signed 2/10\n@Clancy — waiting on final headcount from client"}
-                      style={{ width: "100%", minHeight: 140, padding: "12px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textSub)", fontSize: 13, fontFamily: "'Inter', sans-serif", lineHeight: 1.6, resize: "vertical", outline: "none", boxSizing: "border-box" }}
+                    <RichTextEditor
+                      content={project.notes || ""}
+                      onChange={val => updateProject("notes", val)}
+                      placeholder={"Write updates, tag team members with @name, add formatting, links, lists..."}
                     />
                     {project.notes && (() => {
-                      const mentions = [...new Set((project.notes.match(/@[\w]+(?:\s[\w]+)?/g) || []).map(m => m.slice(1)))];
+                      const plainText = project.notes.replace(/<[^>]*>/g, " ");
+                      const mentions = [...new Set((plainText.match(/@[\w]+(?:\s[\w]+)?/g) || []).map(m => m.slice(1)))];
                       if (mentions.length === 0) return null;
                       return <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {mentions.map(m => <span key={m} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#9b6dff15", color: "#9b6dff", fontWeight: 600 }}>@{m}</span>)}
