@@ -8,7 +8,7 @@ Production management dashboard for Adaptive by Design.
 - **Google Drive API** — Vendor document management
 - **Vercel** — Hosting
 
-## Setup 
+## Setup  
 
 1. Clone this repo
 2. Copy `.env.local.example` to `.env.local` and fill in credentials
