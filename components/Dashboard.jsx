@@ -1322,6 +1322,7 @@ export default function Dashboard({ user, onLogout }) {
     statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
     projectTypes: ["Brand Event", "Private Event", "Festival", "Live Event", "Internal", "Touring", "Experiential"],
     departments: [...DEPT_OPTIONS],
+    resourceTypes: ["Equipment", "Crew", "Post House", "Color", "Talent", "Catering", "Vehicles", "Props", "Fabrication", "Venue", "Permits", "Staffing", "Security", "AV/Tech", "Floral", "Decor", "Photography", "Videography", "DJ/Music", "Lighting", "Other"],
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -1610,8 +1611,22 @@ export default function Dashboard({ user, onLogout }) {
     setVendorSearch("");
   };
   const CONTACT_TYPES = ["Vendor", "Freelancer", "Agency", "Venue", "Subcontractor", "Supplier"];
-  const RESOURCE_TYPES = ["Equipment", "Crew", "Post House", "Color", "Talent", "Catering", "Vehicles", "Props", "Fabrication", "Venue", "Permits", "Staffing", "Security", "AV/Tech", "Floral", "Decor", "Photography", "Videography", "DJ/Music", "Lighting", "Other"];
   const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0] };
+
+  // Phone formatting: +1 (XXX) XXX-XXXX
+  const formatPhone = (val) => {
+    const digits = val.replace(/\D/g, '');
+    // If starts with 1 and has 11 digits, treat as +1 country code
+    let d = digits;
+    let prefix = '+1 ';
+    if (d.startsWith('1') && d.length > 10) d = d.slice(1);
+    else if (d.length <= 10) { /* US number, add +1 */ }
+    else { return val; } // foreign number, don't force format
+    if (d.length === 0) return '';
+    if (d.length <= 3) return prefix + '(' + d;
+    if (d.length <= 6) return prefix + '(' + d.slice(0, 3) + ') ' + d.slice(3);
+    return prefix + '(' + d.slice(0, 3) + ') ' + d.slice(3, 6) + '-' + d.slice(6, 10);
+  };
   const [vendorForm, setVendorForm] = useState({ ...emptyVendorForm });
   const updateVF = (k, v) => setVendorForm(p => ({ ...p, [k]: v }));
   const submitVendor = () => {
@@ -3674,6 +3689,20 @@ export default function Dashboard({ user, onLogout }) {
                     <input placeholder="Add department + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
                       onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, departments: [...prev.departments, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
+                  {/* Resource Types */}
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Vendor Resource Types</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
+                      {(appSettings.resourceTypes || []).map((rt, i) => (
+                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                          {rt}
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, resourceTypes: prev.resourceTypes.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                        </span>
+                      ))}
+                    </div>
+                    <input placeholder="Add resource type + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, resourceTypes: [...(prev.resourceTypes || []), e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
                 </div>
               )}
 
@@ -3920,7 +3949,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY</label><input value={contactForm.company} onChange={e => updateCF("company", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><input value={contactForm.phone} onChange={e => updateCF("phone", e.target.value)} placeholder="(555) 123-4567" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><input value={contactForm.phone} onChange={e => updateCF("phone", formatPhone(e.target.value))} placeholder="+1 (555) 123-4567" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={contactForm.email} onChange={e => updateCF("email", e.target.value)} placeholder="name@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
@@ -4274,7 +4303,7 @@ export default function Dashboard({ user, onLogout }) {
                   <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Resource Type</label>
                   <select value={vendorForm.resourceType} onChange={e => updateVF("resourceType", e.target.value)} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", appearance: "auto" }}>
                     <option value="">Select...</option>
-                    {RESOURCE_TYPES.map(rt => <option key={rt} value={rt}>{rt}</option>)}
+                    {(appSettings.resourceTypes || []).map(rt => <option key={rt} value={rt}>{rt}</option>)}
                   </select>
                 </div>
               </div>
@@ -4295,7 +4324,7 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 18 }}>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Phone</label>
-                  <input value={vendorForm.phone} onChange={e => updateVF("phone", e.target.value)} placeholder="(555) 000-0000" style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", outline: "none" }} />
+                  <input value={vendorForm.phone} onChange={e => updateVF("phone", formatPhone(e.target.value))} placeholder="+1 (555) 000-0000" style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", outline: "none" }} />
                 </div>
                 <div>
                   <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Email</label>
