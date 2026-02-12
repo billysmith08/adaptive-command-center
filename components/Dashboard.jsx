@@ -712,8 +712,8 @@ function EditableBudget({ value, onSave }) {
 }
 
 function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, onCreateContact, projectRoles: propsRoles }) {
-  const PROJECT_ROLES = (propsRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort();
-  const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8" };
+  const PROJECT_ROLES = (propsRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep", "Vendor"]).slice().sort();
+  const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8", Vendor: "#e8a54e", Contractor: "#e8a54e" };
   const [addOpen, setAddOpen] = useState(false);
   const [addQ, setAddQ] = useState("");
   const [addStep, setAddStep] = useState(0); // 0=search, 1=new contact form, 2=role/dept
@@ -2800,6 +2800,7 @@ export default function Dashboard({ user, onLogout }) {
               billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [],
               services: Array.isArray(p.services) ? p.services : [],
               subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
+              contactOrder: Array.isArray(p.contactOrder) ? p.contactOrder : [],
             })));
           }
           // Sanitize per-project maps: ensure each project's list is an array
@@ -2985,6 +2986,7 @@ export default function Dashboard({ user, onLogout }) {
     billingContacts: Array.isArray(_rawProject.billingContacts) ? _rawProject.billingContacts : [],
     services: Array.isArray(_rawProject.services) ? _rawProject.services : [],
     subEvents: Array.isArray(_rawProject.subEvents) ? _rawProject.subEvents : [],
+    contactOrder: Array.isArray(_rawProject.contactOrder) ? _rawProject.contactOrder : [],
     eventDates: _rawProject.eventDates || { start: "", end: "" },
     engagementDates: _rawProject.engagementDates || { start: "", end: "" },
   } : { id: "p1", name: "Loading...", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], services: [], subEvents: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" } };
@@ -3811,7 +3813,7 @@ export default function Dashboard({ user, onLogout }) {
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10 }}>{t.icon}</span>{t.label}
                   {t.id === "vendors" && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: compDone < compTotal ? "var(--borderSub)" : "var(--bgCard)", color: compDone < compTotal ? "#e85454" : "#4ecb71", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{compDone}/{compTotal}</span>}
-                  {t.id === "contacts" && (() => { const ct = project.producers.length + project.managers.length + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
+                  {t.id === "contacts" && (() => { const ct = project.producers.length + project.managers.length + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length + vendors.filter(v => v.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
                 </button>
               ))}
             </div>
@@ -5444,7 +5446,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 11, color: "var(--textGhost)" }}>Search Google Drive above or click "+ Add Vendor" to get started</div>
                     </div>
                   )}
-                  {vendors.map((v, vi) => {
+                  {[...vendors].sort((a, b) => (a.name || "").localeCompare(b.name || "")).map((v, vi) => {
                     const done = Object.values(v.compliance).filter(c => c.done).length;
                     const isExp = expandedVendor === v.id;
                     const isSelected = selectedVendorIds.has(v.id);
@@ -5530,15 +5532,46 @@ export default function Dashboard({ user, onLogout }) {
             {activeTab === "contacts" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 {(() => {
-                  const PROJECT_ROLES = (appSettings.projectRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort();
-                  const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8" };
+                  const PROJECT_ROLES = (appSettings.projectRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep", "Vendor"]).slice().sort();
+                  const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8", Vendor: "#e8a54e", Contractor: "#e8a54e" };
 
                   const teamPeople = [...project.producers.map(n => ({ name: n, role: "Producer", source: "producers" })), ...project.managers.map(n => ({ name: n, role: "Manager", source: "managers" })), ...(project.staff || []).map(n => ({ name: n, role: "Staff / Crew", source: "staff" }))];
                   const clientPeople = (project.clientContacts || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Client", source: "clientContacts", dept: p.dept || "" }));
                   const pocPeople = (project.pocs || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Point of Contact", source: "pocs", dept: p.dept || "" }));
                   const billingPeople = (project.billingContacts || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Billing", source: "billingContacts", dept: p.dept || "" }));
-                  const allProjectPeople = [...teamPeople, ...clientPeople, ...pocPeople, ...billingPeople];
+                  const vendorPeople = vendors.filter(v => v.name).map(v => ({ name: v.contact || v.name, role: v.type === "Contractor" ? "Contractor" : "Vendor", source: "vendors", dept: v.name !== (v.contact || v.name) ? v.name : "", phone: v.phone || "", email: v.email || "", company: v.name, vendorId: v.id })).sort((a, b) => a.name.localeCompare(b.name));
+                  const rawPeople = [...teamPeople, ...clientPeople, ...pocPeople, ...billingPeople, ...vendorPeople];
+
+                  // Stable key for each person
+                  const pKey = (p) => `${p.source}::${p.name}`;
+
+                  // Apply persisted contactOrder if it exists
+                  const savedOrder = project.contactOrder || [];
+                  let allProjectPeople;
+                  if (savedOrder.length > 0) {
+                    const orderMap = {};
+                    savedOrder.forEach((k, i) => { orderMap[k] = i; });
+                    const ordered = [];
+                    const unordered = [];
+                    rawPeople.forEach(p => {
+                      if (orderMap[pKey(p)] !== undefined) ordered.push(p);
+                      else unordered.push(p);
+                    });
+                    ordered.sort((a, b) => orderMap[pKey(a)] - orderMap[pKey(b)]);
+                    allProjectPeople = [...ordered, ...unordered];
+                  } else {
+                    allProjectPeople = rawPeople;
+                  }
+
                   const filtered = contactSearch ? allProjectPeople.filter(p => p.name.toLowerCase().includes(contactSearch.toLowerCase()) || p.role.toLowerCase().includes(contactSearch.toLowerCase()) || (p.dept || "").toLowerCase().includes(contactSearch.toLowerCase())) : allProjectPeople;
+
+                  const moveContact = (idx, dir) => {
+                    const target = idx + dir;
+                    if (target < 0 || target >= allProjectPeople.length) return;
+                    const newList = [...allProjectPeople];
+                    [newList[idx], newList[target]] = [newList[target], newList[idx]];
+                    updateProject("contactOrder", newList.map(p => pKey(p)));
+                  };
 
                   const addPersonToProject = (contact, role, dept) => {
                     const entry = { name: contact.name || contact, phone: contact.phone || "", email: contact.email || "", address: contact.address || "", company: contact.company || "", dept: dept || "", role: role, fromContacts: !!contact.id };
@@ -5547,6 +5580,9 @@ export default function Dashboard({ user, onLogout }) {
                     else if (role === "Staff / Crew") updateProject("staff", [...(project.staff || []), entry.name]);
                     else if (role === "Client") updateProject("clientContacts", [...(project.clientContacts || []), entry]);
                     else if (role === "Billing") updateProject("billingContacts", [...(project.billingContacts || []), entry]);
+                    else if (role === "Vendor" || role === "Contractor") {
+                      setVendors(prev => [...prev, { id: `v_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, name: entry.company || entry.name, type: role, email: entry.email, contact: entry.name, phone: entry.phone, title: "", contactType: role, deptId: "", source: "manual", address: entry.address || "", compliance: { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } }]);
+                    }
                     else updateProject("pocs", [...(project.pocs || []), entry]);
                     setClipboardToast({ text: `${entry.name} added as ${role}!`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 1800);
                   };
@@ -5558,6 +5594,7 @@ export default function Dashboard({ user, onLogout }) {
                     else if (person.source === "clientContacts") updateProject("clientContacts", (project.clientContacts || []).filter(p => p.name !== person.name));
                     else if (person.source === "pocs") updateProject("pocs", (project.pocs || []).filter(p => p.name !== person.name));
                     else if (person.source === "billingContacts") updateProject("billingContacts", (project.billingContacts || []).filter(p => p.name !== person.name));
+                    else if (person.source === "vendors") setVendors(prev => prev.filter(v => v.id !== person.vendorId));
                   };
 
                   const changePersonRole = (person, newRole) => {
@@ -5602,8 +5639,8 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     ) : (
                       <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                          <span>NAME</span><span>ROLE</span><span>DEPARTMENT</span><span>PHONE</span><span>EMAIL</span><span>ACTIONS</span>
+                        <div style={{ display: "grid", gridTemplateColumns: "36px 2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                          <span>#</span><span>NAME</span><span>ROLE</span><span>DEPARTMENT</span><span>PHONE</span><span>EMAIL</span><span>ACTIONS</span>
                         </div>
                         {filtered.map((person, i) => {
                           const c = contacts.find(ct => ct.name === person.name);
@@ -5611,8 +5648,16 @@ export default function Dashboard({ user, onLogout }) {
                           const rc = ROLE_COLORS[person.role] || "var(--textMuted)";
                           const dc = DEPT_COLORS[person.dept] || null;
                           const isTeam = person.source === "producers" || person.source === "managers" || person.source === "staff";
+                          const isVendor = person.source === "vendors";
+                          const realIdx = allProjectPeople.indexOf(person);
                           return (
-                            <div key={`ep-${i}`} style={{ display: "grid", gridTemplateColumns: "2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                            <div key={`ep-${i}`} style={{ display: "grid", gridTemplateColumns: "36px 2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                              {/* # + ARROWS */}
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+                                {!contactSearch && <button onClick={() => moveContact(realIdx, -1)} disabled={realIdx === 0} style={{ background: "none", border: "none", cursor: realIdx === 0 ? "default" : "pointer", color: realIdx === 0 ? "var(--borderSub)" : "var(--textFaint)", fontSize: 8, padding: 0, lineHeight: 1 }}>▲</button>}
+                                <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{i + 1}</span>
+                                {!contactSearch && <button onClick={() => moveContact(realIdx, 1)} disabled={realIdx === allProjectPeople.length - 1} style={{ background: "none", border: "none", cursor: realIdx === allProjectPeople.length - 1 ? "default" : "pointer", color: realIdx === allProjectPeople.length - 1 ? "var(--borderSub)" : "var(--textFaint)", fontSize: 8, padding: 0, lineHeight: 1 }}>▼</button>}
+                              </div>
                               {/* NAME */}
                               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                                 <div onClick={(e) => viewContact(c || { name: person.name, phone: person.phone, email: person.email }, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: `${rc}15`, border: `1px solid ${rc}30`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: rc, flexShrink: 0, cursor: "pointer" }}>
@@ -5633,6 +5678,8 @@ export default function Dashboard({ user, onLogout }) {
                               <div>
                                 {isTeam ? (
                                   <span style={{ fontSize: 9, color: "var(--textGhost)" }}>—</span>
+                                ) : isVendor ? (
+                                  <span style={{ fontSize: 9, color: "#e8a54e", fontWeight: 600 }}>{person.company || person.dept || "—"}</span>
                                 ) : (
                                   <select value={person.dept || ""} onChange={e => changePersonDept(person, e.target.value)} style={{ padding: "3px 4px", background: dc ? `${dc}15` : "var(--bgInput)", border: `1px solid ${dc ? dc + "30" : "var(--borderSub)"}`, borderRadius: 4, color: dc || "var(--textFaint)", fontSize: 8, fontWeight: 600, cursor: "pointer", outline: "none", appearance: "auto", maxWidth: 90 }}>
                                     <option value="">None</option>
