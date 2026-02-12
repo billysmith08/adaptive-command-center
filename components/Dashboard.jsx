@@ -808,13 +808,13 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
             </div>
             <div style={{ padding: "10px 14px" }}>
               <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>PROJECT ROLE</div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 14 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 20 }}>
                 {PROJECT_ROLES.map(r => (
                   <button key={r} onClick={() => setAddRole(r)} style={{ padding: "5px 10px", borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: "pointer", background: addRole === r ? (ROLE_COLORS[r] || "var(--textMuted)") + "25" : "var(--bgInput)", border: `1px solid ${addRole === r ? (ROLE_COLORS[r] || "var(--textMuted)") + "50" : "var(--borderSub)"}`, color: addRole === r ? ROLE_COLORS[r] || "var(--textMuted)" : "var(--textFaint)" }}>{r}</button>
                 ))}
               </div>
               <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>DEPARTMENT <span style={{ color: "var(--textGhost)", fontWeight: 400 }}>(optional)</span></div>
-              <select value={addDept} onChange={e => setAddDept(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, marginBottom: 14 }}>
+              <select value={addDept} onChange={e => setAddDept(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, marginBottom: 20 }}>
                 <option value="">No department</option>
                 {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
@@ -882,7 +882,7 @@ function ClientSearchInput({ value, onChange, projects, clients, onAddNew }) {
   );
 }
 
-function PocPullDropdown({ contacts, existingPocs, onSelect }) {
+function PocPullDropdown({ contacts, existingPocs, onSelect, searchLabel }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -890,7 +890,7 @@ function PocPullDropdown({ contacts, existingPocs, onSelect }) {
   const filtered = (contacts || []).filter(c => c.name.toLowerCase().includes(query.toLowerCase()) && !(existingPocs || []).find(p => p.name === c.name));
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <button onClick={() => setOpen(!open)} style={{ padding: "3px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>🔍 Search Contacts</button>
+      <button onClick={() => setOpen(!open)} style={{ padding: "3px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>{searchLabel || "🔍 Search Contacts"}</button>
       {open && (
         <div style={{ position: "absolute", top: "100%", right: 0, marginTop: 4, width: 260, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 60, overflow: "hidden" }}>
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search by name, email, company..." autoFocus style={{ width: "100%", padding: "8px 12px", background: "var(--bgInput)", border: "none", borderBottom: "1px solid var(--borderSub)", color: "var(--text)", fontSize: 11, outline: "none", boxSizing: "border-box" }} />
@@ -913,7 +913,7 @@ function PocPullDropdown({ contacts, existingPocs, onSelect }) {
   );
 }
 
-function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, onViewContact, copyToClipboard, showAddress, onUpdateGlobalContact }) {
+function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, onViewContact, copyToClipboard, showAddress, onUpdateGlobalContact, searchLabel }) {
   const syncField = (pi, field, val) => {
     const arr = [...(items || [])]; arr[pi] = { ...arr[pi], [field]: val }; onUpdate(arr);
     // Bidirectional: if linked to global, update global too
@@ -927,7 +927,7 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8 }}>{label}</span>
         <div style={{ display: "flex", gap: 6 }}>
-          <PocPullDropdown contacts={contacts} existingPocs={items} onSelect={(c) => {
+          <PocPullDropdown contacts={contacts} existingPocs={items} searchLabel={searchLabel} onSelect={(c) => {
             onUpdate([...(items || []), { name: c.name, phone: c.phone || "", email: c.email || "", address: c.notes?.match(/(?:Home|Office|Address):\s*([^\n·]+)/i)?.[1]?.trim() || "", fromContacts: true }]);
           }} />
           <button onClick={() => onUpdate([...(items || []), { name: "", phone: "", email: "", address: "", fromContacts: false }])} style={{ padding: "3px 8px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 4, color: "#ff6b4a", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>+ Add</button>
@@ -1530,7 +1530,7 @@ export default function Dashboard({ user, onLogout }) {
   const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
   // Resizable column widths
   const defaultClientCols = [36, 190, 80, 130, 140, 170, 110, 150, 170, 140];
-  const defaultPartnerCols = [36, 170, 65, 105, 105, 125, 170, 130, 115, 150, 160];
+  const defaultPartnerCols = [36, 160, 60, 100, 100, 120, 160, 120, 110, 210, 160];
   const [clientColWidths, setClientColWidths] = useState(defaultClientCols);
   const [partnerColWidths, setPartnerColWidths] = useState(defaultPartnerCols);
   const resizeRef = useRef(null);
@@ -3639,7 +3639,7 @@ export default function Dashboard({ user, onLogout }) {
                     )}
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
                     <div style={{ minWidth: 1420 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5, minWidth: 1400 }}>
                       {[["", ""], ["NAME", "name"], ["TYPE", "contactType"], ["RESOURCE TYPE", "resourceType"], ["POSITION", "position"], ["PHONE", "phone"], ["EMAIL", "email"], ["ADDRESS", "address"], ["COMPANY", "company"], ["ACTIONS", ""], ["DOCS", ""]].map(([label, sortKey], i) => (
                         <span key={i} style={{ position: "relative", userSelect: "none", cursor: sortKey ? "pointer" : "default", display: "flex", alignItems: "center", gap: 3 }} onClick={() => { if (!sortKey) return; setPartnerSort(prev => prev.col === sortKey ? { col: sortKey, dir: prev.dir === "asc" ? "desc" : "asc" } : { col: sortKey, dir: "asc" }); }}>
                           {i === 0 ? <input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /> : <>{label}{partnerSort.col === sortKey && <span style={{ color: "#ff6b4a", fontSize: 8 }}>{partnerSort.dir === "asc" ? "▲" : "▼"}</span>}</>}
@@ -3648,7 +3648,7 @@ export default function Dashboard({ user, onLogout }) {
                       ))}
                     </div>
                     {contacts.filter(c => (!contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())) && (!contactFilterType || c.contactType === contactFilterType) && (!contactFilterResource || c.resourceType === contactFilterResource)).sort((a, b) => { if (!partnerSort.col) return 0; const av = (a[partnerSort.col] || "").toString().toLowerCase(); const bv = (b[partnerSort.col] || "").toString().toLowerCase(); return partnerSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); }).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent", minWidth: 1400 }}>
                         <span><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={(e) => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
@@ -3666,7 +3666,7 @@ export default function Dashboard({ user, onLogout }) {
                         <span onClick={(e) => c.email && copyToClipboard(c.email, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.email) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.email || "—"} {c.email && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span onClick={(e) => c.address && copyToClipboard(c.address, "Address", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.address ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.address) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"} title={c.address || ""}>{c.address || "—"} {c.address && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.company || "—"}</span>
-                        <div style={{ display: "flex", gap: 6, alignItems: "center", position: "relative" }}>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative", flexWrap: "nowrap", overflow: "visible" }}>
                           <div style={{ position: "relative" }}>
                             <button onClick={() => setAssignContactPopover(assignContactPopover?.contactId === c.id ? null : { contactId: c.id, selectedProject: activeProjectId, selectedRole: "Point of Contact" })} style={{ padding: "4px 10px", background: assignContactPopover?.contactId === c.id ? "#9b6dff25" : "#9b6dff10", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>+ Project</button>
                             {assignContactPopover?.contactId === c.id && (
@@ -4099,21 +4099,21 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
 
                     {/* CLIENT CONTACTS */}
-                    <ContactListBlock label="CLIENT" items={project.clientContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
+                    <ContactListBlock label="CLIENT" searchLabel="🔍 Search Clients" items={project.clientContacts || []} contacts={clients.map(cl => ({ id: cl.id, name: cl.name, phone: cl.contactPhone || cl.billingPhone || "", email: cl.contactEmail || cl.billingEmail || "", company: cl.name, position: "Client", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") }))} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Client", department: "", address: poc.address || "", notes: `Client for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.clientContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("clientContacts", arr);
                     }} />
 
                     {/* POINT OF CONTACT(S) */}
-                    <ContactListBlock label="POINT OF CONTACT(S)" items={project.pocs || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("pocs", v)} onSaveToGlobal={(poc, pi) => {
+                    <ContactListBlock label="POINT OF CONTACT(S)" searchLabel="🔍 Search Partners" items={project.pocs || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("pocs", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "", department: "", address: poc.address || "", notes: `POC for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.pocs || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("pocs", arr);
                     }} />
 
                     {/* BILLING CONTACT */}
-                    <ContactListBlock label="BILLING CONTACT" items={project.billingContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("billingContacts", v)} onSaveToGlobal={(poc, pi) => {
+                    <ContactListBlock label="BILLING CONTACT" searchLabel="🔍 Search Partners" items={project.billingContacts || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("billingContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Billing", department: "Finance", address: poc.address || "", notes: `Billing for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.billingContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("billingContacts", arr);
@@ -4121,7 +4121,7 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>BUDGET SNAPSHOT</div><a href="https://app.saturation.io/weareadptv" target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#ff6b4a", textDecoration: "none", fontWeight: 600 }}>Open in Saturation →</a></div>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
                       <div><div style={{ fontSize: 9, color: "var(--textFaint)", marginBottom: 4 }}>ESTIMATED</div>
                         <EditableBudget value={project.budget} onSave={v => updateProject("budget", v)} />
                       </div>
@@ -4156,7 +4156,7 @@ export default function Dashboard({ user, onLogout }) {
                 {project.isTour && project.subEvents && (
                   <div style={{ marginTop: 22 }}>
                     <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>TOUR SCHEDULE</div>
                           <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{project.subEvents.length} DATES</span>
@@ -4408,7 +4408,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ RUN OF SHOW ═══ */}
             {activeTab === "ros" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 20 }}>
                   <button onClick={() => { const nextDay = days.length > 0 ? Math.max(...days) + 1 : 1; addROSRow(nextDay); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 13 }}>+</span> Add Day
                   </button>
@@ -4429,7 +4429,9 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                       <button onClick={() => addROSRow(day)} style={{ padding: "5px 12px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Row</button>
                     </div>
-                    <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
+                      <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 280px)", minHeight: 200 }}>
+                      <div style={{ minWidth: 1100 }}>
                       <div style={{ display: "grid", gridTemplateColumns: "65px 1.6fr 0.7fr 1fr 0.9fr 0.7fr 0.7fr 1fr 30px", padding: "8px 12px", borderBottom: "1px solid var(--borderSub)", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>TIME</span><span>ITEM</span><span>DEPT</span><span>VENDORS</span><span>LOCATION</span><span>CONTACT</span><span>OWNER</span><span>NOTES</span><span></span></div>
                       {ros.filter(r => r.day === day).map(entry => {
                         const isS = entry.item.includes("🎬"); const isW = entry.item.includes("WRAP") || entry.item.includes("LUNCH");
@@ -4447,6 +4449,8 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
                         );
                       })}
+                    </div>
+                    </div>
                     </div>
                   </div>
                   );
@@ -5015,7 +5019,7 @@ export default function Dashboard({ user, onLogout }) {
                         {isExpanded && !isThisOwner && (
                           <div style={{ padding: "14px 16px", background: "var(--bgInput)", border: "1px solid var(--borderActive)", borderTop: "1px dashed var(--borderSub)", borderRadius: "0 0 6px 6px" }}>
                             {/* Project Access */}
-                            <div style={{ marginBottom: 14 }}>
+                            <div style={{ marginBottom: 20 }}>
                               <div style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.8, marginBottom: 8 }}>PROJECT ACCESS</div>
                               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                                 <button onClick={() => {
@@ -5286,7 +5290,7 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>Auto-backups run at 12 PM & 12 AM daily to Shared Drive → Internal → Command.Center</div>
 
                     {/* Backup path info */}
-                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: 14, marginBottom: 20 }}>
                       <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>AUTOMATIC BACKUP LOCATION</div>
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--textSub)" }}>
                         📁 Shared Drive → Internal → <strong>Command.Center</strong> → Backups → <em>YYYY-MM</em>
@@ -5834,15 +5838,15 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
             <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>VENDOR / COMPANY NAME</label>
                 <input value={contactForm.vendorName || contactForm.company || ""} onChange={e => { updateCF("vendorName", e.target.value); updateCF("company", e.target.value); }} placeholder="e.g. GDRB, Collins Visual Media..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME</label><input value={contactForm.firstName} onChange={e => updateCF("firstName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME</label><input value={contactForm.lastName} onChange={e => updateCF("lastName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>POSITION / TITLE</label><input value={contactForm.position} onChange={e => updateCF("position", e.target.value)} placeholder="Executive Producer, DP, PM..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
                   <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
@@ -5851,7 +5855,7 @@ export default function Dashboard({ user, onLogout }) {
                   </select>
                 </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
                   <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
@@ -5871,7 +5875,7 @@ export default function Dashboard({ user, onLogout }) {
                   </select>
                 </div>
               </div>
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>CLIENT ASSOCIATION</label>
                 {(() => {
                   const autoMatch = !contactForm.clientAssociation && contactForm.company ? clients.find(cl => cl.name.toLowerCase() === (contactForm.company || "").toLowerCase() || cl.name.toLowerCase() === (contactForm.vendorName || "").toLowerCase()) : null;
@@ -5892,15 +5896,15 @@ export default function Dashboard({ user, onLogout }) {
                   );
                 })()}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><PhoneWithCode value={contactForm.phone} onChange={v => updateCF("phone", v)} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={contactForm.email} onChange={e => updateCF("email", e.target.value)} placeholder="name@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
                 <AddressAutocomplete value={contactForm.address} onChange={v => updateCF("address", v)} showIcon={false} placeholder="123 Main St, City, State ZIP" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
-              <div style={{ marginBottom: 14 }}>
+              <div style={{ marginBottom: 20 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>NOTES</label><textarea value={contactForm.notes} onChange={e => updateCF("notes", e.target.value)} placeholder="Any notes..." rows={3} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} /></div>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
@@ -5929,7 +5933,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD PROJECT MODAL ═══ */}
       {showAddProject && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddProject(false); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 820, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 920, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
             <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>New Project</div>
@@ -5947,34 +5951,34 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Format: YEAR-CLIENT-PROJECT-LOCATION</div>
             </div>
 
-            <div style={{ padding: "20px 28px 24px" }}>
+            <div style={{ padding: "28px 36px 32px" }}>
               {/* Row 1: Client + Project Name */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 20, marginBottom: 20 }}>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>CLIENT *</label>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>CLIENT *</label>
                   <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} clients={clients} onAddNew={() => { setClientForm({ ...emptyClient }); setShowAddClient(true); }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT NAME *</label>
-                  <input value={newProjectForm.name} onChange={e => updateNPF("name", e.target.value)} placeholder="Air Max Campaign, Wrapped BTS..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>PROJECT NAME *</label>
+                  <input value={newProjectForm.name} onChange={e => updateNPF("name", e.target.value)} placeholder="Air Max Campaign, Wrapped BTS..." style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
                 </div>
               </div>
 
               {/* Row 2: Location + Status + Project Type */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 20 }}>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>LOCATION</label>
-                  <AddressAutocomplete value={newProjectForm.location} onChange={v => updateNPF("location", v)} showIcon={false} placeholder="Los Angeles, Brooklyn, Bali..." inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>LOCATION</label>
+                  <AddressAutocomplete value={newProjectForm.location} onChange={v => updateNPF("location", v)} showIcon={false} placeholder="Los Angeles, Brooklyn, Bali..." inputStyle={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>STATUS</label>
-                  <select value={newProjectForm.status} onChange={e => updateNPF("status", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>STATUS</label>
+                  <select value={newProjectForm.status} onChange={e => updateNPF("status", e.target.value)} style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                     {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT TYPE</label>
-                  <select value={newProjectForm.projectType || ""} onChange={e => updateNPF("projectType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: `1px solid ${(PT_COLORS[newProjectForm.projectType] || "var(--borderSub)")}40`, borderRadius: 7, color: PT_COLORS[newProjectForm.projectType] || "var(--text)", fontSize: 12, fontWeight: 600, outline: "none" }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>PROJECT TYPE</label>
+                  <select value={newProjectForm.projectType || ""} onChange={e => updateNPF("projectType", e.target.value)} style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: `1px solid ${(PT_COLORS[newProjectForm.projectType] || "var(--borderSub)")}40`, borderRadius: 7, color: PT_COLORS[newProjectForm.projectType] || "var(--text)", fontSize: 12, fontWeight: 600, outline: "none" }}>
                     <option value="">Select type...</option>
                     {[...new Set([...PROJECT_TYPES, ...(appSettings.projectTypes || [])])].filter(Boolean).sort().map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
@@ -5982,46 +5986,46 @@ export default function Dashboard({ user, onLogout }) {
               </div>
 
               {/* Row 3: Event dates */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20, marginBottom: 20 }}>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>EVENT START</label>
-                  <input type="date" value={newProjectForm.eventDates.start} onChange={e => updateNPF("eventDates", { ...newProjectForm.eventDates, start: e.target.value })} style={{ width: "100%", padding: "8px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>EVENT START</label>
+                  <input type="date" value={newProjectForm.eventDates.start} onChange={e => updateNPF("eventDates", { ...newProjectForm.eventDates, start: e.target.value })} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>EVENT END</label>
-                  <input type="date" value={newProjectForm.eventDates.end} onChange={e => updateNPF("eventDates", { ...newProjectForm.eventDates, end: e.target.value })} style={{ width: "100%", padding: "8px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>EVENT END</label>
+                  <input type="date" value={newProjectForm.eventDates.end} onChange={e => updateNPF("eventDates", { ...newProjectForm.eventDates, end: e.target.value })} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>ENGAGEMENT START</label>
-                  <input type="date" value={newProjectForm.engagementDates.start} onChange={e => updateNPF("engagementDates", { ...newProjectForm.engagementDates, start: e.target.value })} style={{ width: "100%", padding: "8px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>ENGAGEMENT START</label>
+                  <input type="date" value={newProjectForm.engagementDates.start} onChange={e => updateNPF("engagementDates", { ...newProjectForm.engagementDates, start: e.target.value })} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>ENGAGEMENT END</label>
-                  <input type="date" value={newProjectForm.engagementDates.end} onChange={e => updateNPF("engagementDates", { ...newProjectForm.engagementDates, end: e.target.value })} style={{ width: "100%", padding: "8px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>ENGAGEMENT END</label>
+                  <input type="date" value={newProjectForm.engagementDates.end} onChange={e => updateNPF("engagementDates", { ...newProjectForm.engagementDates, end: e.target.value })} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
                 </div>
               </div>
 
               {/* Row 4: WHY */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT BRIEF / WHY</label>
-                <textarea value={newProjectForm.why} onChange={e => updateNPF("why", e.target.value)} rows={2} placeholder="Spring product launch — hero content for social + OLV" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>PROJECT BRIEF / WHY</label>
+                <textarea value={newProjectForm.why} onChange={e => updateNPF("why", e.target.value)} rows={2} placeholder="Spring product launch — hero content for social + OLV" style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
               </div>
 
               {/* Row 4b: SERVICES */}
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>SERVICE NEEDS</label>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>SERVICE NEEDS</label>
                 <MultiDropdown values={newProjectForm.services || []} options={SERVICE_OPTIONS} onChange={v => updateNPF("services", v)} />
               </div>
 
               {/* Row 5: Budget + Tour toggle */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>ESTIMATED BUDGET</label>
-                  <input type="number" value={newProjectForm.budget || ""} onChange={e => updateNPF("budget", Number(e.target.value))} placeholder="0" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>ESTIMATED BUDGET</label>
+                  <input type="number" value={newProjectForm.budget || ""} onChange={e => updateNPF("budget", Number(e.target.value))} placeholder="0" style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT TYPE</label>
-                  <div onClick={() => updateNPF("isTour", !newProjectForm.isTour)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: newProjectForm.isTour ? "#ff6b4a10" : "var(--bgInput)", border: `1px solid ${newProjectForm.isTour ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, cursor: "pointer", transition: "all 0.15s" }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>PROJECT TYPE</label>
+                  <div onClick={() => updateNPF("isTour", !newProjectForm.isTour)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", background: newProjectForm.isTour ? "#ff6b4a10" : "var(--bgInput)", border: `1px solid ${newProjectForm.isTour ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, cursor: "pointer", transition: "all 0.15s" }}>
                     <div style={{ width: 36, height: 20, borderRadius: 10, background: newProjectForm.isTour ? "#ff6b4a" : "var(--borderSub)", position: "relative", transition: "background 0.2s" }}>
                       <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: newProjectForm.isTour ? 18 : 2, transition: "left 0.2s" }} />
                     </div>
