@@ -1504,9 +1504,15 @@ export default function Dashboard({ user, onLogout }) {
 
   const toggleDarkMode = () => setDarkMode(m => { const next = !m; localStorage.setItem('acc-theme', next ? 'dark' : 'light'); return next; });
   const T = THEMES[darkMode ? "dark" : "light"];
-  const [activeProjectId, setActiveProjectId] = useState("p1");
-  const [activeTab, setActiveTab] = useState("calendar");
+  const [activeProjectId, setActiveProjectId] = useState(() => {
+    if (typeof window !== 'undefined') { try { return localStorage.getItem('adptv_activeProjectId') || "p1"; } catch {} } return "p1";
+  });
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') { try { return localStorage.getItem('adptv_activeTab') || "calendar"; } catch {} } return "calendar";
+  });
   const [glanceTab, setGlanceTab] = useState("cal");
+  useEffect(() => { try { localStorage.setItem('adptv_activeTab', activeTab); } catch {} }, [activeTab]);
+  useEffect(() => { try { localStorage.setItem('adptv_activeProjectId', activeProjectId); } catch {} }, [activeProjectId]);
   const [projectVendors, setProjectVendors] = useState({});
   // Derive vendors for active project — all existing code keeps working
   const vendors = projectVendors[activeProjectId] || [];
@@ -2999,7 +3005,8 @@ export default function Dashboard({ user, onLogout }) {
       
       const projectDriveVendors = data.vendors; // { "Ticket Fairy": { docs: { invoice: {done,file,link}, w9: {...} }, fileCount, folderId } }
       
-      setVendors(prev => {
+      setProjectVendors(prevAll => {
+        const prev = prevAll[proj.id] || [];
         let updated = [...prev];
         
         for (const [vendorName, vendorData] of Object.entries(projectDriveVendors)) {
@@ -3050,10 +3057,32 @@ export default function Dashboard({ user, onLogout }) {
             console.log("Auto-added vendor from Drive:", vendorName);
           }
         }
-        return updated;
+        return { ...prevAll, [proj.id]: updated };
       });
       
       setProjVendorScanDone(prev => ({ ...prev, [proj.id]: true }));
+      
+      // Sync discovered vendors to Global Partners (contacts) if not already there
+      setContacts(prev => {
+        let updated = [...prev];
+        for (const [vendorName] of Object.entries(projectDriveVendors)) {
+          const exists = updated.some(c => c.name?.toLowerCase() === vendorName.toLowerCase());
+          if (!exists) {
+            updated.push({
+              id: `ct_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+              name: vendorName,
+              firstName: vendorName.split(" ")[0] || "",
+              lastName: vendorName.split(" ").slice(1).join(" ") || "",
+              phone: "", email: "", company: vendorName,
+              position: "Vendor", department: "",
+              address: "", notes: `Auto-added from project Drive scan`,
+              source: "drive",
+            });
+            console.log("Added vendor to Global Partners:", vendorName);
+          }
+        }
+        return updated;
+      });
     } catch (e) {
       console.error("Project vendor scan error:", e);
     }
@@ -3064,6 +3093,12 @@ export default function Dashboard({ user, onLogout }) {
     if (activeTab !== "vendors" || !project?.driveFolderId) return;
     syncProjectVendors(project);
   }, [activeTab, project?.id, project?.driveFolderId]);
+
+  // On data load, scan ALL projects with Drive folders → sync vendors to Global Partners
+  useEffect(() => {
+    if (!dataLoaded) return;
+    projects.forEach(p => { if (p.driveFolderId) syncProjectVendors(p); });
+  }, [dataLoaded]);
 
   const updateProject = (key, val) => {
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
