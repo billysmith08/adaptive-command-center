@@ -1638,7 +1638,7 @@ function DashboardInner({ user, onLogout }) {
     setActivityLog(prev => [entry, ...prev].slice(0, 200));
   }, [user]);
   const [driveTestSearch, setDriveTestSearch] = useState("");
-  const isAdmin = appSettings.authorizedUsers.includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
+  const isAdmin = (appSettings.authorizedUsers || []).includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const isOwner = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"].includes(user?.email);
   
   // ─── PERMISSION HELPERS ──────────────────────────────────────────
@@ -2232,6 +2232,12 @@ function DashboardInner({ user, onLogout }) {
         if (data?.settings && Object.keys(data.settings).length > 0) {
           // Clean empty strings from arrays
           const cleaned = { ...data.settings };
+          // Ensure all array fields are actually arrays
+          ['authorizedUsers', 'pendingUsers', 'statuses', 'projectTypes', 'departments', 'resourceTypes', 'projectRoles'].forEach(k => {
+            if (!Array.isArray(cleaned[k])) cleaned[k] = [];
+          });
+          if (!Array.isArray(cleaned.driveConnections)) cleaned.driveConnections = [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }];
+          if (!cleaned.userPermissions || typeof cleaned.userPermissions !== 'object') cleaned.userPermissions = {};
           ['statuses'].forEach(k => {
             if (Array.isArray(cleaned[k])) cleaned[k] = cleaned[k].filter(Boolean);
           });
@@ -2289,9 +2295,22 @@ function DashboardInner({ user, onLogout }) {
             services: Array.isArray(p.services) ? p.services : [],
             subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
           })));
-          if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) setProjectVendors(s.projectVendors);
-          if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) setProjectWorkback(s.projectWorkback);
-          if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) setProjectROS(s.projectROS);
+          if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) {
+            // Ensure every project's vendor list is an array
+            const safeVendors = {};
+            Object.keys(s.projectVendors).forEach(k => { safeVendors[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k] : []; });
+            setProjectVendors(safeVendors);
+          }
+          if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) {
+            const safeWB = {};
+            Object.keys(s.projectWorkback).forEach(k => { safeWB[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; });
+            setProjectWorkback(safeWB);
+          }
+          if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) {
+            const safeROS = {};
+            Object.keys(s.projectROS).forEach(k => { safeROS[k] = Array.isArray(s.projectROS[k]) ? s.projectROS[k] : []; });
+            setProjectROS(safeROS);
+          }
           if (s.rosDayDates && typeof s.rosDayDates === 'object' && !Array.isArray(s.rosDayDates)) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
@@ -2554,7 +2573,7 @@ function DashboardInner({ user, onLogout }) {
   ])];
   const pctSpent = project.budget > 0 ? (project.spent / project.budget) * 100 : 0;
   const compTotal = vendors.length * 5;
-  const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
+  const compDone = vendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
   const filteredProjects = projects.filter(p => {
     if (!canSeeProject(p.id)) return false;
@@ -4098,7 +4117,7 @@ function DashboardInner({ user, onLogout }) {
                     </div>
                   )}
                   {vendors.map((v, vi) => {
-                    const done = Object.values(v.compliance).filter(c => c.done).length;
+                    const done = v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0;
                     const isExp = expandedVendor === v.id;
                     const isSelected = selectedVendorIds.has(v.id);
                     return (
@@ -4450,7 +4469,7 @@ function DashboardInner({ user, onLogout }) {
                   )}
 
                   <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Manage who can access the Command Center. New sign-ups require approval from an admin.</div>
-                  {appSettings.authorizedUsers.map((email, i) => {
+                  {(appSettings.authorizedUsers || []).map((email, i) => {
                     const perms = getUserPerms(email);
                     const ownerEmails = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"];
                     const isThisOwner = ownerEmails.includes(email);
@@ -4483,7 +4502,7 @@ function DashboardInner({ user, onLogout }) {
                               </button>
                             )}
                             {!isThisOwner && (
-                              <button onClick={() => { const updated = { ...appSettings, authorizedUsers: appSettings.authorizedUsers.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                              <button onClick={() => { const updated = { ...appSettings, authorizedUsers: (appSettings.authorizedUsers || []).filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer", padding: "2px 6px" }}>✕</button>
                             )}
                           </div>
                         </div>
@@ -4562,7 +4581,7 @@ function DashboardInner({ user, onLogout }) {
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           const v = e.target.value.trim().toLowerCase();
-                          if (v && v.includes("@") && !appSettings.authorizedUsers.includes(v)) {
+                          if (v && v.includes("@") && !(appSettings.authorizedUsers || []).includes(v)) {
                             setAppSettings(prev => ({ ...prev, authorizedUsers: [...prev.authorizedUsers, v] }));
                             setSettingsDirty(true);
                             e.target.value = "";
@@ -4573,7 +4592,7 @@ function DashboardInner({ user, onLogout }) {
                     <button onClick={() => {
                       const inp = document.getElementById("newUserEmail");
                       const v = inp.value.trim().toLowerCase();
-                      if (v && v.includes("@") && !appSettings.authorizedUsers.includes(v)) {
+                      if (v && v.includes("@") && !(appSettings.authorizedUsers || []).includes(v)) {
                         setAppSettings(prev => ({ ...prev, authorizedUsers: [...prev.authorizedUsers, v] }));
                         setSettingsDirty(true);
                         inp.value = "";
@@ -4743,12 +4762,12 @@ function DashboardInner({ user, onLogout }) {
                   <div style={{ marginTop: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Scoped Folder Connections</div>
                     <div style={{ fontSize: 10, color: "var(--textGhost)", marginBottom: 10, lineHeight: 1.5 }}>Optionally scope the vendor search to specific folders. If no folder IDs are set, it searches everything the service account can see.</div>
-                    {appSettings.driveConnections.map((conn, i) => (
+                    {(appSettings.driveConnections || []).map((conn, i) => (
                       <div key={i} style={{ padding: "10px 12px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)", marginBottom: 6 }}>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}>
                           <input value={conn.name} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, name: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} placeholder="Label (e.g. Vendors)" style={{ width: 120, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, outline: "none" }} />
                           <input value={conn.folderId} onChange={(e) => { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: e.target.value }; setAppSettings(updated); setSettingsDirty(true); }} onPaste={(e) => { e.preventDefault(); const pasted = e.clipboardData.getData("text"); const id = extractDriveId(pasted); const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: id }; setAppSettings(updated); setSettingsDirty(true); }} onBlur={(e) => { const id = extractDriveId(e.target.value); if (id !== e.target.value) { const updated = { ...appSettings }; updated.driveConnections = [...updated.driveConnections]; updated.driveConnections[i] = { ...conn, folderId: id }; setAppSettings(updated); setSettingsDirty(true); } }} placeholder="Paste Google Drive folder URL or ID" style={{ flex: 1, padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
-                          {i > 0 && <button onClick={() => { const updated = { ...appSettings, driveConnections: appSettings.driveConnections.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer" }}>✕</button>}
+                          {i > 0 && <button onClick={() => { const updated = { ...appSettings, driveConnections: (appSettings.driveConnections || []).filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer" }}>✕</button>}
                         </div>
                         <div style={{ fontSize: 9, color: "var(--textGhost)" }}>From URL: drive.google.com/drive/folders/<strong style={{ color: "var(--textMuted)" }}>THIS_PART_IS_THE_ID</strong></div>
                       </div>
