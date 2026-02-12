@@ -1716,7 +1716,7 @@ export default function Dashboard({ user, onLogout }) {
       const savedProjects = g(LS_KEYS.projects);
       if (savedProjects && savedProjects.length > 0) {
         const defaults = initProjects();
-        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...def, ...p } : p; });
+        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...p, code: def.code } : p; });
         const savedIds = new Set(savedProjects.map(p => p.id));
         const brandNew = defaults.filter(d => !savedIds.has(d.id));
         setProjects([...merged, ...brandNew]);
@@ -1996,6 +1996,32 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   // ─── CLIENTS CSV IMPORT (ALL_COMPANIES format) ─────────────────
+  // ─── CSV EXPORT ─────────────────────────────────────────────
+  const exportCSV = (rows, headers, filename) => {
+    const esc = (v) => { const s = String(v ?? ""); return s.includes(",") || s.includes('"') || s.includes("\n") ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [headers.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+  const exportPartners = () => {
+    const headers = ["Name", "Type", "Resource Type", "Position", "Phone", "Email", "Address", "Company", "Client Association", "Notes"];
+    const rows = contacts.map(c => [c.name, c.contactType || "", c.resourceType || "", c.position || "", c.phone || "", c.email || "", c.address || "", c.company || "", c.clientAssociation || "", c.notes || ""]);
+    exportCSV(rows, headers, `ADPTV-Partners-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+  const exportClients = () => {
+    const headers = ["Company Name", "Company Code", "Attributes", "Company Contact", "Contact Email", "Contact Phone", "Billing Contact", "Billing Email", "Billing Phone", "Address", "Website", "Notes"];
+    const rows = clients.map(c => [c.name, c.code || "", (c.attributes || []).join("; "), c.contactName || c.companyContact || "", c.contactEmail || "", c.contactPhone || "", c.billingContact || "", c.billingEmail || "", c.billingPhone || "", c.address || "", c.website || "", c.notes || ""]);
+    exportCSV(rows, headers, `ADPTV-Clients-${new Date().toISOString().slice(0, 10)}.csv`);
+  };
+  const emailExport = (type) => {
+    const to = "clancy@weareadptv.com,billy@weareadptv.com";
+    const subject = encodeURIComponent(`ADPTV ${type} Export - ${new Date().toLocaleDateString()}`);
+    window.open(`mailto:${to}?subject=${subject}&body=${encodeURIComponent(`See attached ${type} export from the ADPTV Dashboard.`)}`);
+    if (type === "Partners") exportPartners(); else exportClients();
+  };
+
   const handleClientsCSVUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -2080,7 +2106,7 @@ export default function Dashboard({ user, onLogout }) {
             id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_b`,
             name: billingContact, firstName: billingContact.split(" ")[0] || "", lastName: billingContact.split(" ").slice(1).join(" ") || "",
             email, phone, company: name, position: "Billing Contact", contactType: "Client",
-            department: "", address: "", resourceType: "", vendorName: name, notes: `Billing contact for ${name}`, source: "csv"
+            department: "", address: "", resourceType: "", vendorName: name, clientAssociation: name, notes: `Billing contact for ${name}`, source: "csv"
           });
         }
         // Mirror other company contacts
@@ -2090,7 +2116,7 @@ export default function Dashboard({ user, onLogout }) {
               id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_c${ci}`,
               name: cn, firstName: cn.split(" ")[0] || "", lastName: cn.split(" ").slice(1).join(" ") || "",
               email: "", phone: "", company: name, position: "Contact", contactType: "Client",
-              department: "", address: "", resourceType: "", vendorName: name, notes: `Contact for ${name}`, source: "csv"
+              department: "", address: "", resourceType: "", vendorName: name, clientAssociation: name, notes: `Contact for ${name}`, source: "csv"
             });
           }
         });
@@ -2209,7 +2235,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const submitProject = () => {
     if (!newProjectForm.name && !newProjectForm.client) return;
-    const code = newProjectForm.code || generateProjectCode(newProjectForm);
+    const code = generateProjectCode(newProjectForm);
     const newP = { ...newProjectForm, id: `p_${Date.now()}`, code };
     if (newP.isTour) newP.subEvents = newP.subEvents || [];
     setProjects(prev => [...prev, newP]);
@@ -2938,7 +2964,7 @@ export default function Dashboard({ user, onLogout }) {
       )}
 
       {/* TOP BAR */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s", flexShrink: 0, position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", background: "linear-gradient(135deg, #ff6b4a, #ff4a6b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Adaptive by Design</span>
           <div style={{ width: 1, height: 20, background: "var(--border)" }} />
@@ -3142,7 +3168,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                     <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>{project.client}</span>
-                    {project.code ? <input value={project.code} onChange={e => updateProject("code", e.target.value.toUpperCase())} style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3, outline: "none", width: Math.max(120, project.code.length * 7) }} /> : <input value="" onChange={e => updateProject("code", e.target.value.toUpperCase())} placeholder="YY-CODE-NAME-LOC" style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px dashed var(--borderSub)", borderRadius: 3, letterSpacing: 0.3, outline: "none", width: 140, opacity: 0.5 }} />}
+                    {project.code && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3 }}>{project.code}</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={22} fontWeight={700} color="var(--text)" /></h1>
@@ -3497,6 +3523,9 @@ export default function Dashboard({ user, onLogout }) {
                       <span style={{ fontSize: 13 }}>📊</span> Import CSV
                       <input type="file" accept=".csv" onChange={handleCSVUpload} style={{ display: "none" }} />
                     </label>
+                    <button onClick={() => emailExport("Partners")} style={{ padding: "7px 16px", background: "#9b6dff15", border: "1px solid #9b6dff30", borderRadius: 7, color: "#9b6dff", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>📤</span> Export CSV
+                    </button>
                     <button onClick={() => { setContactForm({ ...emptyContact }); setShowAddContact(true); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14 }}>+</span> Add Contact
                     </button>
@@ -3707,6 +3736,9 @@ export default function Dashboard({ user, onLogout }) {
                       <span style={{ fontSize: 13 }}>📊</span> Import CSV
                       <input type="file" accept=".csv" onChange={handleClientsCSVUpload} style={{ display: "none" }} />
                     </label>
+                    <button onClick={() => emailExport("Clients")} style={{ padding: "7px 16px", background: "#9b6dff15", border: "1px solid #9b6dff30", borderRadius: 7, color: "#9b6dff", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>📤</span> Export CSV
+                    </button>
                     <button onClick={() => { setClientForm({ ...emptyClient }); setShowAddClient(true); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 14 }}>+</span> Add Client
                     </button>
@@ -3806,11 +3838,11 @@ export default function Dashboard({ user, onLogout }) {
                               <div style={{ padding: "8px 16px 14px 52px", fontSize: 12, color: "var(--textFaint)" }}>No contacts for {c.name}. Add a contact or billing info via Edit.</div>
                             ) : (
                               <div style={{ padding: "0 16px 10px 52px" }}>
-                                <div style={{ display: "grid", gridTemplateColumns: "200px 130px 200px 160px auto", padding: "6px 0", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, borderBottom: "1px solid var(--borderSub)" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "200px 130px 200px 160px 80px", padding: "6px 0", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, borderBottom: "1px solid var(--borderSub)" }}>
                                   <span>NAME</span><span>ROLE</span><span>EMAIL</span><span>PHONE</span><span></span>
                                 </div>
                                 {allContacts.map(ct => (
-                                  <div key={ct.id} style={{ display: "grid", gridTemplateColumns: "200px 130px 200px 160px auto", padding: "8px 0", fontSize: 11, alignItems: "center", borderBottom: "1px solid var(--calLine)" }}>
+                                  <div key={ct.id} style={{ display: "grid", gridTemplateColumns: "200px 130px 200px 160px 80px", padding: "8px 0", fontSize: 11, alignItems: "center", borderBottom: "1px solid var(--calLine)" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                       <div style={{ width: 24, height: 24, borderRadius: "50%", background: ct._source === "partner" || ct._source === "merged" ? "linear-gradient(135deg, #3da5db15, #3da5db10)" : "linear-gradient(135deg, #ff6b4a15, #ff4a6b15)", border: `1px solid ${ct._source === "partner" || ct._source === "merged" ? "#3da5db25" : "#ff6b4a25"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: ct._source === "partner" || ct._source === "merged" ? "#3da5db" : "#ff6b4a", flexShrink: 0 }}>{ct.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
                                       <span style={{ fontWeight: 600, color: "var(--text)" }}>{ct.name}</span>
@@ -4325,7 +4357,7 @@ export default function Dashboard({ user, onLogout }) {
                             <EditableText value={entry.item} onChange={v => updateROS(entry.id, "item", v)} fontSize={11} color={isS ? "#ff6b4a" : "var(--textSub)"} fontWeight={isS ? 700 : 500} placeholder="Item..." />
                             <Dropdown value={entry.dept} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
                             <MultiDropdown values={entry.vendors} options={vendors.map(v => v.id)} onChange={v => updateROS(entry.id, "vendors", v)} colorMap={Object.fromEntries(vendors.map(v => [v.id, DEPT_COLORS[v.deptId] || "var(--textMuted)"]))} renderLabel={id => { const v = vendors.find(x => x.id === id); return v ? v.name.split(" ")[0] : id; }} />
-                            <EditableText value={entry.location} onChange={v => updateROS(entry.id, "location", v)} fontSize={10} color="var(--textMuted)" placeholder="Location" />
+                            <AddressAutocomplete value={entry.location} onChange={v => updateROS(entry.id, "location", v)} showIcon={false} placeholder="Location" inputStyle={{ padding: "2px 6px", background: "transparent", border: "1px solid transparent", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} />
                             <Dropdown value={entry.contact} options={eventContactNames} onChange={v => updateROS(entry.id, "contact", v)} width="100%" allowBlank blankLabel="—" />
                             <Dropdown value={entry.owner} options={eventContactNames} onChange={v => updateROS(entry.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                             <EditableText value={entry.note} onChange={v => updateROS(entry.id, "note", v)} fontSize={10} color="var(--textFaint)" placeholder="Notes..." />
@@ -5823,11 +5855,13 @@ export default function Dashboard({ user, onLogout }) {
               <button onClick={() => setShowAddProject(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
             </div>
 
-            {/* Project code — editable, auto-fills if blank */}
+            {/* Auto-generated project code preview */}
             <div style={{ padding: "14px 28px", background: "var(--bgInput)", borderBottom: "1px solid var(--borderSub)" }}>
-              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>PROJECT CODE</div>
-              <input value={newProjectForm.code || ""} onChange={e => updateNPF("code", e.target.value.toUpperCase())} placeholder={generateProjectCode(newProjectForm) || "YY-CLIENT-PROJECT-LOC"} style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a", letterSpacing: 0.5, background: "transparent", border: "1px dashed var(--borderSub)", borderRadius: 4, padding: "4px 8px", outline: "none", width: "100%" }} />
-              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Leave blank to auto-generate: YEAR-CLIENT-PROJECT-LOCATION</div>
+              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>PROJECT CODE (AUTO-GENERATED)</div>
+              <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a", letterSpacing: 0.5 }}>
+                {generateProjectCode(newProjectForm) || "YY-CLIENT-PROJECT-LOC"}
+              </div>
+              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Format: YEAR-CLIENT-PROJECT-LOCATION</div>
             </div>
 
             <div style={{ padding: "20px 28px 24px" }}>
