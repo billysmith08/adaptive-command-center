@@ -481,31 +481,31 @@ const SUB_EVENT_STATUS_COLORS = {
 };
 
 const initProjects = () => [
-  { id: "p1", code: "25-ADAPTIVE-REBRAND-TBD", name: "Adaptive Rebrand", client: "Adaptive", status: "In-Production", projectType: "Internal", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2025-12-31", end: "" }, engagementDates: { start: "", end: "" }, location: "", why: "", budget: 0, spent: 0 },
-  { id: "p2", code: "26-CLOON-RETAINER-MULTICITY", name: "Cloonee Retainer", client: "Cloonee Touring LLC", status: "In-Production", projectType: "Touring", isTour: true, producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-01", end: "2026-12-31" }, engagementDates: { start: "2026-01-01", end: "2026-12-31" }, location: "Multi-City", why: "Tour Direction, Production Direction", budget: 0, spent: 0, services: ["Tour Direction", "Production Direction"], subEvents: [] },
-  { id: "p3", code: "26-LOSTMX-VCTEHMPLO-TULUM", name: "Vintage Culture Tehmplo", client: "Lost Nights", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-05", end: "" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
-  { id: "p4", code: "26-LOSTMX-SOLOMUNTE-TULUM", name: "Solomun Tehmplo", client: "Lost Nights", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-09", end: "" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
-  { id: "p5", code: "26-CROSS-DZ26-TULUM", name: "Day Zero Festival 2026", client: "Crosstown Rebels", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-10", end: "2026-01-11" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "", budget: 0, spent: 0 },
-  { id: "p6", code: "26-EOTS-PEGASUSDJ-FLL", name: "Pegasus World Cup DJ Set", client: "Empire of the Sun", status: "Wrap", projectType: "Touring", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-24", end: "" }, engagementDates: { start: "", end: "" }, location: "FLL", why: "Production Management, Tour Direction", budget: 0, spent: 0, services: ["Production Management", "Tour Direction"] },
-  { id: "p7", code: "26-GUESS-STOREOPEN-LA", name: "Guess Jeans LA Store Opening Party", client: "Guess Jeans", status: "Wrap", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-29", end: "" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Event Management & Ops, Talent Buying, Production Design, Experiential Design", budget: 0, spent: 0, services: ["Event Management & Ops", "Talent Buying", "Production Design", "Experiential Design"] },
-  { id: "p8", code: "26-KIERAN-PROSPAPRO-USA", name: "Prospa Prophecy Tour", client: "Kieran", status: "Exploration", projectType: "Live Event", isTour: true, producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-02-03", end: "2026-04-30" }, engagementDates: { start: "", end: "" }, location: "USA", why: "", budget: 0, spent: 0, subEvents: [] },
-  { id: "p9", code: "26-GT-BLOOMPOPUP-LA", name: "Bloom Pop Up Event", client: "GT's Living Foods", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-20", end: "2026-03-22" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Full Event Management", budget: 0, spent: 0, services: ["Full Event Management"] },
-  { id: "p10", code: "26-BENST-PLANETX-CHI", name: "Planet X - Cermak Hall - Chicago", client: "Ben Sterling", status: "In-Production", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-21", end: "" }, engagementDates: { start: "", end: "" }, location: "CHI", why: "Neon Sign + Advancing, Production Design, Production Management", budget: 0, spent: 0, services: ["Production Design", "Production Management"] },
-  { id: "p11", code: "26-CLOON-HELLBENTSPACE-MIA", name: "Hellbent Club Space", client: "Cloonee Touring LLC", status: "In-Production", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-26", end: "2026-03-27" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Neon Signs + New ones, Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
-  { id: "p12", code: "26-BENST-PLANETXMMW-MIA", name: "Planet X MMW 2026", client: "Ben Sterling", status: "In-Production", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-28", end: "2026-03-29" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Integrate Neon, Prod & Fabrication, Event Management & Ops, Production Management", budget: 0, spent: 0, services: ["Fabrication", "Event Management & Ops", "Production Management"] },
-  { id: "p13", code: "26-CREAT-NATGEO-CALIFORNIA", name: "National Geographic Greatest Show of Earth", client: "Creative-Creation", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-01", end: "" }, engagementDates: { start: "", end: "" }, location: "California", why: "Full Event + Fabrication", budget: 0, spent: 0, services: ["Full Event Management", "Fabrication"] },
-  { id: "p14", code: "26-FIMI-STARBUCKSMARR-USA", name: "Starbucks & Marriott Event", client: "Fimi Group", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-01", end: "" }, engagementDates: { start: "", end: "" }, location: "USA", why: "", budget: 0, spent: 0, notes: "https://www.youtube.co..." },
-  { id: "p15", code: "26-GT-ADKCHELLA-INDIO", name: "ADK Coachella House", client: "GT's Living Foods", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-08", end: "2026-04-14" }, engagementDates: { start: "", end: "" }, location: "Indio", why: "Internal Deck", budget: 0, spent: 0 },
-  { id: "p16", code: "26-GUESS-COACH26-INDIO", name: "Coachella Compound", client: "Guess Jeans", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-10", end: "2026-04-13" }, engagementDates: { start: "", end: "" }, location: "Indio", why: "Full Management", budget: 0, spent: 0, services: ["Event Management & Ops", "Talent Buying", "Fabrication"] },
-  { id: "p17", code: "26-IMT-HPE26-PORTUGAL", name: "HPE Presidents Club '26", client: "Infinity Marketing", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-27", end: "2026-05-01" }, engagementDates: { start: "", end: "" }, location: "Portugal", why: "A/V Vendor", budget: 0, spent: 0, services: ["Event Management & Ops", "Fabrication", "Production Management"] },
-  { id: "p18", code: "26-GUESS-KRAFTWERK-BER", name: "Guess Jeans - Berlin Kraftwerk", client: "Guess Jeans", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-05-01", end: "2026-06-30" }, engagementDates: { start: "", end: "" }, location: "BER", why: "Talent Buying, Event Management & Ops", budget: 0, spent: 0, services: ["Talent Buying", "Event Management & Ops"] },
-  { id: "p19", code: "26-EXPONLY-TOFTEMANOR-UK", name: "Experts Only Tofte Manor", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-07-11", end: "2026-07-12" }, engagementDates: { start: "", end: "" }, location: "UK", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
-  { id: "p20", code: "26-BRUNELO-MELLOWCIRC-MIA", name: "Brunelo - Mellow Circus", client: "Brunelo", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-07-11", end: "2026-07-12" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
-  { id: "p21", code: "26-EXPONLY-FESTIVAL-NYC", name: "Experts Only NYC", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-09-19", end: "2026-09-20" }, engagementDates: { start: "", end: "" }, location: "NYC", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
-  { id: "p22", code: "26-EXPONLY-FESTIVAL-GORGE", name: "Experts Only Gorge", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-03", end: "2026-10-04" }, engagementDates: { start: "", end: "" }, location: "Gorge", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
-  { id: "p23", code: "26-FRANK-SYBER-PHX", name: "Syber World x UP.Summit", client: "Franklin Pictures, Inc.", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-09", end: "2026-10-12" }, engagementDates: { start: "", end: "" }, location: "PHX", why: "Syberworld x UP.Summit", budget: 0, spent: 0 },
-  { id: "p24", code: "26-GT-HALLOWEEN-LA", name: "GT's Day of the Dead", client: "GT's Living Foods", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-17", end: "" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
-  { id: "p25", code: "26-LOSTMX-KAPPA-MTYMX", name: "Kappa Futur Festival", client: "Lost Nights", status: "Exploration", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-11-13", end: "2026-11-14" }, engagementDates: { start: "", end: "" }, location: "MTYMX", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
+  { id: "p1", code: "", name: "Adaptive Rebrand", client: "Adaptive", status: "In-Production", projectType: "Internal", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2025-12-31", end: "" }, engagementDates: { start: "", end: "" }, location: "", why: "", budget: 0, spent: 0 },
+  { id: "p2", code: "", name: "Cloonee Retainer", client: "Cloonee Touring LLC", status: "In-Production", projectType: "Touring", isTour: true, producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-01", end: "2026-12-31" }, engagementDates: { start: "2026-01-01", end: "2026-12-31" }, location: "Multi-City", why: "Tour Direction, Production Direction", budget: 0, spent: 0, services: ["Tour Direction", "Production Direction"], subEvents: [] },
+  { id: "p3", code: "", name: "Vintage Culture Tehmplo", client: "Lost Nights", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-05", end: "" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
+  { id: "p4", code: "", name: "Solomun Tehmplo", client: "Lost Nights", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-09", end: "" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
+  { id: "p5", code: "", name: "Day Zero Festival 2026", client: "Crosstown Rebels", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-10", end: "2026-01-11" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "", budget: 0, spent: 0 },
+  { id: "p6", code: "", name: "Pegasus World Cup DJ Set", client: "Empire of the Sun", status: "Wrap", projectType: "Touring", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-24", end: "" }, engagementDates: { start: "", end: "" }, location: "FLL", why: "Production Management, Tour Direction", budget: 0, spent: 0, services: ["Production Management", "Tour Direction"] },
+  { id: "p7", code: "", name: "Guess Jeans LA Store Opening Party", client: "Guess Jeans", status: "Wrap", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-29", end: "" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Event Management & Ops, Talent Buying, Production Design, Experiential Design", budget: 0, spent: 0, services: ["Event Management & Ops", "Talent Buying", "Production Design", "Experiential Design"] },
+  { id: "p8", code: "", name: "Prospa Prophecy Tour", client: "Kieran", status: "Exploration", projectType: "Live Event", isTour: true, producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-02-03", end: "2026-04-30" }, engagementDates: { start: "", end: "" }, location: "USA", why: "", budget: 0, spent: 0, subEvents: [] },
+  { id: "p9", code: "", name: "Bloom Pop Up Event", client: "GT's Living Foods", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-20", end: "2026-03-22" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Full Event Management", budget: 0, spent: 0, services: ["Full Event Management"] },
+  { id: "p10", code: "", name: "Planet X - Cermak Hall - Chicago", client: "Ben Sterling", status: "In-Production", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-21", end: "" }, engagementDates: { start: "", end: "" }, location: "CHI", why: "Neon Sign + Advancing, Production Design, Production Management", budget: 0, spent: 0, services: ["Production Design", "Production Management"] },
+  { id: "p11", code: "", name: "Hellbent Club Space", client: "Cloonee Touring LLC", status: "In-Production", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-26", end: "2026-03-27" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Neon Signs + New ones, Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
+  { id: "p12", code: "", name: "Planet X MMW 2026", client: "Ben Sterling", status: "In-Production", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-03-28", end: "2026-03-29" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Integrate Neon, Prod & Fabrication, Event Management & Ops, Production Management", budget: 0, spent: 0, services: ["Fabrication", "Event Management & Ops", "Production Management"] },
+  { id: "p13", code: "", name: "National Geographic Greatest Show of Earth", client: "Creative-Creation", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-01", end: "" }, engagementDates: { start: "", end: "" }, location: "California", why: "Full Event + Fabrication", budget: 0, spent: 0, services: ["Full Event Management", "Fabrication"] },
+  { id: "p14", code: "", name: "Starbucks & Marriott Event", client: "Fimi Group", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-01", end: "" }, engagementDates: { start: "", end: "" }, location: "USA", why: "", budget: 0, spent: 0, notes: "https://www.youtube.co..." },
+  { id: "p15", code: "", name: "ADK Coachella House", client: "GT's Living Foods", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-08", end: "2026-04-14" }, engagementDates: { start: "", end: "" }, location: "Indio", why: "Internal Deck", budget: 0, spent: 0 },
+  { id: "p16", code: "", name: "Coachella Compound", client: "Guess Jeans", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-10", end: "2026-04-13" }, engagementDates: { start: "", end: "" }, location: "Indio", why: "Full Management", budget: 0, spent: 0, services: ["Event Management & Ops", "Talent Buying", "Fabrication"] },
+  { id: "p17", code: "", name: "HPE Presidents Club '26", client: "Infinity Marketing", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-04-27", end: "2026-05-01" }, engagementDates: { start: "", end: "" }, location: "Portugal", why: "A/V Vendor", budget: 0, spent: 0, services: ["Event Management & Ops", "Fabrication", "Production Management"] },
+  { id: "p18", code: "", name: "Guess Jeans - Berlin Kraftwerk", client: "Guess Jeans", status: "In-Production", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-05-01", end: "2026-06-30" }, engagementDates: { start: "", end: "" }, location: "BER", why: "Talent Buying, Event Management & Ops", budget: 0, spent: 0, services: ["Talent Buying", "Event Management & Ops"] },
+  { id: "p19", code: "", name: "Experts Only Tofte Manor", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-07-11", end: "2026-07-12" }, engagementDates: { start: "", end: "" }, location: "UK", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
+  { id: "p20", code: "", name: "Brunelo - Mellow Circus", client: "Brunelo", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-07-11", end: "2026-07-12" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
+  { id: "p21", code: "", name: "Experts Only NYC", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-09-19", end: "2026-09-20" }, engagementDates: { start: "", end: "" }, location: "NYC", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
+  { id: "p22", code: "", name: "Experts Only Gorge", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-03", end: "2026-10-04" }, engagementDates: { start: "", end: "" }, location: "Gorge", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
+  { id: "p23", code: "", name: "Syber World x UP.Summit", client: "Franklin Pictures, Inc.", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-09", end: "2026-10-12" }, engagementDates: { start: "", end: "" }, location: "PHX", why: "Syberworld x UP.Summit", budget: 0, spent: 0 },
+  { id: "p24", code: "", name: "GT's Day of the Dead", client: "GT's Living Foods", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-17", end: "" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
+  { id: "p25", code: "", name: "Kappa Futur Festival", client: "Lost Nights", status: "Exploration", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-11-13", end: "2026-11-14" }, engagementDates: { start: "", end: "" }, location: "MTYMX", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
 ];
 
 const initVendors = () => [];
@@ -1718,7 +1718,17 @@ export default function Dashboard({ user, onLogout }) {
       const savedProjects = g(LS_KEYS.projects);
       if (savedProjects && savedProjects.length > 0) {
         const defaults = initProjects();
-        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...def, ...p } : p; });
+        // Saved data always wins — only add missing STRUCTURAL keys from defaults (arrays, objects), never overwrite saved values
+        const merged = savedProjects.map(p => {
+          const def = defaults.find(d => d.id === p.id);
+          if (!def) return p;
+          // Start from saved data, only fill in keys that are completely missing
+          const result = { ...p };
+          Object.keys(def).forEach(k => {
+            if (!(k in result)) result[k] = def[k];
+          });
+          return result;
+        });
         const savedIds = new Set(savedProjects.map(p => p.id));
         const brandNew = defaults.filter(d => !savedIds.has(d.id));
         setProjects([...merged, ...brandNew]);
@@ -1829,58 +1839,61 @@ export default function Dashboard({ user, onLogout }) {
   const todoistFetch = useCallback(async (key) => {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
+    // Helper: proxy all Todoist calls through /api/todoist to avoid CORS
+    const tp = (endpoint, opts = {}) => fetch("/api/todoist", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ endpoint, apiKey: k, method: opts.method || "GET", headers: opts.headers, body: opts.body })
+    }).then(r => r.json());
     try {
-      const [tasksRes, projsRes, syncRes] = await Promise.all([
-        fetch("https://api.todoist.com/rest/v2/tasks", { headers: { Authorization: `Bearer ${k}` } }),
-        fetch("https://api.todoist.com/rest/v2/projects", { headers: { Authorization: `Bearer ${k}` } }),
-        // Sync API to get workspace_id on projects
-        fetch("https://api.todoist.com/sync/v9/sync", { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" }),
+      const [tasks, projs, syncData] = await Promise.all([
+        tp("/rest/v2/tasks"),
+        tp("/rest/v2/projects"),
+        tp("/sync/v9/sync", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" }),
       ]);
-      if (!tasksRes.ok) throw new Error("Invalid API key");
-      const tasks = await tasksRes.json();
-      const projs = await projsRes.json();
-      setTodoistTasks(tasks);
-      setTodoistProjects(projs);
+      if (tasks.error) throw new Error(tasks.error);
+      setTodoistTasks(Array.isArray(tasks) ? tasks : []);
+      setTodoistProjects(Array.isArray(projs) ? projs : []);
       // Extract workspace_id from Sync API response
-      if (syncRes.ok) {
-        const syncData = await syncRes.json();
-        const syncProjects = syncData.projects || [];
-        const adptvProj = syncProjects.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV" || p.name === "Team Inbox");
-        if (adptvProj?.workspace_id) {
-          setAdptvWorkspaceId(adptvProj.workspace_id);
-          console.log("ADPTV workspace found:", adptvProj.workspace_id, "via:", adptvProj.name);
+      const syncProjects = syncData.projects || [];
+      const adptvProj = syncProjects.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV" || p.name === "Team Inbox");
+      if (adptvProj?.workspace_id) {
+        setAdptvWorkspaceId(adptvProj.workspace_id);
+        console.log("ADPTV workspace found:", adptvProj.workspace_id, "via:", adptvProj.name);
+      } else {
+        const teamProj = syncProjects.find(p => p.workspace_id && !p.inbox_project && p.shared);
+        if (teamProj?.workspace_id) {
+          setAdptvWorkspaceId(teamProj.workspace_id);
+          console.log("ADPTV workspace found (fallback):", teamProj.workspace_id, "via:", teamProj.name);
         } else {
-          // Try any shared/team project
-          const teamProj = syncProjects.find(p => p.workspace_id && !p.inbox_project && p.shared);
-          if (teamProj?.workspace_id) {
-            setAdptvWorkspaceId(teamProj.workspace_id);
-            console.log("ADPTV workspace found (fallback):", teamProj.workspace_id, "via:", teamProj.name);
+          const anyWs = syncProjects.find(p => p.workspace_id && p.workspace_id !== "0" && !p.inbox_project);
+          if (anyWs?.workspace_id) {
+            setAdptvWorkspaceId(anyWs.workspace_id);
+            console.log("ADPTV workspace found (any):", anyWs.workspace_id, "via:", anyWs.name);
           } else {
-            // Last resort: any project with a workspace_id
-            const anyWs = syncProjects.find(p => p.workspace_id && p.workspace_id !== "0" && !p.inbox_project);
-            if (anyWs?.workspace_id) {
-              setAdptvWorkspaceId(anyWs.workspace_id);
-              console.log("ADPTV workspace found (any):", anyWs.workspace_id, "via:", anyWs.name);
-            } else {
-              console.warn("No ADPTV workspace_id found in", syncProjects.length, "projects");
-            }
+            console.warn("No ADPTV workspace_id found in", syncProjects.length, "projects");
           }
         }
       }
     } catch (e) { console.error("Todoist:", e); }
     setTodoistLoading(false);
   }, [todoistKey]);
+  const todoistProxy = useCallback((endpoint, opts = {}) => fetch("/api/todoist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint, apiKey: todoistKey, method: opts.method || "GET", headers: opts.headers, body: opts.body })
+  }).then(r => r.json()), [todoistKey]);
   const todoistAdd = async () => {
     if (!todoistNewTask.trim() || !todoistKey) return;
-    const res = await fetch("https://api.todoist.com/rest/v2/tasks", { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ content: todoistNewTask.trim() }) });
-    if (res.ok) { setTodoistNewTask(""); todoistFetch(); }
+    const res = await todoistProxy("/rest/v2/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: { content: todoistNewTask.trim() } });
+    if (!res.error) { setTodoistNewTask(""); todoistFetch(); }
   };
   const todoistClose = async (id) => {
-    await fetch(`https://api.todoist.com/rest/v2/tasks/${id}/close`, { method: "POST", headers: { Authorization: `Bearer ${todoistKey}` } });
+    await todoistProxy(`/rest/v2/tasks/${id}/close`, { method: "POST" });
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistDelete = async (id) => {
-    await fetch(`https://api.todoist.com/rest/v2/tasks/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${todoistKey}` } });
+    await todoistProxy(`/rest/v2/tasks/${id}`, { method: "DELETE" });
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistCreateProject = async (projectCode) => {
@@ -1900,44 +1913,36 @@ export default function Dashboard({ user, onLogout }) {
           args: { name: projectCode, workspace_id: adptvWorkspaceId }
         }]);
         try {
-          const res = await fetch("https://api.todoist.com/sync/v9/sync", {
+          const data = await todoistProxy("/sync/v9/sync", {
             method: "POST",
-            headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: `commands=${encodeURIComponent(commands)}`
           });
-          if (res.ok) {
-            const data = await res.json();
-            const newId = data.temp_id_mapping?.[tempId];
-            if (newId) {
-              await todoistFetch();
-              return newId;
-            }
-            // Check for sync_status errors
-            const syncStatus = data.sync_status || {};
-            const cmdUuid = Object.keys(syncStatus)[0];
-            if (cmdUuid && syncStatus[cmdUuid]?.error) {
-              console.error("Todoist sync error:", syncStatus[cmdUuid].error);
-            }
-          } else {
-            console.error("Todoist sync API error:", res.status, await res.text());
+          const newId = data.temp_id_mapping?.[tempId];
+          if (newId) {
+            await todoistFetch();
+            return newId;
+          }
+          const syncStatus = data.sync_status || {};
+          const cmdUuid = Object.keys(syncStatus)[0];
+          if (cmdUuid && syncStatus[cmdUuid]?.error) {
+            console.error("Todoist sync error:", syncStatus[cmdUuid].error);
           }
         } catch (syncErr) {
           console.error("Todoist sync exception:", syncErr);
         }
       }
       // Fallback: REST API (creates in personal/default workspace)
-      const res = await fetch("https://api.todoist.com/rest/v2/projects", {
-        method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ name: projectCode })
+      const proj = await todoistProxy("/rest/v2/projects", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: { name: projectCode }
       });
-      if (res.ok) {
-        const proj = await res.json();
+      if (proj && !proj.error) {
         await todoistFetch();
         return proj.id;
       } else {
-        const errText = await res.text();
-        console.error("Todoist REST create error:", res.status, errText);
-        setClipboardToast({ text: `Todoist error ${res.status}: ${errText.slice(0, 60)}`, x: window.innerWidth / 2, y: 60 });
+        console.error("Todoist REST create error:", proj);
+        setClipboardToast({ text: `Todoist error: ${(proj?.error || "unknown").toString().slice(0, 60)}`, x: window.innerWidth / 2, y: 60 });
         setTimeout(() => setClipboardToast(null), 4000);
       }
     } catch (e) { 
@@ -1949,9 +1954,9 @@ export default function Dashboard({ user, onLogout }) {
   };
   const todoistAddTaskToProject = async (content, projectId) => {
     if (!todoistKey || !content || !projectId) return;
-    await fetch("https://api.todoist.com/rest/v2/tasks", {
-      method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ content, project_id: projectId })
+    await todoistProxy("/rest/v2/tasks", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: { content, project_id: projectId }
     });
     await todoistFetch();
   };
@@ -2720,7 +2725,10 @@ export default function Dashboard({ user, onLogout }) {
   // Drive compliance sync — checks actual Drive folders and updates vendor compliance
   const syncDriveCompliance = async () => {
     try {
-      const res = await fetch('/api/drive/scan');
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      const res = await fetch('/api/drive/scan', { signal: controller.signal });
+      clearTimeout(timeout);
       const data = await res.json();
       if (!data.success || !data.compliance) return;
       
@@ -3309,7 +3317,6 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3 }}>{p.name}</div>
-                    {p.code && <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 4, letterSpacing: 0.3 }}>{p.code}</div>}
                     {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
                       {p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
                       {p.eventDates && p.eventDates.start && <div>🎪 {fmtShort(p.eventDates.start)}{p.eventDates.end ? ` – ${fmtShort(p.eventDates.end)}` : ""}</div>}
@@ -3345,7 +3352,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                     <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>{project.client}</span>
-                    {project.code && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3 }}>{project.code}</span>}
+                    {project.code && <span onClick={() => { const newCode = prompt("Edit project code:", project.code); if (newCode !== null) updateProject("code", newCode.toUpperCase()); }} style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3, cursor: "pointer" }} title="Click to edit project code">{project.code}</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={22} fontWeight={700} color="var(--text)" /></h1>
@@ -3506,7 +3513,7 @@ export default function Dashboard({ user, onLogout }) {
                                   </div>
                                 </td>
                                 <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.why || "–"}</td>
-                                <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{p.code || "–"}</td>
+                                <td onClick={() => { const newCode = prompt("Edit project code:", p.code || ""); if (newCode !== null) updateProject2(p.id, "code", newCode.toUpperCase()); }} style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }} title="Click to edit">{p.code || "–"}</td>
                               </tr>
                             );
                           })}
