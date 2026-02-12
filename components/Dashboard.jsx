@@ -1712,6 +1712,7 @@ export default function Dashboard({ user, onLogout }) {
   const [vendorSearching, setVendorSearching] = useState(false);
   const [driveResults, setDriveResults] = useState(null);
   const [docPreview, setDocPreview] = useState(null); // { vendorName, docType, fileName, date, path }
+  const [renameModal, setRenameModal] = useState(null); // { file, vendorId, compKey, drivePath, basePath, vendorName, suggestedName, originalName, ext, fromContacts }
   const [vendorLinkCopied, setVendorLinkCopied] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
   const [clipboardToast, setClipboardToast] = useState(null);
@@ -3303,8 +3304,35 @@ export default function Dashboard({ user, onLogout }) {
   };
   const addROSRow = (day) => { const existingDate = ros.find(r => r.day === day)?.dayDate || ""; setROS(prev => [...prev, { id: `r_${Date.now()}`, day, dayDate: existingDate, time: "", item: "", dept: "", vendors: [], location: "", contact: "", owner: "", note: "" }]); };
 
-  const handleFileDrop = async (vendorId, compKey, file, drivePath, basePath) => {
-    const vendor = vendors.find(v => v.id === vendorId);
+  // ─── File rename suggestion logic ───
+  const suggestFileName = (compKey, vendorName, originalName, projectCode) => {
+    const ext = originalName.includes('.') ? '.' + originalName.split('.').pop() : '.pdf';
+    const clean = (vendorName || 'Unknown').replace(/[^a-zA-Z0-9 &'()-]/g, '').trim();
+    switch (compKey) {
+      case 'coi': return `COI - ${clean}${ext}`;
+      case 'w9': return `W9 - ${clean}${ext}`;
+      case 'banking': return `Banking - ${clean}${ext}`;
+      case 'contract': return `Contract - ${clean}${ext}`;
+      case 'invoice': return `${projectCode || 'PROJ'}_${clean}_V1${ext}`;
+      default: return originalName;
+    }
+  };
+
+  // Step 1: Show rename modal before uploading
+  const handleFileDrop = (vendorId, compKey, file, drivePath, basePath) => {
+    if (typeof file === 'string') { executeFileDrop(vendorId, compKey, file, drivePath, basePath); return; }
+    const allVendorsList = Object.values(projectVendors).flat();
+    const vendor = allVendorsList.find(v => v.id === vendorId);
+    const vName = vendor?.name || 'Unknown';
+    const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
+    const suggested = suggestFileName(compKey, vName, file.name, project?.code || '');
+    setRenameModal({ file, vendorId, compKey, drivePath, basePath, vendorName: vName, suggestedName: suggested, originalName: file.name, ext });
+  };
+
+  // Step 2: Execute upload with (optionally renamed) file
+  const executeFileDrop = async (vendorId, compKey, file, drivePath, basePath) => {
+    const allVendorsList = Object.values(projectVendors).flat();
+    const vendor = allVendorsList.find(v => v.id === vendorId);
     const fileName = typeof file === 'string' ? file : file.name;
     
     // Immediately update UI optimistically (show uploading state)
@@ -4220,17 +4248,20 @@ export default function Dashboard({ user, onLogout }) {
                         {/* DOCS column - functional upload buttons synced with vendor compliance */}
                         {(() => {
                           const contactVendorName = c.vendorName || c.company || c.name;
-                          const matchVendor = vendors.find(v => {
+                          // Search ALL projects' vendors, not just active project
+                          const allVendors = Object.values(projectVendors).flat();
+                          const matchVendor = allVendors.find(v => {
                             const vn = v.name.toLowerCase();
                             return vn === (c.name || "").toLowerCase() || vn === (c.company || "").toLowerCase() || vn === (c.vendorName || "").toLowerCase();
                           });
-                          const useVendorName = contactVendorName;
+                          const useVendorName = matchVendor?.name || contactVendorName;
                           // Merge vendor compliance with Drive compliance map (fallback for contacts without vendor entries)
                           const vendorComp = matchVendor?.compliance || {};
-                          const driveComp = driveComplianceMap[useVendorName] || driveComplianceMap[c.name] || driveComplianceMap[c.company] || {};
+                          // Try multiple name variations against the Drive compliance map
+                          const driveComp = driveComplianceMap[useVendorName] || driveComplianceMap[c.vendorName] || driveComplianceMap[c.company] || driveComplianceMap[c.name] || {};
                           const comp = { ...vendorComp };
                           // Fill in from Drive map if vendor compliance is missing
-                          ['coi', 'w9'].forEach(key => {
+                          ['coi', 'w9', 'banking', 'invoice', 'contract'].forEach(key => {
                             if (!comp[key]?.done && driveComp[key]?.done) {
                               comp[key] = { done: true, file: driveComp[key].file, link: driveComp[key].link };
                             }
@@ -6889,6 +6920,66 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* ═══ FILE RENAME MODAL ═══ */}
+      {renameModal && (() => {
+        const DOC_LABELS = { coi: 'Certificate of Insurance', w9: 'W-9 Tax Form', banking: 'Banking Details', contract: 'Contract', invoice: 'Invoice' };
+        const isInvoice = renameModal.compKey === 'invoice';
+        return (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setRenameModal(null); }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 480, maxWidth: "92vw", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>RENAME BEFORE UPLOAD</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>📄 {DOC_LABELS[renameModal.compKey] || renameModal.compKey.toUpperCase()}</div>
+              </div>
+              <button onClick={() => setRenameModal(null)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "4px" }}>✕</button>
+            </div>
+            <div style={{ padding: "20px 24px" }}>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>VENDOR / CONTRACTOR</div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{renameModal.vendorName}</div>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>ORIGINAL FILE</div>
+                <div style={{ fontSize: 11, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px", background: "var(--bgCard)", borderRadius: 6, border: "1px solid var(--borderSub)", wordBreak: "break-all" }}>{renameModal.originalName}</div>
+              </div>
+              {isInvoice && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>PROJECT CODE</div>
+                  <input value={renameModal.projectCode || project?.code || ''} onChange={e => setRenameModal(prev => ({ ...prev, projectCode: e.target.value, suggestedName: `${e.target.value}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').trim()}_V${prev.version || '1'}${prev.ext}` }))} style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} placeholder="e.g. 26-GT-BLOOM" />
+                </div>
+              )}
+              {isInvoice && (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>VERSION</div>
+                  <input type="number" min="1" value={renameModal.version || '1'} onChange={e => { const v = e.target.value; setRenameModal(prev => ({ ...prev, version: v, suggestedName: `${prev.projectCode || project?.code || 'PROJ'}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').trim()}_V${v}${prev.ext}` })); }} style={{ width: 80, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                </div>
+              )}
+              <div style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>FILE NAME</div>
+                <input value={renameModal.suggestedName} onChange={e => setRenameModal(prev => ({ ...prev, suggestedName: e.target.value }))} style={{ width: "100%", padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} onFocus={e => { const val = e.target.value; const dotIdx = val.lastIndexOf('.'); if (dotIdx > 0) e.target.setSelectionRange(0, dotIdx); }} autoFocus />
+              </div>
+              <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 20 }}>
+                {isInvoice ? "Format: ProjectCode_Vendor Name_Version.ext" : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'banking' ? 'Banking' : 'Contract'} - Vendor Name.ext`}
+              </div>
+            </div>
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setRenameModal(null)} style={{ padding: "8px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Cancel</button>
+              <button onClick={() => {
+                const newName = renameModal.suggestedName.trim();
+                if (!newName) return;
+                const renamedFile = new File([renameModal.file], newName, { type: renameModal.file.type });
+                executeFileDrop(renameModal.vendorId, renameModal.compKey, renamedFile, renameModal.drivePath, renameModal.basePath);
+                setRenameModal(null);
+              }} style={{ padding: "8px 24px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
 
       {/* ═══ DOCUMENT PREVIEW MODAL ═══ */}
       {docPreview && (
