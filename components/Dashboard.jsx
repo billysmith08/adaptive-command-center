@@ -1484,6 +1484,7 @@ export default function Dashboard({ user, onLogout }) {
   const isOwner = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"].includes(user?.email);
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
+  const [editingVendorId, setEditingVendorId] = useState(null);
   const [w9Scanning, setW9Scanning] = useState(false);
   const [w9ParsedData, setW9ParsedData] = useState(null);
   const [vendorSearch, setVendorSearch] = useState("");
@@ -1703,6 +1704,7 @@ export default function Dashboard({ user, onLogout }) {
   const [driveLoading, setDriveLoading] = useState(false);
   const [driveError, setDriveError] = useState(null);
   const [driveVendorCache, setDriveVendorCache] = useState(null);
+  const [driveComplianceMap, setDriveComplianceMap] = useState({});
 
   const handleVendorSearchChange = (q) => {
     setVendorSearch(q);
@@ -1794,6 +1796,25 @@ export default function Dashboard({ user, onLogout }) {
     const w9Done = w9ParsedData?.upload?.success ? { done: true, file: w9ParsedData.fileName, date: new Date().toISOString().split("T")[0], link: w9ParsedData.upload.file?.link } : { done: false, file: null, date: null };
     const w9Address = w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '';
     const finalAddress = vendorForm.address || w9Address;
+
+    if (editingVendorId) {
+      // EDIT existing vendor
+      setVendors(prev => prev.map(v => v.id !== editingVendorId ? v : {
+        ...v, name, type: vendorForm.resourceType || v.type,
+        email: vendorForm.email, contact: contactName,
+        phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
+        deptId: vendorForm.dept, address: finalAddress,
+      }));
+      logActivity("vendor", `edited "${name}"`, project?.name);
+      setEditingVendorId(null);
+      setVendorForm({ ...emptyVendorForm });
+      setW9ParsedData(null);
+      setShowAddVendor(false);
+      setTimeout(syncDriveCompliance, 2000);
+      return;
+    }
+
+    // CREATE new vendor
     const newV = {
       id: `v_${Date.now()}`, name, type: vendorForm.resourceType || "Other",
       email: vendorForm.email, contact: contactName,
@@ -1935,6 +1956,9 @@ export default function Dashboard({ user, onLogout }) {
       if (!data.success || !data.compliance) return;
       
       const driveCompliance = data.compliance; // { vendorName: { coi: {done, file, link}, w9: {done, file, link} } }
+      
+      // Store raw map so DOCS column can reference it directly for any contact
+      setDriveComplianceMap(driveCompliance);
       
       setVendors(prev => prev.map(v => {
         const driveMatch = driveCompliance[v.name];
@@ -2617,7 +2641,16 @@ export default function Dashboard({ user, onLogout }) {
                             return vn === (c.name || "").toLowerCase() || vn === (c.company || "").toLowerCase() || vn === (c.vendorName || "").toLowerCase();
                           });
                           const useVendorName = contactVendorName;
-                          const comp = matchVendor?.compliance || {};
+                          // Merge vendor compliance with Drive compliance map (fallback for contacts without vendor entries)
+                          const vendorComp = matchVendor?.compliance || {};
+                          const driveComp = driveComplianceMap[useVendorName] || driveComplianceMap[c.name] || driveComplianceMap[c.company] || {};
+                          const comp = { ...vendorComp };
+                          // Fill in from Drive map if vendor compliance is missing
+                          ['coi', 'w9'].forEach(key => {
+                            if (!comp[key]?.done && driveComp[key]?.done) {
+                              comp[key] = { done: true, file: driveComp[key].file, link: driveComp[key].link };
+                            }
+                          });
                           const docBtns = [
                             { key: "coi", label: "COI", color: "#4ecb71", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp" },
                             { key: "w9", label: "W9", color: "#3da5db", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s" },
@@ -3427,7 +3460,15 @@ export default function Dashboard({ user, onLogout }) {
                                 {v.title && <span>💼 {v.title}</span>}
                                 {v.address && <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.address, "Address", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} title={v.address}>📍 {v.address} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>}
                               </div>
-                              <button onClick={() => { if (confirm(`Remove ${v.name}?`)) setVendors(prev => prev.filter(x => x.id !== v.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>Remove</button>
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => {
+                                  const names = (v.contact || "").split(" ");
+                                  setVendorForm({ contactType: v.contactType || "", resourceType: v.type || "", firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: v.phone || "", email: v.email || "", company: v.name || "", title: v.title || "", dept: v.deptId || DEPT_OPTIONS[0], address: v.address || "" });
+                                  setEditingVendorId(v.id);
+                                  setShowAddVendor(true);
+                                }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
+                                <button onClick={() => { if (confirm(`Remove ${v.name}?`)) setVendors(prev => prev.filter(x => x.id !== v.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>Remove</button>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -4645,15 +4686,15 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* ═══ ADD VENDOR MODAL ═══ */}
       {showAddVendor && (
-        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) { setShowAddVendor(false); setW9ParsedData(null); } }}>
+        <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) { setShowAddVendor(false); setW9ParsedData(null); setEditingVendorId(null); } }}>
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 620, maxHeight: "85vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
             {/* Header */}
             <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Add New Vendor</div>
-                <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 2 }}>Fill in contact details — compliance docs can be uploaded after</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{editingVendorId ? "Edit Vendor" : "Add New Vendor"}</div>
+                <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 2 }}>{editingVendorId ? "Update vendor/contractor details" : "Fill in contact details — compliance docs can be uploaded after"}</div>
               </div>
-              <button onClick={() => { setShowAddVendor(false); setW9ParsedData(null); }} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
+              <button onClick={() => { setShowAddVendor(false); setW9ParsedData(null); setEditingVendorId(null); }} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
             </div>
 
             {/* Form */}
@@ -4774,7 +4815,7 @@ export default function Dashboard({ user, onLogout }) {
               {/* Actions */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
                 <button onClick={() => { setShowAddVendor(false); setW9ParsedData(null); }} style={{ padding: "9px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
-                <button onClick={submitVendor} disabled={!vendorForm.company && !vendorForm.firstName} style={{ padding: "9px 24px", background: (!vendorForm.company && !vendorForm.firstName) ? "var(--borderSub)" : "#ff6b4a", border: "none", borderRadius: 8, color: (!vendorForm.company && !vendorForm.firstName) ? "var(--textFaint)" : "#fff", cursor: (!vendorForm.company && !vendorForm.firstName) ? "default" : "pointer", fontSize: 13, fontWeight: 700 }}>Add Vendor</button>
+                <button onClick={submitVendor} disabled={!vendorForm.company && !vendorForm.firstName} style={{ padding: "9px 24px", background: (!vendorForm.company && !vendorForm.firstName) ? "var(--borderSub)" : "#ff6b4a", border: "none", borderRadius: 8, color: (!vendorForm.company && !vendorForm.firstName) ? "var(--textFaint)" : "#fff", cursor: (!vendorForm.company && !vendorForm.firstName) ? "default" : "pointer", fontSize: 13, fontWeight: 700 }}>{editingVendorId ? "Save Changes" : "Add Vendor"}</button>
               </div>
             </div>
           </div>
