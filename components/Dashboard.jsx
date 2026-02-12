@@ -1466,38 +1466,11 @@ export default function Dashboard({ user, onLogout }) {
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
   const saveTimeoutRef = useRef(null);
   
-  // ─── LOCAL STORAGE PERSISTENCE ─────────────────────────────────
-  const STORAGE_VERSION = "v8.1";
-  const LS_KEYS = {
-    projects: "adptv_projects",
-    clients: "adptv_clients",
-    contacts: "adptv_contacts",
-    vendors: "adptv_vendors",
-    workback: "adptv_workback",
-    ros: "adptv_ros",
-    settings: "adptv_settings",
-    textSize: "adptv_textSize",
-    version: "adptv_version",
-  };
-  const lsGet = (key, fallback) => { try { if (typeof window === 'undefined') return fallback; const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } };
-  const lsSave = (key, value) => { try { if (typeof window === 'undefined') return; localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.warn("localStorage save failed:", key, e); } };
+  // ─── LOCAL STORAGE PERSISTENCE (post-mount hydration for SSR safety) ──
+  const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", ros: "adptv_ros", textSize: "adptv_textSize" };
+  const lsHydrated = useRef(false);
   
-  const [projects, setProjects] = useState(() => {
-    const saved = lsGet(LS_KEYS.projects, null);
-    if (saved && saved.length > 0) {
-      // Merge: update codes from initProjects, keep user edits, add new projects
-      const defaults = initProjects();
-      const merged = saved.map(p => {
-        const def = defaults.find(d => d.id === p.id);
-        return def ? { ...p, code: def.code } : p; // Always use latest code format
-      });
-      // Add any new projects from defaults that don't exist in saved
-      const savedIds = new Set(saved.map(p => p.id));
-      const newProjects = defaults.filter(d => !savedIds.has(d.id));
-      return [...merged, ...newProjects];
-    }
-    return initProjects();
-  });
+  const [projects, setProjects] = useState(initProjects);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('acc-theme');
@@ -1532,7 +1505,7 @@ export default function Dashboard({ user, onLogout }) {
   const [activeProjectId, setActiveProjectId] = useState("p1");
   const [activeTab, setActiveTab] = useState("calendar");
   const [glanceTab, setGlanceTab] = useState("cal");
-  const [projectVendors, setProjectVendors] = useState(() => lsGet(LS_KEYS.vendors, {}));
+  const [projectVendors, setProjectVendors] = useState({});
   // Derive vendors for active project — all existing code keeps working
   const vendors = projectVendors[activeProjectId] || [];
   const setVendors = (updater) => {
@@ -1544,7 +1517,7 @@ export default function Dashboard({ user, onLogout }) {
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   // ─── CLIENTS (COMPANY-LEVEL) ────────────────────────────────────
-  const [clients, setClients] = useState(() => lsGet(LS_KEYS.clients, []));
+  const [clients, setClients] = useState([]);
   const [selectedClientIds, setSelectedClientIds] = useState(new Set());
   const [expandedClientId, setExpandedClientId] = useState(null);
   const [showAddClient, setShowAddClient] = useState(false);
@@ -1587,7 +1560,7 @@ export default function Dashboard({ user, onLogout }) {
   );
   const CLIENT_ATTRIBUTES = [...new Set(["Agency", "Artist", "Audio", "Backline", "Brand", "CAD", "Candles", "Corporate", "Creative Director", "Drawings", "Experiential", "Fabrication & Scenic", "Furniture Rentals", "Individual", "LD", "Lighting", "Management", "PR", "Photo Booth", "Producer", "Production General", "Production Manager", "Promoter", "Record Label", "Site Operations", "Sponsorship", "Video", "AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Floral", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"])].sort();
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
-  const [projectWorkback, setProjectWorkback] = useState(() => lsGet(LS_KEYS.workback, {}));
+  const [projectWorkback, setProjectWorkback] = useState({});
   const workback = projectWorkback[activeProjectId] || [];
   const setWorkback = (updater) => {
     setProjectWorkback(prev => ({
@@ -1596,7 +1569,7 @@ export default function Dashboard({ user, onLogout }) {
     }));
   };
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
-  const [projectROS, setProjectROS] = useState(() => lsGet(LS_KEYS.ros, {}));
+  const [projectROS, setProjectROS] = useState({});
   const ros = projectROS[activeProjectId] || [];
   const setROS = (updater) => {
     setProjectROS(prev => ({
@@ -1611,17 +1584,9 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { setSelectedVendorIds(new Set()); setExpandedVendor(null); }, [activeProjectId]);
   
   // ─── TEXT SIZE SETTING ──────────────────────────────────────────
-  const [textSize, setTextSize] = useState(() => lsGet(LS_KEYS.textSize, 100)); // percentage: 80, 90, 100, 110, 120
+  const [textSize, setTextSize] = useState(100); // percentage: 75-130
   const textScale = textSize / 100;
   
-  // ─── AUTO-SAVE TO LOCALSTORAGE ─────────────────────────────────
-  useEffect(() => { lsSave(LS_KEYS.projects, projects); }, [projects]);
-  useEffect(() => { lsSave(LS_KEYS.clients, clients); }, [clients]);
-  useEffect(() => { lsSave(LS_KEYS.contacts, contacts); }, [contacts]);
-  useEffect(() => { lsSave(LS_KEYS.vendors, projectVendors); }, [projectVendors]);
-  useEffect(() => { lsSave(LS_KEYS.workback, projectWorkback); }, [projectWorkback]);
-  useEffect(() => { lsSave(LS_KEYS.ros, projectROS); }, [projectROS]);
-  useEffect(() => { lsSave(LS_KEYS.textSize, textSize); }, [textSize]);
   
   const [search, setSearch] = useState("");
   const [sidebarW, setSidebarW] = useState(280);
@@ -1729,10 +1694,7 @@ export default function Dashboard({ user, onLogout }) {
     { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
     { id: "ct_eden", name: "Eden Sweeden", firstName: "Eden", lastName: "Sweeden", phone: "+1 (310) 625-2453", email: "eden@weareadptv.com", company: "Adaptive by Design", position: "", department: "", notes: "Personal: edenschroder@icloud.com · Birthday: January 8, 1989", source: "system" },
   ];
-  const [contacts, setContacts] = useState(() => {
-    const saved = lsGet(LS_KEYS.contacts, null);
-    return saved && saved.length > 0 ? saved : defaultContacts;
-  });
+  const [contacts, setContacts] = useState(defaultContacts);
   const [contactSearch, setContactSearch] = useState("");
   const [contactFilterType, setContactFilterType] = useState("");
   const [contactFilterResource, setContactFilterResource] = useState("");
@@ -1743,6 +1705,44 @@ export default function Dashboard({ user, onLogout }) {
   const [todoistNewTask, setTodoistNewTask] = useState("");
   const [todoistFilter, setTodoistFilter] = useState("all"); // all, today, overdue, project id
   const [adptvWorkspaceId, setAdptvWorkspaceId] = useState(null);
+  // ─── HYDRATE FROM LOCALSTORAGE (runs once after mount) ──────────
+  useEffect(() => {
+    if (lsHydrated.current) return;
+    lsHydrated.current = true;
+    try {
+      const g = (key) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; } };
+      const savedProjects = g(LS_KEYS.projects);
+      if (savedProjects && savedProjects.length > 0) {
+        const defaults = initProjects();
+        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...p, code: def.code } : p; });
+        const savedIds = new Set(savedProjects.map(p => p.id));
+        const brandNew = defaults.filter(d => !savedIds.has(d.id));
+        setProjects([...merged, ...brandNew]);
+      }
+      const savedClients = g(LS_KEYS.clients);
+      if (savedClients && savedClients.length > 0) setClients(savedClients);
+      const savedContacts = g(LS_KEYS.contacts);
+      if (savedContacts && savedContacts.length > 0) setContacts(savedContacts);
+      const savedVendors = g(LS_KEYS.vendors);
+      if (savedVendors && Object.keys(savedVendors).length > 0) setProjectVendors(savedVendors);
+      const savedWB = g(LS_KEYS.workback);
+      if (savedWB && Object.keys(savedWB).length > 0) setProjectWorkback(savedWB);
+      const savedROS = g(LS_KEYS.ros);
+      if (savedROS && Object.keys(savedROS).length > 0) setProjectROS(savedROS);
+      const savedTS = g(LS_KEYS.textSize);
+      if (savedTS) setTextSize(savedTS);
+    } catch (e) { console.warn("localStorage hydration failed:", e); }
+  }, []);
+  // ─── AUTO-SAVE TO LOCALSTORAGE (skip initial render) ────────────
+  const saveSkipRef = useRef(true);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.projects, JSON.stringify(projects)); } catch {} }, [projects]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.clients, JSON.stringify(clients)); } catch {} }, [clients]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.contacts, JSON.stringify(contacts)); } catch {} }, [contacts]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.vendors, JSON.stringify(projectVendors)); } catch {} }, [projectVendors]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.workback, JSON.stringify(projectWorkback)); } catch {} }, [projectWorkback]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.ros, JSON.stringify(projectROS)); } catch {} }, [projectROS]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.textSize, JSON.stringify(textSize)); } catch {} }, [textSize]);
+  useEffect(() => { saveSkipRef.current = false; }, []);
   const todoistFetch = useCallback(async (key) => {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
