@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@/lib/supabase-browser";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -8,58 +8,6 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
-
-// Universal array safety helper - ensures value is always an array
-const safeArr = (v) => Array.isArray(v) ? v : [];
-
-// Deep sanitizer for all state loaded from Supabase - ensures no null arrays crash the app
-const sanitizeProject = (p) => ({
-  ...p,
-  producers: safeArr(p.producers),
-  managers: safeArr(p.managers),
-  staff: safeArr(p.staff),
-  pocs: safeArr(p.pocs),
-  clientContacts: safeArr(p.clientContacts),
-  billingContacts: safeArr(p.billingContacts),
-  services: safeArr(p.services),
-  subEvents: safeArr(p.subEvents),
-  name: p.name || "",
-  client: p.client || "",
-  code: p.code || "",
-  status: p.status || "",
-  location: p.location || "",
-  why: p.why || "",
-  eventDates: p.eventDates || { start: "", end: "" },
-  engagementDates: p.engagementDates || { start: "", end: "" },
-});
-const sanitizeVendor = (v) => ({
-  ...v,
-  compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } },
-});
-const sanitizeState = (s) => {
-  const safe = { ...s };
-  if (safe.projects) safe.projects = safeArr(safe.projects).map(sanitizeProject);
-  if (safe.projectVendors && typeof safe.projectVendors === 'object') {
-    const sv = {};
-    Object.keys(safe.projectVendors).forEach(k => { sv[k] = safeArr(safe.projectVendors[k]).map(sanitizeVendor); });
-    safe.projectVendors = sv;
-  }
-  if (safe.projectWorkback && typeof safe.projectWorkback === 'object') {
-    const sw = {};
-    Object.keys(safe.projectWorkback).forEach(k => { sw[k] = safeArr(safe.projectWorkback[k]); });
-    safe.projectWorkback = sw;
-  }
-  if (safe.projectROS && typeof safe.projectROS === 'object') {
-    const sr = {};
-    Object.keys(safe.projectROS).forEach(k => {
-      sr[k] = safeArr(safe.projectROS[k]).map(r => ({ ...r, vendors: safeArr(r.vendors) }));
-    });
-    safe.projectROS = sr;
-  }
-  if (safe.contacts) safe.contacts = safeArr(safe.contacts);
-  if (safe.activityLog) safe.activityLog = safeArr(safe.activityLog);
-  return safe;
-};
 import Color from "@tiptap/extension-color";
 import TextStyle from "@tiptap/extension-text-style";
 
@@ -512,7 +460,7 @@ function PhoneWithCode({ value, onChange, placeholder, inputStyle, compact }) {
   return (
     <div style={{ display: 'flex' }}>
       <select value={cc} onChange={e => handleCodeChange(e.target.value)} style={selectSt}>
-        {safeArr(COUNTRY_CODES).map(c => <option key={c.code} value={c.code}>{c.flag} {c.code}</option>)}
+        {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.code}</option>)}
       </select>
       <input value={num} onChange={e => handleNumChange(e.target.value)} placeholder={placeholder || placeholderByCountry(cc)} style={phoneSt} />
     </div>
@@ -609,42 +557,40 @@ function Dropdown({ value, options, onChange, colors, width, allowBlank, blankLa
       </button>
       {open && <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
         {allowBlank && <div onClick={() => { onChange(""); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— None —</div>}
-        {safeArr(options).map(opt => <div key={opt} onClick={() => { onChange(opt); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: value === opt ? "#ff6b4a" : "var(--textSub)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>{colors?.[opt] && <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[opt].dot }} />}{opt}</div>)}
+        {options.map(opt => <div key={opt} onClick={() => { onChange(opt); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: value === opt ? "#ff6b4a" : "var(--textSub)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>{colors?.[opt] && <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[opt].dot }} />}{opt}</div>)}
       </div>}
     </div>
   );
 }
 
-function MultiDropdown({ values: rawValues, options, onChange, colorMap, renderLabel }) {
-  const values = safeArr(rawValues);
+function MultiDropdown({ values, options, onChange, colorMap, renderLabel }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
-  const toggle = (opt) => onChange(safeArr(values).includes(opt) ? safeArr(values).filter(v => v !== opt) : [...values, opt]);
+  const toggle = (opt) => onChange(values.includes(opt) ? values.filter(v => v !== opt) : [...values, opt]);
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <div onClick={() => setOpen(!open)} style={{ display: "flex", gap: 3, flexWrap: "wrap", padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, cursor: "pointer", minHeight: 28, alignItems: "center" }}>
         {values.length === 0 && <span style={{ fontSize: 10, color: "var(--textGhost)" }}>Select...</span>}
-        {safeArr(values).map(v => <span key={v} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: (colorMap?.[v] || "var(--textMuted)") + "20", color: colorMap?.[v] || "var(--textMuted)", fontWeight: 600, border: `1px solid ${colorMap?.[v] || "var(--textMuted)"}30` }}>{renderLabel ? renderLabel(v) : v}</span>)}
+        {values.map(v => <span key={v} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: (colorMap?.[v] || "var(--textMuted)") + "20", color: colorMap?.[v] || "var(--textMuted)", fontWeight: 600, border: `1px solid ${colorMap?.[v] || "var(--textMuted)"}30` }}>{renderLabel ? renderLabel(v) : v}</span>)}
       </div>
       {open && <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 180, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
         {values.length > 0 && <div onClick={() => { onChange([]); setOpen(false); }} style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— Clear all —</div>}
-        {safeArr(options).map(opt => <div key={opt} onClick={() => toggle(opt)} style={{ padding: "6px 12px", fontSize: 11, color: safeArr(values).includes(opt) ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}><div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${safeArr(values).includes(opt) ? "#4ecb71" : "var(--borderActive)"}`, background: safeArr(values).includes(opt) ? "#4ecb7120" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#4ecb71", flexShrink: 0 }}>{safeArr(values).includes(opt) ? "✓" : ""}</div>{renderLabel ? renderLabel(opt) : opt}</div>)}
+        {options.map(opt => <div key={opt} onClick={() => toggle(opt)} style={{ padding: "6px 12px", fontSize: 11, color: values.includes(opt) ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}><div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${values.includes(opt) ? "#4ecb71" : "var(--borderActive)"}`, background: values.includes(opt) ? "#4ecb7120" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#4ecb71", flexShrink: 0 }}>{values.includes(opt) ? "✓" : ""}</div>{renderLabel ? renderLabel(opt) : opt}</div>)}
       </div>}
     </div>
   );
 }
 
-function TagInput({ values: rawValues, options, onChange, contacts, onViewContact }) {
-  const values = safeArr(rawValues);
+function TagInput({ values, options, onChange, contacts, onViewContact }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
   const inputRef = useRef(null);
   useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQuery(""); } }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
-  const contactNames = contacts ? safeArr(contacts).map(c => c.name) : [];
+  const contactNames = contacts ? contacts.map(c => c.name) : [];
   const allNames = [...new Set([...contactNames, ...(options || [])])];
-  const filtered = safeArr(allNames).filter(n => !values.includes(n) && n.toLowerCase().includes(query.toLowerCase()));
+  const filtered = allNames.filter(n => !values.includes(n) && n.toLowerCase().includes(query.toLowerCase()));
   const addName = (name) => { onChange([...values, name]); setQuery(""); };
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && query.trim()) { e.preventDefault(); addName(query.trim()); }
@@ -654,13 +600,13 @@ function TagInput({ values: rawValues, options, onChange, contacts, onViewContac
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", minHeight: 24 }}>
-        {safeArr(values).map(v => {
+        {values.map(v => {
           const contact = contacts?.find(c => c.name === v);
           return (
             <span key={v} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 4, background: contact ? "#3da5db15" : "#ff6b4a15", color: contact ? "#3da5db" : "#ff6b4a", fontWeight: 600, border: `1px solid ${contact ? "#3da5db25" : "#ff6b4a25"}`, display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}
               onClick={(e) => { e.stopPropagation(); if (onViewContact) onViewContact(contact || { name: v, phone: "", email: "" }, e); }}>
               {v}<span style={{ fontSize: 8, opacity: 0.5 }}>{contact ? "ⓘ" : "👤"}</span>
-              <span onClick={e => { e.stopPropagation(); onChange(safeArr(values).filter(x => x !== v)); }} style={{ cursor: "pointer", opacity: 0.6, fontSize: 10 }}>×</span>
+              <span onClick={e => { e.stopPropagation(); onChange(values.filter(x => x !== v)); }} style={{ cursor: "pointer", opacity: 0.6, fontSize: 10 }}>×</span>
             </span>
           );
         })}
@@ -677,7 +623,7 @@ function TagInput({ values: rawValues, options, onChange, contacts, onViewContac
       {open && (
         <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 260, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 240, overflowY: "auto" }}>
           {contacts && contacts.length > 0 && filtered.length > 0 && <div style={{ padding: "5px 12px 2px", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8 }}>FROM CONTACTS</div>}
-          {safeArr(filtered).filter(n => contactNames.includes(n)).map(name => {
+          {filtered.filter(n => contactNames.includes(n)).map(name => {
             const c = contacts?.find(ct => ct.name === name);
             return (
               <div key={name} onClick={() => addName(name)} style={{ padding: "7px 12px", fontSize: 12, color: "var(--textSub)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
@@ -689,13 +635,13 @@ function TagInput({ values: rawValues, options, onChange, contacts, onViewContac
               </div>
             );
           })}
-          {safeArr(filtered).filter(n => !contactNames.includes(n)).length > 0 && <div style={{ padding: "5px 12px 2px", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8 }}>OTHER</div>}
-          {safeArr(filtered).filter(n => !contactNames.includes(n)).map(name => (
+          {filtered.filter(n => !contactNames.includes(n)).length > 0 && <div style={{ padding: "5px 12px 2px", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.8 }}>OTHER</div>}
+          {filtered.filter(n => !contactNames.includes(n)).map(name => (
             <div key={name} onClick={() => addName(name)} style={{ padding: "7px 12px", fontSize: 12, color: "var(--textMuted)", cursor: "pointer" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               {name}
             </div>
           ))}
-          {query.trim() && !safeArr(allNames).includes(query.trim()) && !safeArr(values).includes(query.trim()) && (
+          {query.trim() && !allNames.includes(query.trim()) && !values.includes(query.trim()) && (
             <div onClick={() => addName(query.trim())} style={{ padding: "7px 12px", fontSize: 11, color: "#ff6b4a", cursor: "pointer", borderTop: "1px solid var(--borderSub)" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               + Add "{query.trim()}" as new
             </div>
@@ -778,7 +724,7 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
                   <span style={{ fontSize: 14 }}>+</span> Add "{addQ.trim()}" as new contact
                 </div>
               )}
-              {safeArr(addFiltered).map(c => (
+              {addFiltered.map(c => (
                 <div key={c.id} onClick={() => { setAddContact(c); setAddStep(2); }} style={{ padding: "10px 14px", cursor: "pointer", fontSize: 11, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 600, color: "var(--text)" }}>{c.name}</span>
@@ -837,14 +783,14 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
             <div style={{ padding: "10px 14px" }}>
               <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>PROJECT ROLE</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 14 }}>
-                {safeArr(PROJECT_ROLES).map(r => (
+                {PROJECT_ROLES.map(r => (
                   <button key={r} onClick={() => setAddRole(r)} style={{ padding: "5px 10px", borderRadius: 5, fontSize: 10, fontWeight: 600, cursor: "pointer", background: addRole === r ? (ROLE_COLORS[r] || "var(--textMuted)") + "25" : "var(--bgInput)", border: `1px solid ${addRole === r ? (ROLE_COLORS[r] || "var(--textMuted)") + "50" : "var(--borderSub)"}`, color: addRole === r ? ROLE_COLORS[r] || "var(--textMuted)" : "var(--textFaint)" }}>{r}</button>
                 ))}
               </div>
               <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>DEPARTMENT <span style={{ color: "var(--textGhost)", fontWeight: 400 }}>(optional)</span></div>
               <select value={addDept} onChange={e => setAddDept(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, marginBottom: 14 }}>
                 <option value="">No department</option>
-                {safeArr(deptOptions).map(d => <option key={d} value={d}>{d}</option>)}
+                {deptOptions.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
               <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
                 <input type="checkbox" id="atpSaveGlobal" defaultChecked style={{ accentColor: "#ff6b4a" }} />
@@ -867,42 +813,28 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
   );
 }
 
-function ClientSearchInput({ value, onChange, projects, contacts }) {
+function ClientSearchInput({ value, onChange, projects }) {
   const [clientOpen, setClientOpen] = useState(false);
   const clientRef = useRef(null);
   useEffect(() => { const h = (e) => { if (clientRef.current && !clientRef.current.contains(e.target)) setClientOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
-  const existingClients = [...new Set(safeArr(projects).map(p => p.client).filter(Boolean))].sort();
-  const clientContacts = (contacts || []).filter(c => c.contactCategory === "Client" && c.company).map(c => c.company);
-  const allClients = [...new Set([...existingClients, ...clientContacts])].sort();
+  const existingClients = [...new Set(projects.map(p => p.client).filter(Boolean))].sort();
   const q = value.toLowerCase();
-  const filteredClients = safeArr(allClients).filter(c => c.toLowerCase().includes(q));
-  const exactMatch = safeArr(allClients).some(c => c.toLowerCase() === q);
-  // Also show individual client contact names matching
-  const matchingClientPeople = (contacts || []).filter(c => c.contactCategory === "Client" && c.name.toLowerCase().includes(q) && !safeArr(filteredClients).some(fc => fc.toLowerCase() === c.name.toLowerCase()));
+  const filteredClients = existingClients.filter(c => c.toLowerCase().includes(q));
+  const exactMatch = existingClients.some(c => c.toLowerCase() === q);
   return (
     <div ref={clientRef} style={{ position: "relative" }}>
       <input value={value} onChange={e => { onChange(e.target.value); setClientOpen(true); }} onFocus={() => setClientOpen(true)} placeholder="Search or add new client..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} />
-      {clientOpen && (filteredClients.length > 0 || matchingClientPeople.length > 0 || (q && !exactMatch)) && (
-        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 2, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 70, overflow: "hidden", maxHeight: 240, overflowY: "auto" }}>
+      {clientOpen && (filteredClients.length > 0 || (q && !exactMatch)) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 2, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 70, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
           {q && !exactMatch && (
             <div onClick={() => { setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 11, color: "#ff6b4a", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>+</span> Add "{value}" as new client
             </div>
           )}
-          {safeArr(filteredClients).map(c => {
-            const fromContacts = safeArr(clientContacts).includes(c);
-            const projCount = safeArr(projects).filter(p => p.client === c).length;
-            return (
-              <div key={c} onClick={() => { onChange(c); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                <span style={{ fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>{c} {fromContacts && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 2, background: "#dba94e15", color: "#dba94e", fontWeight: 700 }}>CLIENT</span>}</span>
-                <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{projCount > 0 ? `${projCount} project${projCount !== 1 ? "s" : ""}` : "contact"}</span>
-              </div>
-            );
-          })}
-          {safeArr(matchingClientPeople).map(c => (
-            <div key={c.id} onClick={() => { onChange(c.company || c.name); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              <span style={{ fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>{c.name} {c.company && <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 400 }}>({c.company})</span>} <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 2, background: "#dba94e15", color: "#dba94e", fontWeight: 700 }}>CLIENT</span></span>
-              <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{c.position || "contact"}</span>
+          {filteredClients.map(c => (
+            <div key={c} onClick={() => { onChange(c); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ fontWeight: 600, color: "var(--text)" }}>{c}</span>
+              <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{projects.filter(p => p.client === c).length} project{projects.filter(p => p.client === c).length !== 1 ? "s" : ""}</span>
             </div>
           ))}
         </div>
@@ -926,7 +858,7 @@ function PocPullDropdown({ contacts, existingPocs, onSelect }) {
           <div style={{ maxHeight: 200, overflowY: "auto" }}>
             {contacts.length === 0 && <div style={{ padding: "14px 12px", fontSize: 11, color: "var(--textGhost)", textAlign: "center" }}>No contacts yet — add from top bar 👤 Contacts</div>}
             {contacts.length > 0 && filtered.length === 0 && <div style={{ padding: "10px 12px", fontSize: 11, color: "var(--textGhost)" }}>No matches found</div>}
-            {safeArr(filtered).map(c => (
+            {filtered.map(c => (
               <div key={c.id} onClick={() => { onSelect(c); setOpen(false); setQuery(""); }} style={{ padding: "8px 12px", cursor: "pointer", fontSize: 11, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontWeight: 600 }}>{c.name}</span>
@@ -1087,7 +1019,7 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
 // ─── ADAPTIVE AT A GLANCE ──────────────────────────────────────────────────────────
 
 function MasterCalendar({ projects, workback, onSelectProject }) {
-  const [calView, setCalView] = useState("month");
+  const [calView, setCalView] = useState("week");
   const [navOffset, setNavOffset] = useState(0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split("T")[0];
@@ -1099,7 +1031,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
 
   // ── Build event spans ──
   const spans = [];
-  safeArr(projects).forEach((proj, pi) => {
+  projects.forEach((proj, pi) => {
     if (proj.archived) return;
     const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
     if (proj.engagementDates?.start && proj.engagementDates?.end)
@@ -1110,17 +1042,17 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
 
   // Sub-events indexed by date for calendar markers
   const subEventsByDate = {};
-  safeArr(projects).forEach((proj, pi) => {
+  projects.forEach((proj, pi) => {
     if (proj.archived || !proj.subEvents) return;
     const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
-    safeArr(proj.subEvents).forEach(se => {
+    proj.subEvents.forEach(se => {
       (subEventsByDate[se.date] = subEventsByDate[se.date] || []).push({ ...se, projId: proj.id, projName: proj.name, color });
     });
   });
 
   // Workback items indexed by date
   const wbByDate = {};
-  safeArr(workback).forEach(wb => {
+  workback.forEach(wb => {
     const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
     const item = { label: wb.isEvent ? `★ ${wb.task}` : wb.task, color: wb.isEvent ? "#ff6b4a" : st.text, date: wb.date, projId: "p1", isEvent: wb.isEvent };
     (wbByDate[wb.date] = wbByDate[wb.date] || []).push(item);
@@ -1134,21 +1066,21 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
   };
   const buildGanttRows = (dayStrs) => {
     const rows = [];
-    safeArr(projects).forEach((proj, pi) => {
+    projects.forEach((proj, pi) => {
       const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
       if (proj.engagementDates.start && proj.engagementDates.end) {
         const s = dayStrs.findIndex(d => d >= proj.engagementDates.start && d <= proj.engagementDates.end);
-        const e = safeArr(dayStrs).reduce((last, d, i) => (d >= proj.engagementDates.start && d <= proj.engagementDates.end) ? i : last, -1);
+        const e = dayStrs.reduce((last, d, i) => (d >= proj.engagementDates.start && d <= proj.engagementDates.end) ? i : last, -1);
         if (s !== -1 && e >= s) rows.push({ type: "project", label: proj.name, sub: proj.client, color, startCol: s, span: e - s + 1, projId: proj.id, pri: 0 });
       }
       if (!proj.isTour && proj.eventDates.start && proj.eventDates.end) {
         const s = dayStrs.findIndex(d => d >= proj.eventDates.start && d <= proj.eventDates.end);
-        const e = safeArr(dayStrs).reduce((last, d, i) => (d >= proj.eventDates.start && d <= proj.eventDates.end) ? i : last, -1);
+        const e = dayStrs.reduce((last, d, i) => (d >= proj.eventDates.start && d <= proj.eventDates.end) ? i : last, -1);
         if (s !== -1 && e >= s) rows.push({ type: "event", label: `★ EVENT: ${proj.name}`, sub: proj.client, color, startCol: s, span: e - s + 1, projId: proj.id, pri: 1 });
       }
       // Sub-events as individual markers
       if (proj.subEvents) {
-        safeArr(proj.subEvents).forEach(se => {
+        proj.subEvents.forEach(se => {
           const idx = dayStrs.indexOf(se.date);
           if (idx === -1) return;
           const sec = SUB_EVENT_STATUS_COLORS[se.status] || SUB_EVENT_STATUS_COLORS["Confirmed"];
@@ -1156,7 +1088,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
         });
       }
     });
-    safeArr(workback).forEach(wb => {
+    workback.forEach(wb => {
       const idx = dayStrs.indexOf(wb.date);
       if (idx === -1) return;
       const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
@@ -1188,12 +1120,12 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
 
   // For a given week (array of 7 date|null), find which spans overlap and assign lanes
   const getWeekLanes = (weekDates) => {
-    const weekStrs = safeArr(weekDates).map(d => d ? fmt(d) : null);
+    const weekStrs = weekDates.map(d => d ? fmt(d) : null);
     const firstStr = weekStrs.find(s => s);
     const lastStr = [...weekStrs].reverse().find(s => s);
     if (!firstStr || !lastStr) return [];
 
-    const overlapping = safeArr(spans).filter(sp => sp.start <= lastStr && sp.end >= firstStr);
+    const overlapping = spans.filter(sp => sp.start <= lastStr && sp.end >= firstStr);
     // Sort: longer spans first, then events before projects
     overlapping.sort((a, b) => {
       const durA = new Date(a.end) - new Date(a.start);
@@ -1203,7 +1135,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
       return durB - durA;
     });
 
-    return safeArr(overlapping).map(sp => {
+    return overlapping.map(sp => {
       // Find first and last column in this week that this span covers
       let startCol = -1, endCol = -1;
       for (let c = 0; c < 7; c++) {
@@ -1265,8 +1197,8 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
         }
 
         const isContextual = calView === "day" || calView === "week";
-        const activeNonArchived = safeArr(projects).filter(p => !p.archived);
-        const visibleProjects = safeArr(activeNonArchived).filter((p, i) => {
+        const activeNonArchived = projects.filter(p => !p.archived);
+        const visibleProjects = activeNonArchived.filter((p, i) => {
           const es = p.eventDates?.start, ee = p.eventDates?.end || p.eventDates?.start;
           const ns = p.engagementDates?.start, ne = p.engagementDates?.end || p.engagementDates?.start;
           const eventOverlap = es && (es <= viewEnd && ee >= viewStart);
@@ -1275,7 +1207,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
           return eventOverlap || engOverlap || subOverlap;
         });
 
-        const visibleIndexMap = safeArr(visibleProjects).map(vp => projects.indexOf(vp));
+        const visibleIndexMap = visibleProjects.map(vp => projects.indexOf(vp));
 
         return <>
       {/* Top bar */}
@@ -1303,7 +1235,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
       {/* Legend — only visible projects */}
       {visibleProjects.length > 0 && (
         <div style={{ display: "flex", gap: 14, marginBottom: 12, flexWrap: "wrap" }}>
-          {safeArr(visibleProjects).map((p, vi) => {
+          {visibleProjects.map((p, vi) => {
             const origIdx = visibleIndexMap[vi];
             return (
               <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} onClick={() => onSelectProject(p.id)}>
@@ -1320,13 +1252,13 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
       {/* ═══ GANTT VIEW (Day / Week) ═══ */}
       {isGantt && (() => {
         const gr = getGanttRange();
-        const dayStrs = safeArr(gr.days).map(fmt);
+        const dayStrs = gr.days.map(fmt);
         const colCount = gr.days.length;
         const rows = buildGanttRows(dayStrs);
         return (
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${colCount}, 1fr)`, borderBottom: "1px solid var(--borderSub)" }}>
-              {safeArr(gr.days).map((d, i) => {
+              {gr.days.map((d, i) => {
                 const ds = fmt(d); const isT = ds === todayStr;
                 return (
                   <div key={i} style={{ padding: "12px 8px", textAlign: "center", borderRight: i < colCount - 1 ? "1px solid var(--calLine)" : "none" }}>
@@ -1342,7 +1274,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
               {calView === "week" && [1,2,3,4,5,6].map(i => <div key={i} style={{ position: "absolute", left: `${(i / 7) * 100}%`, top: 0, bottom: 0, width: 1, background: "var(--calLine)" }} />)}
               {(() => { const ti = dayStrs.indexOf(todayStr); return ti >= 0 ? <div style={{ position: "absolute", left: `${(ti / colCount) * 100}%`, width: `${(1 / colCount) * 100}%`, top: 0, bottom: 0, background: "#3da5db06" }} /> : null; })()}
               {rows.length === 0 && <div style={{ textAlign: "center", padding: "30px 20px", color: "var(--textGhost)", fontSize: 12 }}>No items in this view</div>}
-              {safeArr(rows).map((row, ri) => {
+              {rows.map((row, ri) => {
                 const left = `calc(${(row.startCol / colCount) * 100}% + 2px)`;
                 const width = `calc(${(row.span / colCount) * 100}% - 4px)`;
                 const isEvt = row.type === "event"; const isProj = row.type === "project";
@@ -1381,12 +1313,12 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
               </div>
 
               {/* Week rows */}
-              {safeArr(mg.weeks).map((weekDates, wi) => {
+              {mg.weeks.map((weekDates, wi) => {
                 const lanes = getWeekLanes(weekDates);
                 const laneCount = lanes.length;
                 // Get workback items for each day in this week
-                const dayWBs = safeArr(weekDates).map(d => d ? (wbByDate[fmt(d)] || []) : []);
-                const maxWB = Math.max(0, ...safeArr(dayWBs).map(a => a.length));
+                const dayWBs = weekDates.map(d => d ? (wbByDate[fmt(d)] || []) : []);
+                const maxWB = Math.max(0, ...dayWBs.map(a => a.length));
                 const barsAreaH = laneCount * barGap;
                 const wbAreaH = isQ ? maxWB * 14 : maxWB * 18;
                 const cellMinH = isQ ? 50 : 90;
@@ -1395,7 +1327,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
                 return (
                   <div key={wi} style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", borderBottom: wi < mg.weeks.length - 1 ? "1px solid var(--calLine)" : "none", minHeight: totalH, position: "relative" }}>
                     {/* Day cells (date numbers + day-specific items) */}
-                    {safeArr(weekDates).map((cell, ci) => {
+                    {weekDates.map((cell, ci) => {
                       if (!cell) return <div key={ci} style={{ background: "var(--calBgEmpty)", borderRight: "1px solid var(--calLine)" }} />;
                       const ds = fmt(cell);
                       const isT = ds === todayStr;
@@ -1417,7 +1349,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
                           {/* Spacer for bar lanes */}
                           <div style={{ height: barsAreaH }} />
                           {/* Workback pills */}
-                          {safeArr(dayItems).map((wb, wbi) => (
+                          {dayItems.map((wb, wbi) => (
                             <div key={wbi} onClick={() => onSelectProject(wb.projId)}
                               style={{
                                 fontSize: isQ ? 6 : 8, fontWeight: wb.isEvent ? 700 : 500,
@@ -1454,7 +1386,7 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
                     })}
 
                     {/* Spanning bars (absolute, over the cells) */}
-                    {safeArr(lanes).map((lane, li) => {
+                    {lanes.map((lane, li) => {
                       const isEvt = lane.type === "event";
                       const left = `calc(${(lane.startCol / 7) * 100}% + 1px)`;
                       const width = `calc(${((lane.endCol - lane.startCol + 1) / 7) * 100}% - 2px)`;
@@ -1489,100 +1421,12 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
 
 // ─── MAIN DASHBOARD ──────────────────────────────────────────────────────────
 
-const CSV_CONTACTS = [{"id":"ct_csv_1","nm":"Adele Vanini","fn":"Adele","ln":"Vanini","ph":"+1 (661) 904-8339","em":"thirteenuniversellc@gmail.com","co":"13 Universe","pos":"Owner","rt":"Contractor","nt":"Creative Director,Producer","cat":"Partner","vn":"13 Universe"},{"id":"ct_csv_2","nm":"Alana Palaster","fn":"Alana","ln":"Palaster","ph":"+1 (213) 245-0690","em":"alana@iamgia.com","co":"IAMGIA","pos":"Owner","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"IAMGIA"},{"id":"ct_csv_3","nm":"Alex Ashley","fn":"Alex","ln":"Ashley","ph":"+13108770745","em":"alex.ashley@thevoxgroup.com","co":"The Vox Group","rt":"Vendor","nt":"Production General,Production Manager","cat":"Partner"},{"id":"ct_csv_4","nm":"Alexandra Schwab","fn":"Alexandra","ln":"Schwab","ph":"+1 (650) 515-6572","em":"alexandra.schwab@experiencenve.com","co":"NVE","rt":"Customer / Client","nt":"Agency","cat":"Client","vn":"NVE"},{"id":"ct_csv_5","nm":"Amjad Masad","fn":"Amjad","ln":"Masad","ph":"+1 (917) 854-1987","em":"amjad@repl.it","co":"Amjad Asad","pos":"CEO","rt":"Customer / Client","nt":"Tech Co","cat":"Client","vn":"Amjad Asad"},{"id":"ct_csv_6","nm":"Amol Hardikar","fn":"Amol","ln":"Hardikar","em":"amol.hardikar@repl.it","pos":"Head of Finance","rt":"Customer / Client","nt":"Tech Co"},{"id":"ct_csv_7","nm":"Arielle Caputo","fn":"Arielle","ln":"Caputo","ph":"+1 (323) 363-6540","co":"Project Primus","rt":"Customer / Client","cat":"Client","vn":"Project Primus"},{"id":"ct_csv_8","nm":"Ashley Lam","fn":"Ashley","ln":"Lam","co":"GT's Living Foods","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"GT's Living Foods"},{"id":"ct_csv_9","nm":"Bedouin","fn":"Bedouin","co":"Bedouin COMPANY","rt":"Customer / Client","nt":"Artist","cat":"Client","vn":"Bedouin COMPANY"},{"id":"ct_csv_10","nm":"Ben Pound","fn":"Ben","ln":"Pound","ph":"+6281353360061","em":"ben@paradise.live","pos":"Global Production Manager","rt":"Contractor","nt":"Production Manager","cat":"Partner"},{"id":"ct_csv_11","nm":"Ben Sterling Contact","fn":"Ben Sterling Contact","ph":"+16466481063","em":"md@prime-culture.com","co":"Ben Sterling","pos":"Manager","rt":"Customer / Client","nt":"Artist","cat":"Client"},{"id":"ct_csv_12","nm":"Billy Smith","fn":"Billy","ln":"Smith","ph":"3109865581","em":"billy@weareadptv.com","co":"ADPTV","rt":"Internal","vn":"ADPTV"},{"id":"ct_csv_13","nm":"Blake Stewart","fn":"Blake","ln":"Stewart","ph":"+16502885454","em":"hello@blakestew.art","rt":"Contractor","nt":"Artist Relations,Coordinator","cat":"Partner"},{"id":"ct_csv_14","nm":"Braedy Benjamins","fn":"Braedy","ln":"Benjamins","ph":"+1 (626) 475-6922","em":"braedy@akariproductionco.com","co":"Akari","pos":"Owner","rt":"Vendor","nt":"Video","cat":"Partner","vn":"Akari"},{"id":"ct_csv_15","nm":"Brett Fischer","fn":"Brett","ln":"Fischer","ph":"+1 (858) 414-6839","em":"brett@ayita.com","co":"Ayita, Catch & Release Records","pos":"Owner of Ayita","rt":"Customer / Client","nt":"Management","cat":"Client","vn":"Ayita, Catch & Release Records"},{"id":"ct_csv_16","nm":"Brian Rogerson","fn":"Brian","ln":"Rogerson","ph":"702 338 4043","em":"Brian@sincityscenic.com","co":"Sin City Scenic,The Pineapple Agency","rt":"Vendor","nt":"Fabrication & Scenic","cat":"Partner"},{"id":"ct_csv_17","nm":"Brian Stevenson","fn":"Brian","ln":"Stevenson","ph":"+1 (520) 305-0525","em":"brian@hardwiredproduction.com","co":"Hardwired Production","pos":"Production Manager","rt":"Vendor","nt":"Production General","cat":"Partner","vn":"Hardwired Production"},{"id":"ct_csv_18","nm":"BTEC","fn":"BTEC","co":"SBJCT LLC","rt":"Contractor","nt":"Production General,Site Operations,CAD","cat":"Partner"},{"id":"ct_csv_19","nm":"Cami Sofi","fn":"Cami","ln":"Sofi","rt":"Internal"},{"id":"ct_csv_20","nm":"Carlon Correal","fn":"Carlon","ln":"Correal","ph":"+1 (786) 302-3280","em":"carlos@insomniac.com","co":"Insomniac","rt":"Customer / Client","nt":"Promoter","cat":"Client","vn":"Insomniac"},{"id":"ct_csv_21","nm":"Carlos Lopez","fn":"Carlos","ln":"Lopez","ph":"+52 5548625488","em":"carlos@lostnights.mx","co":"Lost Nights","pos":"Owner / Founder","rt":"Vendor","nt":"Production Manager","cat":"Partner","vn":"Lost Nights"},{"id":"ct_csv_22","nm":"Cava Champagne Contact","fn":"Cava Champagne Contact","co":"Cava Champagne","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Cava Champagne"},{"id":"ct_csv_23","nm":"Chris Sidhom","fn":"Chris","ln":"Sidhom","ph":"15168406012","em":"Csidhom10@gmail.com","co":"My Yellow Apple","rt":"Customer / Client","nt":"Individual","cat":"Client","vn":"My Yellow Apple"},{"id":"ct_csv_24","nm":"Christopher Krawczyk","fn":"Christopher","ln":"Krawczyk","em":"Louis@ayita.com","nt":"Christopher Krawczyk\n703 Loring Street\nSan Diego, California 92109\nUnited States"},{"id":"ct_csv_25","nm":"Clancy Silver","fn":"Clancy","ln":"Silver","ph":"13235323555","em":"clancy@weareadptv.com","co":"Dutch Co.","rt":"Internal","vn":"Dutch Co."},{"id":"ct_csv_26","nm":"Collyns Stenzel","fn":"Collyns","ln":"Stenzel","ph":"(847) 366-0234","em":"collyns@collynsdesign.com","co":"Collyns Design","rt":"Contractor","nt":"Production Manager,CAD,Drawings,LD","cat":"Partner","vn":"Collyns Design"},{"id":"ct_csv_27","nm":"Dario Cardamone","fn":"Dario","ln":"Cardamone","ph":"41799157026","em":"dario.Cardamone@ch.guess.eu","co":"Guess Jeans","pos":"VP Global Marketing","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Guess Jeans"},{"id":"ct_csv_28","nm":"Dave Hagewood","fn":"Dave","ln":"Hagewood","ph":"(415) 779-6649","em":"davezilla85@gmail.com","co":"DMT Holdings","rt":"Customer / Client","nt":"Individual","cat":"Client","vn":"DMT Holdings"},{"id":"ct_csv_29","nm":"Dave Johnson","fn":"Dave","ln":"Johnson","co":"One Twenty Eight","rt":"Customer / Client","nt":"Producer","cat":"Client","vn":"One Twenty Eight"},{"id":"ct_csv_30","nm":"David Megdal","fn":"David","ln":"Megdal","ph":"(310) 261-4355","em":"david@cs1337.com","co":"Crowdstrike","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Crowdstrike"},{"id":"ct_csv_31","nm":"Davide DiGiorno","fn":"Davide","ln":"DiGiorno","em":"davide.DiGiorno@ch.guess.eu","co":"Guess Jeans","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Guess Jeans"},{"id":"ct_csv_32","nm":"Dianna Leigh","fn":"Dianna","ln":"Leigh","ph":"(215) 704-3579","em":"DLeigh@LMC.NET","co":"LMC","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"LMC"},{"id":"ct_csv_33","nm":"Eden Schroder","fn":"Eden","ln":"Schroder","ph":"(602) 625-2453","em":"edenschroder@gmail.com","co":"The Art of Now, Eden Schroder","rt":"Contractor","cat":"Partner","vn":"The Art of Now, Eden Schroder"},{"id":"ct_csv_34","nm":"Edisson Romero","fn":"Edisson","ln":"Romero","ph":"(818) 751-9822","em":"easeteamco@gmail.com","co":"Edisson Romero","rt":"Contractor","cat":"Partner","vn":"Edisson Romero"},{"id":"ct_csv_35","nm":"Emily Sulman","fn":"Emily","ln":"Sulman","ph":"8184519397","em":"esulman2@gmail.com","co":"AUXX LLC","pos":"Boss"},{"id":"ct_csv_36","nm":"Emlyn Thompson","fn":"Emlyn","ln":"Thompson","ph":"18434695946","em":"emlyn@mantisvc.com","co":"Mantis VC","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"Mantis VC"},{"id":"ct_csv_37","nm":"Eric Shake","fn":"Eric","ln":"Shake","ph":"(214) 458-9972","em":"Schake@yahoo.com","co":"Erik Shake COMPANY","rt":"Customer / Client","nt":"Individual","cat":"Client","vn":"Erik Shake COMPANY"},{"id":"ct_csv_38","nm":"Eric Tomlinson","fn":"Eric","ln":"Tomlinson","ph":"+1 (562) 965-7580","em":"et@theooo.co","pos":"Project Manager","rt":"Customer / Client","nt":"Works with Ian Massoth at Ayitta"},{"id":"ct_csv_39","nm":"Eric Vogel","fn":"Eric","ln":"Vogel","co":"Jet Management","rt":"Customer / Client","nt":"Management","cat":"Client","vn":"Jet Management"},{"id":"ct_csv_40","nm":"George Kurtz","fn":"George","ln":"Kurtz","co":"Crowdstrike","rt":"Customer / Client","nt":"Individual","cat":"Client","vn":"Crowdstrike"},{"id":"ct_csv_41","nm":"Gio Paolucci","fn":"Gio","ln":"Paolucci","em":"gio@ayita.com","co":"Ayita","rt":"Customer / Client","nt":"Management","cat":"Client","vn":"Ayita"},{"id":"ct_csv_42","nm":"Gon Carpel","fn":"Gon","ln":"Carpel","co":"Fimi Group"},{"id":"ct_csv_43","nm":"GT Dave","fn":"GT","ln":"Dave","ph":"(310) 702-4182","em":"gt@drinkgts.com","co":"GT's Living Foods","pos":"Owner","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"GT's Living Foods"},{"id":"ct_csv_44","nm":"Guillermo Roggero","fn":"Guillermo","ln":"Roggero","ph":"14807732609","em":"guillermo@hardwiredproduction.com","co":"Hardwired Production","pos":"Owner","rt":"Vendor","nt":"Production General","cat":"Partner","vn":"Hardwired Production"},{"id":"ct_csv_45","nm":"Hamilton Wright","fn":"Hamilton","ln":"Wright","rt":"Customer / Client","nt":"Agent","cat":"Client"},{"id":"ct_csv_46","nm":"Ian Ruzal-Bron","fn":"Ian","ln":"Ruzal-Bron","ph":"13054981848","em":"Ian.ruzalbron@gmail.com","co":"One Pulse Events","vn":"One Pulse Events"},{"id":"ct_csv_47","nm":"Ilya Pozen","fn":"Ilya","ln":"Pozen","ph":"(850) 294-5460","em":"ip@telly.com","co":"Telly Inc","pos":"Owner","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Telly Inc"},{"id":"ct_csv_48","nm":"Jack Saltonstall","fn":"Jack","ln":"Saltonstall","ph":"(702) 624-2882","em":"jack@218events.com","co":"Two Eighteen","rt":"Vendor","nt":"Producer","cat":"Partner"},{"id":"ct_csv_49","nm":"James Ahearn","fn":"James","ln":"Ahearn","ph":"+15168070603","em":"james@buena.la","co":"Buena,Cloonee Touring LLC","pos":"Manager","rt":"Customer / Client","nt":"Management","cat":"Client"},{"id":"ct_csv_50","nm":"Jason Ward","fn":"Jason","ln":"Ward","ph":"12133794075","em":"jward@guess.com","co":"Guess Jeans, GUESS?, Inc.","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Guess Jeans, GUESS?, Inc."},{"id":"ct_csv_51","nm":"Jayma Cardoso","fn":"Jayma","ln":"Cardoso","ph":"19173756624","em":"jayma@thesurflodge.com","co":"The Surf Lodge","pos":"Owner","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"The Surf Lodge"},{"id":"ct_csv_52","nm":"Jesse Andrews","fn":"Jesse","ln":"Andrews","ph":"17406165851","em":"jesse@infinitymarketing.com","co":"Infinity Marketing","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"Infinity Marketing"},{"id":"ct_csv_53","nm":"Jessica James","fn":"Jessica","ln":"James","em":"whyjessicajames@gmail.com"},{"id":"ct_csv_54","nm":"Jessica Tranter","fn":"Jessica","ln":"Tranter","ph":"16465094549","em":"jessica.tranter@experiencenve.com","co":"NVE","rt":"Customer / Client","nt":"Producer","cat":"Client","vn":"NVE"},{"id":"ct_csv_55","nm":"Jill Peeling","fn":"Jill","ln":"Peeling","ph":"(917) 749-5464","em":"jill@yellowtelescope.com","co":"Yellow Telescope","rt":"Customer / Client","cat":"Client","vn":"Yellow Telescope"},{"id":"ct_csv_56","nm":"Kaitlan Norrod","fn":"Kaitlan","ln":"Norrod","ph":"(309) 287-9976","em":"kaitlan.norrod@repl.it","co":"Amjad Asad,Replit Inc","pos":"Cheif of Staff","rt":"Customer / Client","nt":"Corporate","cat":"Client"},{"id":"ct_csv_57","nm":"Kayo Francois","fn":"Kayo","ln":"Francois","em":"kayode.francois@eventssaintlucia.com","co":"Events Saint Lucia","rt":"Customer / Client","nt":"Promoter","cat":"Client","vn":"Events Saint Lucia"},{"id":"ct_csv_58","nm":"Kelly Behr","fn":"Kelly","ln":"Behr","co":"GT's Living Foods","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"GT's Living Foods"},{"id":"ct_csv_59","nm":"Kelly de Vries","fn":"Kelly","ln":"de Vries","ph":"630 244 2288","em":"kelly@enter.works","co":"Enter","pos":"Account Executive","rt":"Customer / Client","nt":"Producer","cat":"Client","vn":"Enter"},{"id":"ct_csv_60","nm":"Kieran Ledgeboat","fn":"Kieran","ln":"Ledgeboat","ph":"+44 7932 635403","em":"kieran@crisp-music.co.uk","co":"Kieran"},{"id":"ct_csv_61","nm":"Lalo Aceves","fn":"Lalo","ln":"Aceves","ph":"5.23E+11","em":"lalo@conceptua.mx","co":"Conceptua MX","pos":"Owner","rt":"Vendor","nt":"Producer","cat":"Partner","vn":"Conceptua MX"},{"id":"ct_csv_62","nm":"Lauren Brady","fn":"Lauren","ln":"Brady","ph":"(610) 293-7015","em":"lbrady@lmc.net","co":"LMC","pos":"Senior Meeting Planner","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"LMC"},{"id":"ct_csv_63","nm":"Leala-Rain  Shonalya","fn":"Leala-Rain","ln":"Shonalya","em":"leala.rain@boilerroom.tv","co":"Boiler Room","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"Boiler Room"},{"id":"ct_csv_64","nm":"Lindsey Howard","fn":"Lindsey","ln":"Howard","co":"Infinity Marketing","pos":"Project Manager","rt":"Customer / Client","nt":"Producer","cat":"Client"},{"id":"ct_csv_65","nm":"Louis Godfrey","fn":"Louis","ln":"Godfrey","ph":"(424) 436-9300","em":"louis@ayita.com","co":"Ayita","rt":"Customer / Client","nt":"Management","cat":"Client","vn":"Ayita"},{"id":"ct_csv_66","nm":"Louis Godfrey","fn":"Louis","ln":"Godfrey","ph":"+1 (424) 436-9300","em":"louis@ayita.com","pos":"Manager"},{"id":"ct_csv_67","nm":"Luca Sabatini","fn":"Luca","ln":"Sabatini","ph":"13059888524","em":"luca@unreal-systems.com","co":"Unreal Systems, Luca Sabatini (Independent)","rt":"Vendor","nt":"Production General,Audio","cat":"Partner","vn":"Unreal Systems, Luca Sabatini (Independent)"},{"id":"ct_csv_68","nm":"Luffy Wang","fn":"Luffy","ln":"Wang","rt":"Customer / Client","nt":"Promoter","cat":"Client"},{"id":"ct_csv_69","nm":"Malisa Gandevani","fn":"Malisa","ln":"Gandevani","ph":"16315602621","em":"malisa@mantisvc.com","co":"Mantis VC","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"Mantis VC"},{"id":"ct_csv_70","nm":"Mark Rodriguez","fn":"Mark","ln":"Rodriguez","ph":"(562) 286-4209","em":"mark@asoae.net","co":"ASOAE","pos":"Owner / Founder","rt":"Vendor","nt":"Fabrication & Scenic","cat":"Partner","vn":"ASOAE"},{"id":"ct_csv_71","nm":"Martina Pogacic","fn":"Martina","ln":"Pogacic","em":"martina@showpro.eu","co":"Show Production EU","rt":"Contractor","nt":"Production Manager","cat":"Partner","vn":"Show Production EU"},{"id":"ct_csv_72","nm":"Matt Denuzzo","fn":"Matt","ln":"Denuzzo","co":"Insomniac","nt":"Talent Buyer","vn":"Insomniac"},{"id":"ct_csv_73","nm":"Matt McGuire","fn":"Matt","ln":"McGuire","co":"Siljan","pos":"Owner","rt":"Customer / Client","nt":"Individual","cat":"Client","vn":"Siljan"},{"id":"ct_csv_74","nm":"Matthew Prince","fn":"Matthew","ln":"Prince","ph":"14357299475","em":"matthew@cloudflare.com","co":"Matthew Prince COMPANY","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"Matthew Prince COMPANY"},{"id":"ct_csv_75","nm":"Matthew Rennie","fn":"Matthew","ln":"Rennie","ph":"13102799564","em":"matthew@infinitymarketing.com","co":"Infinity Marketing","rt":"Customer / Client","nt":"Producer","cat":"Client","vn":"Infinity Marketing"},{"id":"ct_csv_76","nm":"Max Nash","fn":"Max","ln":"Nash","ph":"13233327411","em":"max.nash@experiencenve.com","co":"NVE","rt":"Customer / Client","nt":"Producer","cat":"Client","vn":"NVE"},{"id":"ct_csv_77","nm":"Max Vallard","fn":"Max","ln":"Vallard","ph":"(516) 787-9956","em":"max@creative-elevation.com","co":"Creative Elevation","rt":"Contractor","nt":"Producer","cat":"Partner","vn":"Creative Elevation"},{"id":"ct_csv_78","nm":"Meelo Solis","fn":"Meelo","ln":"Solis","ph":"13237062172","em":"Meelo@insomniac.com","co":"Insomniac","rt":"Customer / Client","nt":"Promoter","cat":"Client","vn":"Insomniac"},{"id":"ct_csv_79","nm":"Megan McCartney","fn":"Megan","ln":"McCartney","ph":"16476229360","em":"megan@wilim.co","co":"Wilim Media House","rt":"Customer / Client","nt":"Producer","cat":"Client","vn":"Wilim Media House"},{"id":"ct_csv_80","nm":"Michael Discenza","fn":"Michael","ln":"Discenza","em":"md@prime-culture.com","co":"Prime Culture","rt":"Customer / Client","nt":"Management","cat":"Client"},{"id":"ct_csv_81","nm":"Michelle Leshem","fn":"Michelle","ln":"Leshem","ph":"(305) 790-8844","em":"michelle@supermarketcreative.com","co":"Cava Champagne","rt":"Customer / Client","nt":"Creative Director","cat":"Client","vn":"Cava Champagne"},{"id":"ct_csv_82","nm":"Mike Discenza","fn":"Mike","ln":"Discenza","ph":"(646) 648-1063","em":"md@prime-culture.com","co":"Ben Sterling, Prime Culture","pos":"Manager","rt":"Customer / Client","nt":"Management","cat":"Client","vn":"Ben Sterling, Prime Culture"},{"id":"ct_csv_83","nm":"Milos Sorgic","fn":"Milos","ln":"Sorgic","em":"milos@productionpool.rs","co":"Production Pool","rt":"Vendor","nt":"Fabrication & Scenic,Drawings,CAD","cat":"Partner","vn":"Production Pool"},{"id":"ct_csv_84","nm":"Neal Tiles","fn":"Neal","ln":"Tiles","em":"neal@freetelly.com","co":"Telly Inc","pos":"VP Marketing","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"Telly Inc"},{"id":"ct_csv_85","nm":"Nicolai Marciano","fn":"Nicolai","ln":"Marciano","ph":"13109904414","em":"nicolai@guess.com","co":"GUESS?, Inc.","pos":"Chief New Business Development Officer","nt":"Brand","cat":"Client","vn":"GUESS?, Inc."},{"id":"ct_csv_86","nm":"Nicolai Marciano","fn":"Nicolai","ln":"Marciano","ph":"+1 (310) 990-4414","em":"nicolai@guess.com","pos":"VP BiZ Dev","rt":"Customer / Client","nt":"Brand","cat":"Client"},{"id":"ct_csv_87","nm":"Nils Erickson","fn":"Nils","ln":"Erickson","ph":"+14152165809","em":"nils@ericksonsoundproductions.com","co":"Erickson Sound","rt":"Vendor","nt":"Audio","cat":"Partner"},{"id":"ct_csv_88","nm":"Noelle Farley","fn":"Noelle","ln":"Farley","ph":"(510) 200-2854","em":"Noelle.Thirteenuniversellc@gmail.com","co":"13 Universe","rt":"Vendor","nt":"Producer","cat":"Partner","vn":"13 Universe"},{"id":"ct_csv_89","nm":"Parker Johnson","fn":"Parker","ln":"Johnson","co":"Creative-Creation"},{"id":"ct_csv_90","nm":"Patrick Santos","fn":"Patrick","ln":"Santos","ph":"(404) 520-4488","em":"patrick.santos@insomniac.com","co":"Insomniac","pos":"Production Manager","rt":"Contractor","cat":"Partner","vn":"Insomniac"},{"id":"ct_csv_91","nm":"Ray Grant","fn":"Ray","ln":"Grant","ph":"+34618125082","em":"ray@clrtybm.com","co":"Beltools LLC","rt":"Customer / Client","nt":"Business Manager","cat":"Client"},{"id":"ct_csv_92","nm":"Robert Turn","fn":"Robert","ln":"Turn","co":"Turn","rt":"Customer / Client","nt":"Brand","cat":"Client"},{"id":"ct_csv_93","nm":"Rodrigo Palencia","fn":"Rodrigo","ln":"Palencia","ph":"5.23E+11","em":"rodrigo@mousike.com.mx","co":"Conceptua MX","pos":"Owner","rt":"Vendor","cat":"Partner","vn":"Conceptua MX"},{"id":"ct_csv_94","nm":"Roni Mehrabian","fn":"Roni","ln":"Mehrabian","co":"SBCLTR, LLC","rt":"Contractor","cat":"Partner","vn":"SBCLTR, LLC"},{"id":"ct_csv_95","nm":"Rory Cool","fn":"Rory","ln":"Cool","ph":"(812) 290-5590","em":"rcook@drinkgts.com","co":"GT's Living Foods","rt":"Customer / Client","nt":"Brand","cat":"Client","vn":"GT's Living Foods"},{"id":"ct_csv_96","nm":"Rusty Prevatt","fn":"Rusty","ln":"Prevatt","ph":"+1 (916) 416-6844","em":"rusty@franklinpictures.com","pos":"CEO","rt":"Customer / Client","nt":"Producer"},{"id":"ct_csv_97","nm":"Sam Ayers","fn":"Sam","ln":"Ayers","ph":"(424) 234-0883","em":"sayers@drinkgts.com","co":"GT's Living Foods","pos":"Sr. Director of Social Media","nt":"Brand"},{"id":"ct_csv_98","nm":"Sam Newson","fn":"Sam","ln":"Newson","ph":"4.48E+11","em":"sam@tec-uk.co.uk","co":"The Events Company UK","rt":"Vendor","nt":"Production Manager","cat":"Partner","vn":"The Events Company UK"},{"id":"ct_csv_99","nm":"Sam Newson","fn":"Sam","ln":"Newson","ph":"+44 7881 702469","em":"sam@tec-uk.co.uk","co":"Empire of the Sun"},{"id":"ct_csv_100","nm":"Shauna Slevin","fn":"Shauna","ln":"Slevin","ph":"16466736301","em":"shauna@canopyartists.net","co":"Major League DJz COMPANY","pos":"Manager","rt":"Customer / Client","nt":"Management","cat":"Client","vn":"Major League DJz COMPANY"},{"id":"ct_csv_101","nm":"Sheila Smith","fn":"Sheila","ln":"Smith","ph":"12039178644","em":"ssmith@sequel-inc.com","co":"Sequel Inc","rt":"Customer / Client","nt":"PR","cat":"Client","vn":"Sequel Inc"},{"id":"ct_csv_102","nm":"Tai Pascal Notar","fn":"Tai Pascal","ln":"Notar","ph":"(416) 575-2103","em":"tai@goldenhourproductions.co","co":"Golden Hour Productions","rt":"Customer / Client","nt":"Producer,Coordinator","cat":"Client","vn":"Golden Hour Productions"},{"id":"ct_csv_103","nm":"Tarah Sinovic","fn":"Tarah","ln":"Sinovic","ph":"16782342472","em":"tarah@freetelly.com","co":"Telly Inc","rt":"Customer / Client","nt":"Corporate","cat":"Client","vn":"Telly Inc"},{"id":"ct_csv_104","nm":"Will Weston","fn":"Will","ln":"Weston","ph":"9139044197","em":"will@metatone.com","co":"Experts Only","pos":"Events Manager","nt":"Holt is the manager"},{"id":"ct_csv_105","nm":"William Cormier","fn":"William","ln":"Cormier","ph":"(571) 212-0027","em":"Will@heavy.global","co":"Heavy","rt":"Contractor","nt":"Production Manager","cat":"Partner","vn":"Heavy"},{"id":"ct_csv_106","nm":"Adaptive","co":"Adaptive","nt":"Projects: Adaptive Rebrand","cat":"Client","vn":"Adaptive"},{"id":"ct_csv_107","nm":"Black Book Records LLC","co":"Black Book Records LLC","nt":"Projects: Black Book Records Art Basel Miami 2025","cat":"Client","vn":"Black Book Records LLC"},{"id":"ct_csv_108","nm":"Brunelo","co":"Brunelo","nt":"Projects: Brunelo - Mellow Circus","cat":"Client","vn":"Brunelo"},{"id":"ct_csv_109","nm":"Canopy Artists","co":"Canopy Artists","nt":"Projects: Major League DJz","cat":"Client","vn":"Canopy Artists"},{"id":"ct_csv_110","nm":"Catch & Release Records","co":"Catch & Release Records","nt":"Projects: Catch & Release - Creative Direction & Event Identity · Contacts: Brett Fischer","cat":"Client","vn":"Catch & Release Records"},{"id":"ct_csv_111","nm":"Cercle","co":"Cercle","nt":"Projects: Cercle - LA or Global events","cat":"Client","vn":"Cercle"},{"id":"ct_csv_112","nm":"Cloonee Touring LLC","co":"Cloonee Touring LLC","nt":"Projects: Cloonee Headline - SF 10/25,Cloonee Headline - Denver,Hellbent - Art Basel,Cloonee Headline - Radius Chicago,Hellbent LA 7/11+12,Hellbent (Cloonee)  - MMW,Hellbent (Cloonee) - MMW,Cloonee SD,Cloonee NYC,Cloonee EDC LV - Circuit Ground Stage,Cloonee Retainer,Hellbent Club Space · Contacts: James Ahearn","cat":"Client","vn":"Cloonee Touring LLC"},{"id":"ct_csv_113","nm":"Crosstown Rebels","co":"Crosstown Rebels","nt":"Projects: Get Lost Montenegro,Get Lost Bali,Day Zero Festival 2026","cat":"Client","vn":"Crosstown Rebels"},{"id":"ct_csv_114","nm":"East Dakota Ventures","co":"East Dakota Ventures","nt":"Projects: MP50 · Contacts: Matthew Prince","cat":"Client","vn":"East Dakota Ventures"},{"id":"ct_csv_115","nm":"Franklin Pictures, Inc.","co":"Franklin Pictures, Inc.","nt":"Projects: Syber World x UP.Summit","cat":"Client","vn":"Franklin Pictures, Inc."},{"id":"ct_csv_116","nm":"Lumbermens Merchandising Corporation","co":"Lumbermens Merchandising Corporation","nt":"Projects: LMC Private · Contacts: Dianna Leigh,Lauren Brady","cat":"Client","vn":"Lumbermens Merchandising Corporation"},{"id":"ct_csv_117","nm":"Odd Mob","co":"Odd Mob","nt":"Projects: Odd Mob - Shrine,Odd Mob - Shrine Headline","cat":"Client","vn":"Odd Mob"},{"id":"ct_csv_118","nm":"Pizzaslime","co":"Pizzaslime","nt":"Projects: Cannes x Pizzaslime","cat":"Client","vn":"Pizzaslime"},{"id":"ct_csv_119","nm":"Replit Inc","co":"Replit Inc","nt":"Projects: Replit Holiday Party · Contacts: Amjad Masad,Kaitlan Norrod","cat":"Client","vn":"Replit Inc"},{"id":"ct_csv_120","nm":"The Chainsmokers","co":"The Chainsmokers","nt":"Projects: Hangout Festival (Production Coordinator),Best Buy Private (Production Coordinator),Chainsmokers VIP Event,Breathe Content Event · Contacts: Clancy Silver","cat":"Client","vn":"The Chainsmokers"}];
-
-
-// ─── ERROR BOUNDARY ────────────────────────────────────────────
-class DashboardErrorBoundary extends React.Component {
-  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
-  static getDerivedStateFromError(error) { return { hasError: true, error }; }
-  componentDidCatch(error, info) { console.error("Dashboard crash:", error, info); }
-  render() {
-    if (this.state.hasError) {
-      return React.createElement("div", { style: { padding: 40, textAlign: "center", fontFamily: "'Inter', sans-serif", color: "#333" } },
-        React.createElement("h2", null, "⚠️ Dashboard Error"),
-        React.createElement("p", { style: { color: "#666", marginBottom: 10 } }, String(this.state.error?.message || this.state.error)),
-        React.createElement("pre", { style: { textAlign: "left", background: "#f5f5f5", padding: 16, borderRadius: 8, fontSize: 11, maxHeight: 200, overflow: "auto", marginBottom: 20 } }, String(this.state.error?.stack || "")),
-        React.createElement("button", {
-          onClick: () => { try { const keys = []; for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (k && k.startsWith("acc-")) keys.push(k); } keys.forEach(k => localStorage.removeItem(k)); } catch(e) {} window.location.reload(); },
-          style: { padding: "12px 24px", background: "#ff6b4a", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14, fontWeight: 700 }
-        }, "🔄 Clear Cache & Reload")
-      );
-    }
-    return this.props.children;
-  }
-}
-
-function DashboardInner({ user, onLogout }) {
+export default function Dashboard({ user, onLogout }) {
   const supabase = createClient();
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
   const saveTimeoutRef = useRef(null);
-
-  // ─── LOCALSTORAGE PERSISTENCE ───────────────────────────────────
-  const LS_VERSION = "v14L3_FIXED"; // Bumped to clear corrupted data
-  // One-time version migration on mount
-  if (typeof window !== 'undefined') {
-    try {
-      const ver = localStorage.getItem('acc-version');
-      if (ver !== LS_VERSION) {
-        const theme = localStorage.getItem('acc-theme');
-        const keys = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith('acc-')) keys.push(k);
-        }
-        keys.forEach(function(k) { localStorage.removeItem(k); });
-        localStorage.setItem('acc-version', LS_VERSION);
-        if (theme) localStorage.setItem('acc-theme', theme);
-      }
-    } catch (e) { /* ignore */ }
-  }
-  const loadLS = (key, fallback) => {
-    if (typeof window === 'undefined') return fallback;
-    try {
-      const v = localStorage.getItem('acc-' + key);
-      if (!v) return fallback;
-      const parsed = JSON.parse(v);
-      // If fallback is an array, ensure parsed is also an array
-      if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
-      // If fallback is an object (not array), ensure parsed is an object
-      if (fallback && typeof fallback === 'object' && !Array.isArray(fallback) && (typeof parsed !== 'object' || Array.isArray(parsed))) return fallback;
-      return parsed;
-    } catch (e) { return fallback; }
-  };
-  const saveLS = (key, value) => {
-    if (typeof window === 'undefined') return;
-    try { localStorage.setItem('acc-' + key, JSON.stringify(value)); } catch (e) { console.warn('LS save error:', key, e); }
-  };
-
-  // Expand CSV_CONTACTS compact format to full contact objects
-  const expandCSVContacts = () => safeArr(CSV_CONTACTS).map(c => ({
-    id: c.id, name: c.nm, firstName: c.fn || "", lastName: c.ln || "",
-    phone: c.ph || "", email: c.em || "", company: c.co || "",
-    position: c.pos || "", department: "", address: "",
-    resourceType: c.rt || "", notes: c.nt || "", source: "csv",
-    contactCategory: c.cat || "", vendorName: c.vn || ""
-  }));
-
-  const systemContacts = [
-    { id: "ct_billy", name: "Billy Smith", firstName: "Billy", lastName: "Smith", phone: "+1 (310) 986-5581", email: "billy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: +1 (310) 853-3497 · Intl: +1 (424) 375-5699 · Personal: billysmith08@gmail.com · Home: 15 Wavecrest Ave, Venice CA 90291 · Office: 133 Horizon Ave, Venice CA 90291", source: "system", contactCategory: "" },
-    { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system", contactCategory: "" },
-    { id: "ct_eden", name: "Eden Sweeden", firstName: "Eden", lastName: "Sweeden", phone: "+1 (310) 625-2453", email: "eden@weareadptv.com", company: "Adaptive by Design", position: "", department: "", notes: "Personal: edenschroder@icloud.com · Birthday: January 8, 1989", source: "system", contactCategory: "" },
-  ];
-
-  const defaultContacts = [...systemContacts, ...expandCSVContacts()];
-
-  const [_rawProjects, _setRawProjects] = useState(() => {
-    const loaded = loadLS('projects', initProjects);
-    return Array.isArray(loaded) ? loaded : initProjects;
-  });
-  // ALWAYS sanitize projects on every access — no corrupted data can leak through
-  const projects = safeArr(_rawProjects).map(sanitizeProject);
-  const setProjects = (updater) => _setRawProjects(prev => {
-    const safePrev = safeArr(prev);
-    return typeof updater === 'function' ? updater(safePrev) : updater;
-  });
+  const [projects, setProjects] = useState(initProjects);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('acc-theme');
@@ -1614,18 +1458,12 @@ function DashboardInner({ user, onLogout }) {
 
   const toggleDarkMode = () => setDarkMode(m => { const next = !m; localStorage.setItem('acc-theme', next ? 'dark' : 'light'); return next; });
   const T = THEMES[darkMode ? "dark" : "light"];
-  const [activeProjectId, setActiveProjectId] = useState(() => loadLS('activeProjectId', "p1"));
-  const [activeTab, setActiveTab] = useState(() => loadLS('activeTab', "calendar"));
-  const [glanceTab, setGlanceTab] = useState(() => loadLS('glanceTab', "cal"));
-  const [projectVendors, setProjectVendors] = useState(() => {
-    const raw = loadLS('projectVendors', {});
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const safe = {};
-    Object.keys(raw).forEach(k => { safe[k] = safeArr(raw[k]).map(sanitizeVendor); });
-    return safe;
-  });
+  const [activeProjectId, setActiveProjectId] = useState("p1");
+  const [activeTab, setActiveTab] = useState("calendar");
+  const [glanceTab, setGlanceTab] = useState("cal");
+  const [projectVendors, setProjectVendors] = useState({});
   // Derive vendors for active project — all existing code keeps working
-  const vendors = safeArr(projectVendors[activeProjectId]).map(sanitizeVendor);
+  const vendors = projectVendors[activeProjectId] || [];
   const setVendors = (updater) => {
     setProjectVendors(prev => ({
       ...prev,
@@ -1634,14 +1472,8 @@ function DashboardInner({ user, onLogout }) {
   };
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
-  const [projectWorkback, setProjectWorkback] = useState(() => {
-    const raw = loadLS('projectWorkback', {});
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const safe = {};
-    Object.keys(raw).forEach(k => { safe[k] = safeArr(raw[k]); });
-    return safe;
-  });
-  const workback = safeArr(projectWorkback[activeProjectId]);
+  const [projectWorkback, setProjectWorkback] = useState({});
+  const workback = projectWorkback[activeProjectId] || [];
   const setWorkback = (updater) => {
     setProjectWorkback(prev => ({
       ...prev,
@@ -1649,14 +1481,8 @@ function DashboardInner({ user, onLogout }) {
     }));
   };
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
-  const [projectROS, setProjectROS] = useState(() => {
-    const raw = loadLS('projectROS', {});
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-    const safe = {};
-    Object.keys(raw).forEach(k => { safe[k] = safeArr(raw[k]).map(r => ({ ...r, vendors: safeArr(r.vendors) })); });
-    return safe;
-  });
-  const ros = safeArr(projectROS[activeProjectId]).map(r => ({ ...r, vendors: safeArr(r.vendors) }));
+  const [projectROS, setProjectROS] = useState({});
+  const ros = projectROS[activeProjectId] || [];
   const setROS = (updater) => {
     setProjectROS(prev => ({
       ...prev,
@@ -1678,33 +1504,16 @@ function DashboardInner({ user, onLogout }) {
   const [contextMenu, setContextMenu] = useState(null); // { x, y, projectId, projectName, archived }
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState("users");
-  const [appSettings, setAppSettings] = useState(() => {
-    const defaults = {
-      authorizedUsers: ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"],
-      pendingUsers: [],
-      userPermissions: {},
-      driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
-      statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
-      projectTypes: ["Brand Event", "Experiential", "Festival", "Internal", "Live Event", "Private Event", "Touring"],
-      departments: [...DEPT_OPTIONS],
-      resourceTypes: ["AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"],
-      projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
-    };
-    const raw = loadLS('appSettings', defaults);
-    // Ensure all array fields exist (localStorage data may have nulls)
-    return {
-      ...defaults,
-      ...raw,
-      authorizedUsers: safeArr(raw.authorizedUsers).length > 0 ? raw.authorizedUsers : defaults.authorizedUsers,
-      pendingUsers: safeArr(raw.pendingUsers),
-      userPermissions: (raw.userPermissions && typeof raw.userPermissions === 'object') ? raw.userPermissions : {},
-      driveConnections: safeArr(raw.driveConnections).length > 0 ? raw.driveConnections : defaults.driveConnections,
-      statuses: safeArr(raw.statuses).length > 0 ? raw.statuses : defaults.statuses,
-      projectTypes: safeArr(raw.projectTypes).length > 0 ? raw.projectTypes : defaults.projectTypes,
-      departments: safeArr(raw.departments).length > 0 ? raw.departments : defaults.departments,
-      resourceTypes: safeArr(raw.resourceTypes).length > 0 ? raw.resourceTypes : defaults.resourceTypes,
-      projectRoles: safeArr(raw.projectRoles).length > 0 ? raw.projectRoles : defaults.projectRoles,
-    };
+  const [appSettings, setAppSettings] = useState({
+    authorizedUsers: ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"],
+    pendingUsers: [],
+    userPermissions: {}, // { email: { role: "owner"|"admin"|"editor"|"viewer", projectAccess: "all"|[ids], hiddenSections: [] } }
+    driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
+    statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
+    projectTypes: ["Brand Event", "Experiential", "Festival", "Internal", "Live Event", "Private Event", "Touring"],
+    departments: [...DEPT_OPTIONS],
+    resourceTypes: ["AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"],
+    projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -1740,7 +1549,6 @@ function DashboardInner({ user, onLogout }) {
   const SECTION_OPTIONS = [
     { key: "overview", label: "Overview" },
     { key: "budget", label: "Budget" },
-    { key: "projectTodoist", label: "Project Todoist" },
     { key: "workback", label: "Work Back" },
     { key: "ros", label: "Run of Show" },
     { key: "drive", label: "Drive" },
@@ -1787,16 +1595,13 @@ function DashboardInner({ user, onLogout }) {
   const [contactPopover, setContactPopover] = useState(null); // { contact, x, y }
   const [showAddContact, setShowAddContact] = useState(false);
   const [assignContactPopover, setAssignContactPopover] = useState(null); // { contactId, selectedProject, selectedRole }
-  const [contacts, setContacts] = useState(() => {
-    const saved = loadLS('contacts', null);
-    if (!saved || !Array.isArray(saved)) return defaultContacts;
-    // Migration: if saved contacts exist but no CSV contacts, merge them in
-    const hasCSV = safeArr(saved).some(c => c.id && c.id.startsWith('ct_csv_'));
-    if (!hasCSV) return [...saved, ...expandCSVContacts()];
-    return saved;
-  });
+  const [contacts, setContacts] = useState([
+    { id: "ct_billy", name: "Billy Smith", firstName: "Billy", lastName: "Smith", phone: "+1 (310) 986-5581", email: "billy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: +1 (310) 853-3497 · Intl: +1 (424) 375-5699 · Personal: billysmith08@gmail.com · Home: 15 Wavecrest Ave, Venice CA 90291 · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
+    { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
+    { id: "ct_eden", name: "Eden Sweeden", firstName: "Eden", lastName: "Sweeden", phone: "+1 (310) 625-2453", email: "eden@weareadptv.com", company: "Adaptive by Design", position: "", department: "", notes: "Personal: edenschroder@icloud.com · Birthday: January 8, 1989", source: "system" },
+  ]);
   const [contactSearch, setContactSearch] = useState("");
-  const [todoistKey, setTodoistKey] = useState(() => loadLS('todoistKey', "564b99b7c52b83c83ab621c45b75787f65c6190a"));
+  const [todoistKey, setTodoistKey] = useState("564b99b7c52b83c83ab621c45b75787f65c6190a");
   const [todoistTasks, setTodoistTasks] = useState([]);
   const [todoistProjects, setTodoistProjects] = useState([]);
   const [todoistLoading, setTodoistLoading] = useState(false);
@@ -1812,9 +1617,7 @@ function DashboardInner({ user, onLogout }) {
       ]);
       if (!tasksRes.ok) throw new Error("Invalid API key");
       setTodoistTasks(await tasksRes.json());
-      const projData = await projsRes.json();
-      console.log("Todoist projects:", safeArr(projData).map(p => ({ id: p.id, name: p.name, parent_id: p.parent_id, workspace_id: p.workspace_id })));
-      setTodoistProjects(projData);
+      setTodoistProjects(await projsRes.json());
     } catch (e) { console.error("Todoist:", e); }
     setTodoistLoading(false);
   }, [todoistKey]);
@@ -1862,10 +1665,10 @@ function DashboardInner({ user, onLogout }) {
       const text = ev.target.result;
       if (text.includes("BEGIN:VCARD")) {
         const cards = text.split("BEGIN:VCARD").filter(c => c.trim()).map(c => "BEGIN:VCARD" + c);
-        const newContacts = safeArr(cards).map(c => ({ ...parseVCard(c), id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`, source: "vcard" }));
+        const newContacts = cards.map(c => ({ ...parseVCard(c), id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`, source: "vcard" }));
         setContacts(prev => {
           const existing = new Set(prev.map(c => c.name.toLowerCase()));
-          const unique = safeArr(newContacts).filter(c => c.name && !existing.has(c.name.toLowerCase()));
+          const unique = newContacts.filter(c => c.name && !existing.has(c.name.toLowerCase()));
           return [...prev, ...unique];
         });
       }
@@ -1880,12 +1683,12 @@ function DashboardInner({ user, onLogout }) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const text = ev.target.result;
+      const text = ev.target.result.replace(/^\uFEFF/, ""); // Strip BOM
       const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) return;
       // Parse header row
       const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/['"]/g, ""));
-      const nameIdx = headers.findIndex(h => h === "name" || h === "full name" || h === "fullname");
+      const nameIdx = headers.findIndex(h => h === "name" || h === "full name" || h === "fullname" || h === "company name" || h === "contact name");
       const firstIdx = headers.findIndex(h => h === "first name" || h === "firstname" || h === "first");
       const lastIdx = headers.findIndex(h => h === "last name" || h === "lastname" || h === "last");
       const emailIdx = headers.findIndex(h => h === "email" || h === "e-mail" || h === "email address");
@@ -1895,6 +1698,8 @@ function DashboardInner({ user, onLogout }) {
       const deptIdx = headers.findIndex(h => h === "department" || h === "dept");
       const addressIdx = headers.findIndex(h => h === "address" || h === "street" || h === "location" || h === "mailing address");
       const notesIdx = headers.findIndex(h => h === "notes" || h === "note" || h === "comments");
+      const projectIdx = headers.findIndex(h => h.includes("project") || h.includes("client of"));
+      const contactLinkIdx = headers.findIndex(h => h.includes("contact") && h.includes("link"));
       // Parse each row (handle quoted fields with commas)
       const parseCSVRow = (row) => {
         const result = []; let current = ""; let inQuotes = false;
@@ -1924,13 +1729,17 @@ function DashboardInner({ user, onLogout }) {
           position: positionIdx >= 0 ? (cols[positionIdx] || "") : "",
           department: deptIdx >= 0 ? (cols[deptIdx] || "") : "",
           address: addressIdx >= 0 ? (cols[addressIdx] || "") : "",
-          notes: notesIdx >= 0 ? (cols[notesIdx] || "") : "",
+          notes: [
+            notesIdx >= 0 ? (cols[notesIdx] || "") : "",
+            projectIdx >= 0 && cols[projectIdx] ? `Projects: ${cols[projectIdx]}` : "",
+            contactLinkIdx >= 0 && cols[contactLinkIdx] ? `Contacts: ${cols[contactLinkIdx]}` : "",
+          ].filter(Boolean).join("\n"),
           source: "csv"
         });
       }
       setContacts(prev => {
         const existing = new Set(prev.map(c => c.name.toLowerCase()));
-        const unique = safeArr(newContacts).filter(c => !existing.has(c.name.toLowerCase()));
+        const unique = newContacts.filter(c => !existing.has(c.name.toLowerCase()));
         if (unique.length > 0) {
           setClipboardToast({ text: `Imported ${unique.length} contact${unique.length > 1 ? "s" : ""} from CSV`, x: window.innerWidth / 2, y: 60 });
           setTimeout(() => setClipboardToast(null), 3000);
@@ -1942,10 +1751,8 @@ function DashboardInner({ user, onLogout }) {
     e.target.value = "";
   };
 
-  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual", contactCategory: "" };
+  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual" };
   const [contactForm, setContactForm] = useState({ ...emptyContact });
-  const [contactSort, setContactSort] = useState({ key: "name", dir: "asc" });
-  const [selectedContacts, setSelectedContacts] = useState(new Set());
   const updateCF = (k, v) => setContactForm(p => ({ ...p, [k]: v }));
   const submitContact = () => {
     const name = contactForm.name || `${contactForm.firstName} ${contactForm.lastName}`.trim();
@@ -1988,80 +1795,6 @@ function DashboardInner({ user, onLogout }) {
     logActivity("updated", `created project "${newP.name}"`, newP.name);
     setShowAddProject(false);
     setNewProjectForm({ ...emptyProject });
-  };
-
-  // Auto-link existing projects to Todoist projects by matching code → name
-  useEffect(() => {
-    if (!todoistProjects.length || !projects.length) return;
-    let changed = false;
-    const updated = safeArr(projects).map(p => {
-      if (p.todoistProjectId) return p; // already linked
-      const match = todoistProjects.find(tp => tp.name === p.code);
-      if (match) { changed = true; return { ...p, todoistProjectId: match.id }; }
-      return p;
-    });
-    if (changed) setProjects(updated);
-  }, [todoistProjects]);
-
-  // Find ADPTV workspace/folder in Todoist to nest projects under
-  const getAdptvParentId = () => {
-    // Try exact match first (case-insensitive)
-    const adptv = todoistProjects.find(p => (p.name || "").toUpperCase() === "ADPTV");
-    if (adptv) return { parent_id: adptv.id };
-    // Try partial match (contains "adptv" or "adaptive")
-    const partial = todoistProjects.find(p => {
-      const n = (p.name || "").toLowerCase();
-      return n.includes("adptv") || n.includes("adaptive");
-    });
-    if (partial) return { parent_id: partial.id };
-    // Check if existing CC-style projects (YY-MMDD format) share a parent_id
-    const ccProject = todoistProjects.find(p => /^\d{2}-\d{4}/.test(p.name));
-    if (ccProject?.parent_id) return { parent_id: ccProject.parent_id };
-    if (ccProject?.workspace_id) return { workspace_id: ccProject.workspace_id };
-    return {};
-  };
-
-  // Create Todoist project under ADPTV parent/workspace
-  const createTodoistProjectForCC = async (projectCode) => {
-    if (!todoistKey || !projectCode) return null;
-    const parentInfo = getAdptvParentId();
-    const body = { name: projectCode, ...parentInfo };
-    try {
-      const res = await fetch("https://api.todoist.com/rest/v2/projects", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify(body)
-      });
-      if (res.ok) {
-        const tp = await res.json();
-        await todoistFetch(); // refresh project list
-        return tp.id;
-      } else {
-        const err = await res.text();
-        console.error("Todoist create failed:", res.status, err);
-      }
-    } catch (e) { console.error("Todoist project create:", e); }
-    return null;
-  };
-
-  // Todoist: sync collaborators (Todoist Sync API for sharing)
-  const syncTodoistCollaborators = async (proj) => {
-    if (!todoistKey || !proj.todoistProjectId) return;
-    const teamEmails = new Set();
-    [...(proj.producers || []), ...(proj.managers || []), ...(proj.staff || [])].forEach(name => {
-      const c = contacts.find(ct => (ct.name || "").toLowerCase() === name.toLowerCase());
-      if (c?.email) teamEmails.add(c.email);
-    });
-    // Use Sync API to share project with collaborators
-    for (const email of teamEmails) {
-      try {
-        await fetch("https://api.todoist.com/sync/v9/collaborators/invite_to_project", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/x-www-form-urlencoded" },
-          body: `project_id=${proj.todoistProjectId}&email=${encodeURIComponent(email)}`
-        });
-      } catch (e) { console.error("Todoist collaborator:", e); }
-    }
   };
 
   const copyToClipboard = (text, label, e) => {
@@ -2300,18 +2033,6 @@ function DashboardInner({ user, onLogout }) {
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { if (todoistKey) todoistFetch(todoistKey); }, []);
 
-  // ─── LOCALSTORAGE PERSISTENCE ───────────────────────────────────
-  useEffect(() => { saveLS('projects', projects); }, [projects]);
-  useEffect(() => { saveLS('contacts', contacts); }, [contacts]);
-  useEffect(() => { saveLS('activeTab', activeTab); }, [activeTab]);
-  useEffect(() => { saveLS('activeProjectId', activeProjectId); }, [activeProjectId]);
-  useEffect(() => { saveLS('glanceTab', glanceTab); }, [glanceTab]);
-  useEffect(() => { saveLS('projectVendors', projectVendors); }, [projectVendors]);
-  useEffect(() => { saveLS('projectWorkback', projectWorkback); }, [projectWorkback]);
-  useEffect(() => { saveLS('projectROS', projectROS); }, [projectROS]);
-  useEffect(() => { saveLS('appSettings', appSettings); }, [appSettings]);
-  useEffect(() => { saveLS('todoistKey', todoistKey); }, [todoistKey]);
-
   // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
   // Load app settings (global)
   useEffect(() => {
@@ -2326,12 +2047,11 @@ function DashboardInner({ user, onLogout }) {
         if (data?.settings && Object.keys(data.settings).length > 0) {
           // Clean empty strings from arrays
           const cleaned = { ...data.settings };
-          // Ensure all array fields are actually arrays
+          // Ensure all array fields are actually arrays (Supabase may have nulls)
           ['authorizedUsers', 'pendingUsers', 'statuses', 'projectTypes', 'departments', 'resourceTypes', 'projectRoles'].forEach(k => {
-            if (!Array.isArray(cleaned[k])) cleaned[k] = [];
+            if (!Array.isArray(cleaned[k])) delete cleaned[k]; // remove null so it doesn't overwrite default
           });
-          if (!Array.isArray(cleaned.driveConnections)) cleaned.driveConnections = [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }];
-          if (!cleaned.userPermissions || typeof cleaned.userPermissions !== 'object') cleaned.userPermissions = {};
+          if (!Array.isArray(cleaned.driveConnections)) delete cleaned.driveConnections;
           ['statuses'].forEach(k => {
             if (Array.isArray(cleaned[k])) cleaned[k] = cleaned[k].filter(Boolean);
           });
@@ -2376,13 +2096,45 @@ function DashboardInner({ user, onLogout }) {
           .single();
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
         if (data?.state) {
-          const s = sanitizeState(data.state);
-          // Apply sanitized data to state
-          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects);
-          if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) setProjectVendors(s.projectVendors);
-          if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) setProjectWorkback(s.projectWorkback);
-          if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) setProjectROS(s.projectROS);
-          if (s.rosDayDates && typeof s.rosDayDates === 'object' && !Array.isArray(s.rosDayDates)) setRosDayDates(s.rosDayDates);
+          const s = data.state;
+          // Sanitize projects: ensure all array fields are actually arrays
+          if (s.projects && Array.isArray(s.projects)) {
+            setProjects(s.projects.map(p => ({
+              ...p,
+              producers: Array.isArray(p.producers) ? p.producers : [],
+              managers: Array.isArray(p.managers) ? p.managers : [],
+              staff: Array.isArray(p.staff) ? p.staff : [],
+              pocs: Array.isArray(p.pocs) ? p.pocs : [],
+              clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [],
+              billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [],
+              services: Array.isArray(p.services) ? p.services : [],
+              subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
+            })));
+          }
+          // Sanitize per-project maps: ensure each project's list is an array
+          if (s.projectVendors && typeof s.projectVendors === 'object') {
+            const safe = {};
+            Object.keys(s.projectVendors).forEach(k => {
+              safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({
+                ...v,
+                compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } },
+              })) : [];
+            });
+            setProjectVendors(safe);
+          }
+          if (s.projectWorkback && typeof s.projectWorkback === 'object') {
+            const safe = {};
+            Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; });
+            setProjectWorkback(safe);
+          }
+          if (s.projectROS && typeof s.projectROS === 'object') {
+            const safe = {};
+            Object.keys(s.projectROS).forEach(k => {
+              safe[k] = Array.isArray(s.projectROS[k]) ? s.projectROS[k].map(r => ({ ...r, vendors: Array.isArray(r.vendors) ? r.vendors : [] })) : [];
+            });
+            setProjectROS(safe);
+          }
+          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
         }
@@ -2465,17 +2217,22 @@ function DashboardInner({ user, onLogout }) {
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, dataLoaded]);
 
-  // Defensive guard: ensure projects is always an array to prevent crashes
-  const safeProjects = Array.isArray(projects) ? projects : [];
-  const project = (() => {
-    const raw = safeProjects.find(p => p.id === activeProjectId) || safeProjects[0] || { id: "p1", name: "Loading...", code: "", date: "", status: "", type: "", notes: "", driveFolder: "", driveFolderId: "", color: "#ff6b4a" };
-    return { ...raw, producers: Array.isArray(raw.producers) ? raw.producers : [], managers: Array.isArray(raw.managers) ? raw.managers : [], staff: Array.isArray(raw.staff) ? raw.staff : [], pocs: Array.isArray(raw.pocs) ? raw.pocs : [], clientContacts: Array.isArray(raw.clientContacts) ? raw.clientContacts : [], billingContacts: Array.isArray(raw.billingContacts) ? raw.billingContacts : [], services: Array.isArray(raw.services) ? raw.services : [], subEvents: Array.isArray(raw.subEvents) ? raw.subEvents : [] };
-  })();
+  const _rawProject = projects.find(p => p.id === activeProjectId) || projects[0];
+  const project = _rawProject ? {
+    ..._rawProject,
+    producers: Array.isArray(_rawProject.producers) ? _rawProject.producers : [],
+    managers: Array.isArray(_rawProject.managers) ? _rawProject.managers : [],
+    staff: Array.isArray(_rawProject.staff) ? _rawProject.staff : [],
+    pocs: Array.isArray(_rawProject.pocs) ? _rawProject.pocs : [],
+    clientContacts: Array.isArray(_rawProject.clientContacts) ? _rawProject.clientContacts : [],
+    billingContacts: Array.isArray(_rawProject.billingContacts) ? _rawProject.billingContacts : [],
+    services: Array.isArray(_rawProject.services) ? _rawProject.services : [],
+    subEvents: Array.isArray(_rawProject.subEvents) ? _rawProject.subEvents : [],
+    eventDates: _rawProject.eventDates || { start: "", end: "" },
+    engagementDates: _rawProject.engagementDates || { start: "", end: "" },
+  } : { id: "p1", name: "Loading...", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], services: [], subEvents: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" } };
   const updateProject = (key, val) => {
-    setProjects(prev => {
-      const safePrev = Array.isArray(prev) ? prev : [];
-      return safePrev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p);
-    });
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
     if (["status", "location", "client", "name"].includes(key)) {
       logActivity("updated", `${key} → "${val}"`, project?.name);
     }
@@ -2558,7 +2315,7 @@ function DashboardInner({ user, onLogout }) {
     setTimeout(syncDriveCompliance, 2000);
   };
 
-  const peopleOptions = [...new Set([...safeArr(contacts).map(c => c.name), ...(project.producers || []), ...(project.managers || []), ...(project.staff || [])])];
+  const peopleOptions = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];
 
   // W9 Drop-to-Scrape: parse PDF, upload to Drive, pre-fill vendor form
   const handleW9Upload = async (file) => {
@@ -2637,37 +2394,36 @@ function DashboardInner({ user, onLogout }) {
   };
   // Event contacts = only people on THIS project (for workback Responsible + ROS Contact/Owner)
   const eventContactNames = [...new Set([
-    ...(project.producers || []), ...(project.managers || []), ...(project.staff || []),
+    ...project.producers, ...project.managers, ...(project.staff || []),
     ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
     ...(project.pocs || []).filter(p => p.name).map(p => p.name),
     ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
   ])];
   const pctSpent = project.budget > 0 ? (project.spent / project.budget) * 100 : 0;
   const compTotal = vendors.length * 5;
-  const compDone = safeArr(vendors).reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
-  const days = [...new Set(safeArr(ros).map(r => r.day))].sort((a, b) => a - b);
-  const filteredProjects = safeArr(projects).filter(p => {
+  const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
+  const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
+  const filteredProjects = projects.filter(p => {
     if (!canSeeProject(p.id)) return false;
     if (!showArchived && p.archived) return false;
     return p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
   });
-  const archivedCount = safeArr(projects).filter(p => p.archived).length;
+  const archivedCount = projects.filter(p => p.archived).length;
 
   const allTabs = [
     { id: "overview", label: "Overview", icon: "◉" },
     { id: "budget", label: "Budget", icon: "$" },
-    { id: "projectTodoist", label: "Todoist", icon: "✅" },
     { id: "workback", label: "Work Back", icon: "◄" },
     { id: "ros", label: "Run of Show", icon: "▶" },
     { id: "drive", label: "Drive", icon: "◫" },
     { id: "vendors", label: "Contractors/Vendors", icon: "⊕" },
     { id: "contacts", label: "Event Contacts", icon: "👤" },
   ];
-  const tabs = safeArr(allTabs).filter(t => canSeeSection(t.id === "contacts" ? "eventContacts" : t.id));
+  const tabs = allTabs.filter(t => canSeeSection(t.id === "contacts" ? "eventContacts" : t.id));
 
   // ─── APPROVAL GATE ─────────────────────────────────────────────
   const ADMIN_EMAILS = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"];
-  const isUserAuthorized = appSettings.authorizedUsers?.includes(user?.email) || safeArr(ADMIN_EMAILS).includes(user?.email);
+  const isUserAuthorized = appSettings.authorizedUsers?.includes(user?.email) || ADMIN_EMAILS.includes(user?.email);
   const pendingRef = useRef(false);
 
   useEffect(() => {
@@ -2787,9 +2543,9 @@ function DashboardInner({ user, onLogout }) {
           <div style={{ position: "relative" }}>
             <button onClick={() => { setShowActivityFeed(!showActivityFeed); if (!showActivityFeed) setLastSeenActivity(Date.now()); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "5px 9px", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", gap: 4 }} title="Activity Feed">
               <span style={{ fontSize: 14 }}>🔔</span>
-              {safeArr(activityLog).filter(a => a.ts > lastSeenActivity && a.email !== user?.email).length > 0 && (
+              {activityLog.filter(a => a.ts > lastSeenActivity && a.email !== user?.email).length > 0 && (
                 <span style={{ position: "absolute", top: -2, right: -2, width: 16, height: 16, borderRadius: "50%", background: "#ff4444", color: "#fff", fontSize: 9, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {Math.min(safeArr(activityLog).filter(a => a.ts > lastSeenActivity && a.email !== user?.email).length, 99)}
+                  {Math.min(activityLog.filter(a => a.ts > lastSeenActivity && a.email !== user?.email).length, 99)}
                 </span>
               )}
             </button>
@@ -2877,7 +2633,7 @@ function DashboardInner({ user, onLogout }) {
             )}
           </div>
           <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "0 6px 12px", minHeight: 0 }}>
-            {safeArr(filteredProjects).map((p, i) => {
+            {filteredProjects.map((p, i) => {
               const active = p.id === activeProjectId;
               const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
               const pct = p.budget > 0 ? (p.spent / p.budget) * 100 : 0;
@@ -2941,7 +2697,7 @@ function DashboardInner({ user, onLogout }) {
         {!sidebarOpen && (
           <div style={{ width: 40, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--bgSub)", flexShrink: 0, paddingTop: 14 }}>
             <button onClick={() => setSidebarOpen(true)} style={{ padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Expand sidebar">▶</button>
-            <div style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 1, marginTop: 14, transform: "rotate(180deg)" }}>PROJECTS ({safeArr(projects).filter(p => !p.archived).length})</div>
+            <div style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 1, marginTop: 14, transform: "rotate(180deg)" }}>PROJECTS ({projects.filter(p => !p.archived).length})</div>
           </div>
         )}
 
@@ -2968,11 +2724,11 @@ function DashboardInner({ user, onLogout }) {
             )}
             {activeTab !== "calendar" && activeTab !== "globalContacts" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
-              {safeArr(tabs).map(t => (
+              {tabs.map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10 }}>{t.icon}</span>{t.label}
                   {t.id === "vendors" && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: compDone < compTotal ? "var(--borderSub)" : "var(--bgCard)", color: compDone < compTotal ? "#e85454" : "#4ecb71", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{compDone}/{compTotal}</span>}
-                  {t.id === "contacts" && (() => { const ct = (project.producers?.length || 0) + (project.managers?.length || 0) + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
+                  {t.id === "contacts" && (() => { const ct = project.producers.length + project.managers.length + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
                 </button>
               ))}
             </div>
@@ -3007,23 +2763,23 @@ function DashboardInner({ user, onLogout }) {
                   <div>
                     {/* Dashboard stats */}
                     {(() => {
-                      const activeProjects = safeArr(projects).filter(p => !p.archived && p.status !== "Complete");
+                      const activeProjects = projects.filter(p => !p.archived && p.status !== "Complete");
                       const today = new Date(); today.setHours(0, 0, 0, 0);
                       const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
-                      const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => safeArr(items).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
-                      const overdueWB = safeArr(allWB).filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today);
-                      const dueThisWeek = safeArr(allWB).filter(w => {
+                      const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => (Array.isArray(items) ? items : []).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
+                      const overdueWB = allWB.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today);
+                      const dueThisWeek = allWB.filter(w => {
                         if (!w.date || w.status === "Done") return false;
                         const d = new Date(w.date + "T12:00:00");
                         return d >= today && d <= weekFromNow;
                       });
-                      const allVendors = Object.values(projectVendors).flatMap(v => safeArr(v));
+                      const allVendors = Object.values(projectVendors).flatMap(v => Array.isArray(v) ? v : []);
                       const totalCompItems = allVendors.length * 5;
-                      const doneCompItems = safeArr(allVendors).reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
+                      const doneCompItems = allVendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
                       const compPct = totalCompItems > 0 ? Math.round((doneCompItems / totalCompItems) * 100) : 0;
-                      const totalBudget = safeArr(projects).reduce((s, p) => s + (p.budget || 0), 0);
-                      const totalSpent = safeArr(projects).reduce((s, p) => s + (p.spent || 0), 0);
-                      const upcoming = safeArr(projects).filter(p => {
+                      const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
+                      const totalSpent = projects.reduce((s, p) => s + (p.spent || 0), 0);
+                      const upcoming = projects.filter(p => {
                         if (p.archived || p.status === "Complete") return false;
                         const d = p.eventDates?.start;
                         if (!d) return false;
@@ -3041,7 +2797,7 @@ function DashboardInner({ user, onLogout }) {
                           <div style={{ background: overdueWB.length > 0 ? "#e854540a" : "var(--bgInput)", border: `1px solid ${overdueWB.length > 0 ? "#e8545430" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
                             <div style={{ fontSize: 9, color: overdueWB.length > 0 ? "#e85454" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>OVERDUE TASKS</div>
                             <div style={{ fontSize: 28, fontWeight: 700, color: overdueWB.length > 0 ? "#e85454" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{overdueWB.length}</div>
-                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{overdueWB.length > 0 ? `across ${new Set(safeArr(overdueWB).map(w => w._pid)).size} project${new Set(safeArr(overdueWB).map(w => w._pid)).size !== 1 ? "s" : ""}` : "all on track ✓"}</div>
+                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{overdueWB.length > 0 ? `across ${new Set(overdueWB.map(w => w._pid)).size} project${new Set(overdueWB.map(w => w._pid)).size !== 1 ? "s" : ""}` : "all on track ✓"}</div>
                           </div>
                           <div style={{ background: dueThisWeek.length > 0 ? "#f5a6230a" : "var(--bgInput)", border: `1px solid ${dueThisWeek.length > 0 ? "#f5a62330" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
                             <div style={{ fontSize: 9, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>DUE THIS WEEK</div>
@@ -3126,7 +2882,7 @@ function DashboardInner({ user, onLogout }) {
 
                 {/* ── Master Work Back ── */}
                 {glanceTab === "masterWB" && (() => {
-                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => safeArr(items).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
+                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => (Array.isArray(items) ? items : []).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
                   const sorted = [...allWB].sort((a, b) => {
                     if (!a.date && !b.date) return 0;
                     if (!a.date) return 1;
@@ -3134,9 +2890,9 @@ function DashboardInner({ user, onLogout }) {
                     return a.date.localeCompare(b.date);
                   });
                   const today = new Date(); today.setHours(0, 0, 0, 0);
-                  const overdue = safeArr(sorted).filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today).length;
-                  const inProgress = safeArr(sorted).filter(w => w.status === "In Progress").length;
-                  const done = safeArr(sorted).filter(w => w.status === "Done").length;
+                  const overdue = sorted.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today).length;
+                  const inProgress = sorted.filter(w => w.status === "In Progress").length;
+                  const done = sorted.filter(w => w.status === "Done").length;
                   const total = sorted.length;
 
                   return (
@@ -3166,7 +2922,7 @@ function DashboardInner({ user, onLogout }) {
                           <span>DATE</span><span>PROJECT</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span>
                         </div>
                         {sorted.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "var(--textGhost)", fontSize: 12 }}>No work back items across any projects yet.</div>}
-                        {safeArr(sorted).map((wb) => {
+                        {sorted.map((wb) => {
                           const wbDeadlineStyle = (() => {
                             if (!wb.date || wb.status === "Done") return { borderLeft: "3px solid transparent", bg: wb.status === "Done" ? "var(--bgCard)" : "transparent" };
                             const dueDate = new Date(wb.date + "T23:59:59");
@@ -3220,12 +2976,6 @@ function DashboardInner({ user, onLogout }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
-                    {selectedContacts.size > 0 && (
-                      <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "7px 16px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 7, color: "#e85454", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                        🗑 Delete Selected ({selectedContacts.size})
-                      </button>
-                    )}
-                    <button onClick={() => { if (contacts.length > 0 && confirm(`Delete ALL ${contacts.length} contacts? This cannot be undone.`)) { setContacts([]); setSelectedContacts(new Set()); } }} style={{ padding: "7px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textGhost)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Clear all contacts">🗑 Clear All</button>
                     <label style={{ padding: "7px 16px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13 }}>📇</span> Import vCard
                       <input type="file" accept=".vcf,.vcard" onChange={handleVCardUpload} style={{ display: "none" }} multiple />
@@ -3256,32 +3006,14 @@ function DashboardInner({ user, onLogout }) {
                 ) : (
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                     <div style={{ overflowX: "auto" }}>
-                    <div style={{ minWidth: 1420 }}>
-                    {/* Sortable header */}
-                    {(() => {
-                      const SH = ({ label, sortKey, w }) => {
-                        const active = contactSort.key === sortKey;
-                        return <span onClick={() => setContactSort(prev => ({ key: sortKey, dir: prev.key === sortKey && prev.dir === "asc" ? "desc" : "asc" }))} style={{ cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 3, color: active ? "#ff6b4a" : "var(--textFaint)" }}>{label} {active ? (contactSort.dir === "asc" ? "▲" : "▼") : ""}</span>;
-                      };
-                      return (
-                        <div style={{ display: "grid", gridTemplateColumns: "32px 180px 80px 110px 110px 130px 180px 140px 110px auto 170px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, fontWeight: 700, letterSpacing: 1 }}>
-                          <span><input type="checkbox" checked={selectedContacts.size > 0 && selectedContacts.size === contacts.length} onChange={e => { if (e.target.checked) setSelectedContacts(new Set(safeArr(contacts).map(c => c.id))); else setSelectedContacts(new Set()); }} style={{ cursor: "pointer" }} /></span>
-                          <SH label="NAME" sortKey="name" /><SH label="TYPE" sortKey="contactCategory" /><SH label="RESOURCE" sortKey="resourceType" /><SH label="POSITION" sortKey="position" /><SH label="PHONE" sortKey="phone" /><SH label="EMAIL" sortKey="email" /><SH label="ADDRESS" sortKey="address" /><SH label="COMPANY" sortKey="company" /><span style={{ color: "var(--textFaint)" }}>ACTIONS</span><span style={{ color: "var(--textFaint)" }}>DOCS</span>
-                        </div>
-                      );
-                    })()}
-                    {safeArr(contacts).filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactCategory || "").toLowerCase().includes(contactSearch.toLowerCase())).sort((a, b) => {
-                      const k = contactSort.key;
-                      const av = (a[k] || "").toLowerCase();
-                      const bv = (b[k] || "").toLowerCase();
-                      return contactSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-                    }).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "32px 180px 80px 110px 110px 130px 180px 140px 110px auto 170px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
-                        <div style={{ display: "flex", alignItems: "center" }}>
-                          <input type="checkbox" checked={selectedContacts.has(c.id)} onChange={e => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} />
-                        </div>
+                    <div style={{ minWidth: 1320 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                      <span>NAME</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
+                    </div>
+                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: c.contactCategory === "Client" ? "linear-gradient(135deg, #dba94e20, #ff6b4a20)" : "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: `1px solid ${c.contactCategory === "Client" ? "#dba94e30" : "#ff6b4a30"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: c.contactCategory === "Client" ? "#dba94e" : "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
+                          <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                           </div>
                           <div style={{ overflow: "hidden" }}>
@@ -3289,7 +3021,6 @@ function DashboardInner({ user, onLogout }) {
                             {c.department && <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{c.department}</div>}
                           </div>
                         </div>
-                        <span style={{ fontSize: 9 }}>{c.contactCategory ? <span style={{ padding: "2px 7px", background: c.contactCategory === "Client" ? "#dba94e12" : "#9b6dff12", border: `1px solid ${c.contactCategory === "Client" ? "#dba94e25" : "#9b6dff25"}`, borderRadius: 3, fontWeight: 700, color: c.contactCategory === "Client" ? "#dba94e" : "#9b6dff", whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => { const next = c.contactCategory === "Client" ? "Partner" : "Client"; setContacts(prev => prev.map(ct => ct.id === c.id ? { ...ct, contactCategory: next } : ct)); }}>{c.contactCategory}</span> : <span style={{ color: "var(--textGhost)", cursor: "pointer" }} onClick={() => setContacts(prev => prev.map(ct => ct.id === c.id ? { ...ct, contactCategory: "Client" } : ct))}>—</span>}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 10 }}>{c.resourceType ? <span style={{ padding: "2px 7px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 3, fontSize: 9, fontWeight: 600, color: "#3da5db", whiteSpace: "nowrap" }}>{c.resourceType}</span> : "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.position || "—"}</span>
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
@@ -3307,7 +3038,7 @@ function DashboardInner({ user, onLogout }) {
                                 </div>
                                 <div style={{ padding: "0 14px 10px" }}>
                                   <select value={assignContactPopover.selectedProject} onChange={e => setAssignContactPopover(prev => ({ ...prev, selectedProject: e.target.value }))} style={{ width: "100%", padding: "6px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }}>
-                                    {safeArr(projects).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                   </select>
                                 </div>
                                 <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--borderSub)" }}>
@@ -3327,11 +3058,11 @@ function DashboardInner({ user, onLogout }) {
                                     const projIdx = projects.findIndex(p => p.id === assignContactPopover.selectedProject);
                                     if (projIdx < 0) return;
                                     // Check duplicates
-                                    const allPeople = [...(targetProject.producers || []), ...(targetProject.managers || []), ...(targetProject.staff || []), ...(targetProject.pocs || []).map(p => p.name), ...(targetProject.clientContacts || []).map(p => p.name), ...(targetProject.billingContacts || []).map(p => p.name)];
-                                    if (safeArr(allPeople).includes(c.name)) { alert(`${c.name} is already on ${targetProject.name}.`); return; }
+                                    const allPeople = [...targetProject.producers, ...targetProject.managers, ...(targetProject.staff || []), ...(targetProject.pocs || []).map(p => p.name), ...(targetProject.clientContacts || []).map(p => p.name), ...(targetProject.billingContacts || []).map(p => p.name)];
+                                    if (allPeople.includes(c.name)) { alert(`${c.name} is already on ${targetProject.name}.`); return; }
                                     // Add based on role
-                                    if (role === "Producer") updateProject2(assignContactPopover.selectedProject, "producers", [...(targetProject.producers || []), c.name]);
-                                    else if (role === "Manager") updateProject2(assignContactPopover.selectedProject, "managers", [...(targetProject.managers || []), c.name]);
+                                    if (role === "Producer") updateProject2(assignContactPopover.selectedProject, "producers", [...targetProject.producers, c.name]);
+                                    else if (role === "Manager") updateProject2(assignContactPopover.selectedProject, "managers", [...targetProject.managers, c.name]);
                                     else if (role === "Staff / Crew") updateProject2(assignContactPopover.selectedProject, "staff", [...(targetProject.staff || []), c.name]);
                                     else if (role === "Client") updateProject2(assignContactPopover.selectedProject, "clientContacts", [...(targetProject.clientContacts || []), entry]);
                                     else if (role === "Billing") updateProject2(assignContactPopover.selectedProject, "billingContacts", [...(targetProject.billingContacts || []), entry]);
@@ -3399,7 +3130,7 @@ function DashboardInner({ user, onLogout }) {
                           };
                           return (
                             <div style={{ display: "flex", gap: 3, alignItems: "center" }}>
-                              {safeArr(docBtns).map(d => {
+                              {docBtns.map(d => {
                                 const done = comp[d.key]?.done;
                                 const uploading = comp[d.key]?.uploading;
                                 return (
@@ -3465,7 +3196,7 @@ function DashboardInner({ user, onLogout }) {
                         <button key={f.id} onClick={() => setTodoistFilter(f.id)} style={{ padding: "5px 12px", background: todoistFilter === f.id ? "#ff6b4a15" : "var(--bgInput)", border: `1px solid ${todoistFilter === f.id ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 6, color: todoistFilter === f.id ? "#ff6b4a" : "var(--textMuted)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{f.label}</button>
                       ))}
                       <div style={{ width: 1, background: "var(--border)", margin: "0 4px" }} />
-                      {safeArr(todoistProjects).filter(p => !p.inbox_project).map(p => (
+                      {todoistProjects.filter(p => !p.inbox_project).map(p => (
                         <button key={p.id} onClick={() => setTodoistFilter(p.id)} style={{ padding: "5px 12px", background: todoistFilter === p.id ? `${p.color === "charcoal" ? "#808080" : p.color || "#808080"}20` : "var(--bgInput)", border: `1px solid ${todoistFilter === p.id ? (p.color === "charcoal" ? "#808080" : p.color || "#808080") + "40" : "var(--borderSub)"}`, borderRadius: 6, color: todoistFilter === p.id ? "#ff6b4a" : "var(--textMuted)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{p.name}</button>
                       ))}
                     </div>
@@ -3479,9 +3210,9 @@ function DashboardInner({ user, onLogout }) {
                         {(() => {
                           const today = new Date().toISOString().split("T")[0];
                           let filtered = todoistTasks;
-                          if (todoistFilter === "today") filtered = safeArr(filtered).filter(t => t.due && t.due.date === today);
-                          else if (todoistFilter === "overdue") filtered = safeArr(filtered).filter(t => t.due && t.due.date < today);
-                          else if (todoistFilter !== "all") filtered = safeArr(filtered).filter(t => t.project_id === todoistFilter);
+                          if (todoistFilter === "today") filtered = filtered.filter(t => t.due && t.due.date === today);
+                          else if (todoistFilter === "overdue") filtered = filtered.filter(t => t.due && t.due.date < today);
+                          else if (todoistFilter !== "all") filtered = filtered.filter(t => t.project_id === todoistFilter);
                           return filtered.length === 0 ? (
                             <div style={{ padding: 32, textAlign: "center", color: "var(--textGhost)" }}>
                               {todoistTasks.length === 0 ? "No tasks found. Add one above!" : "No tasks match this filter."}
@@ -3520,11 +3251,11 @@ function DashboardInner({ user, onLogout }) {
                       </div>
                       <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1 }}>
                         <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DUE TODAY</div>
-                        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{safeArr(todoistTasks).filter(t => t.due && t.due.date === new Date().toISOString().split("T")[0]).length}</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{todoistTasks.filter(t => t.due && t.due.date === new Date().toISOString().split("T")[0]).length}</div>
                       </div>
                       <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1 }}>
                         <div style={{ fontSize: 9, color: "#ff4a6b", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
-                        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff4a6b" }}>{safeArr(todoistTasks).filter(t => t.due && t.due.date < new Date().toISOString().split("T")[0]).length}</div>
+                        <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff4a6b" }}>{todoistTasks.filter(t => t.due && t.due.date < new Date().toISOString().split("T")[0]).length}</div>
                       </div>
                       <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1 }}>
                         <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>PROJECTS</div>
@@ -3625,7 +3356,7 @@ function DashboardInner({ user, onLogout }) {
                       const mentions = [...new Set((plainText.match(/@[\w]+(?:\s[\w]+)?/g) || []).map(m => m.slice(1)))];
                       if (mentions.length === 0) return null;
                       return <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {safeArr(mentions).map(m => <span key={m} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#9b6dff15", color: "#9b6dff", fontWeight: 600 }}>@{m}</span>)}
+                        {mentions.map(m => <span key={m} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#9b6dff15", color: "#9b6dff", fontWeight: 600 }}>@{m}</span>)}
                       </div>;
                     })()}
                   </div>
@@ -3638,12 +3369,12 @@ function DashboardInner({ user, onLogout }) {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>TOUR SCHEDULE</div>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{(project.subEvents || []).length} DATES</span>
+                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{project.subEvents.length} DATES</span>
                           {(() => {
-                            const confirmed = (project.subEvents || []).filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
-                            const complete = (project.subEvents || []).filter(s => s.status === "Complete").length;
-                            const holds = (project.subEvents || []).filter(s => s.status === "Hold").length;
-                            const advancing = (project.subEvents || []).filter(s => s.status === "Advancing").length;
+                            const confirmed = project.subEvents.filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
+                            const complete = project.subEvents.filter(s => s.status === "Complete").length;
+                            const holds = project.subEvents.filter(s => s.status === "Hold").length;
+                            const advancing = project.subEvents.filter(s => s.status === "Advancing").length;
                             return (
                               <div style={{ display: "flex", gap: 8, fontSize: 9, color: "var(--textFaint)" }}>
                                 <span><span style={{ color: "#4ecb71" }}>●</span> {confirmed} confirmed</span>
@@ -3674,24 +3405,24 @@ function DashboardInner({ user, onLogout }) {
                           return (
                             <div key={se.id} style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "7px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isUpcoming ? "#ff6b4a08" : isPast ? "var(--bgInput)" : "transparent", opacity: se.status === "Cancelled" ? 0.4 : isPast && se.status !== "Complete" ? 0.65 : 1 }}>
                               <input type="date" value={se.date || ""} onChange={e => {
-                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, date: e.target.value } : s));
+                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, date: e.target.value } : s));
                               }} style={{ padding: "4px 6px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: isUpcoming ? "#ff6b4a" : "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none", colorScheme: "var(--filterScheme)" }} />
                               <EditableText value={se.city} onChange={v => {
-                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, city: v } : s));
+                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, city: v } : s));
                               }} fontSize={11} color="var(--textSub)" placeholder="City, ST" />
                               <EditableText value={se.venue} onChange={v => {
-                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, venue: v } : s));
+                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, venue: v } : s));
                               }} fontSize={12} color="var(--text)" fontWeight={600} placeholder="Venue name" />
                               <select value={se.status} onChange={e => {
-                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, status: e.target.value } : s));
+                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, status: e.target.value } : s));
                               }} style={{ padding: "4px 6px", background: sec.bg, border: `1px solid ${sec.dot}30`, borderRadius: 5, color: sec.text, fontSize: 10, fontWeight: 600, outline: "none", cursor: "pointer", width: "100%" }}>
                                 {SUB_EVENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <EditableText value={se.notes} onChange={v => {
-                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, notes: v } : s));
+                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, notes: v } : s));
                               }} fontSize={10} color="var(--textMuted)" placeholder="Notes..." />
                               <button onClick={() => {
-                                updateProject("subEvents", (project.subEvents || []).filter(s => s.id !== se.id));
+                                updateProject("subEvents", project.subEvents.filter(s => s.id !== se.id));
                               }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
                             </div>
                           );
@@ -3706,223 +3437,6 @@ function DashboardInner({ user, onLogout }) {
             {/* ═══ BUDGET ═══ */}
             {activeTab === "budget" && <div style={{ animation: "fadeUp 0.3s ease", textAlign: "center", padding: 60 }}><div style={{ fontSize: 40, marginBottom: 16 }}>📊</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Saturation Budget Integration</div><div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>This tab pulls directly from Saturation. Role-based access coming.</div><a href="https://app.saturation.io/weareadptv" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", padding: "10px 20px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 8, color: "#ff6b4a", fontWeight: 600, fontSize: 13, textDecoration: "none" }}>Open in Saturation →</a></div>}
 
-            {/* ═══ PROJECT TODOIST ═══ */}
-            {activeTab === "projectTodoist" && (() => {
-              const tpId = project.todoistProjectId;
-              const projTasks = tpId ? safeArr(todoistTasks).filter(t => t.project_id === tpId) : [];
-              const today = new Date().toISOString().split("T")[0];
-              const overdue = safeArr(projTasks).filter(t => t.due && t.due.date < today);
-              const dueToday = safeArr(projTasks).filter(t => t.due && t.due.date === today);
-              const upcoming = safeArr(projTasks).filter(t => t.due && t.due.date > today);
-              const noDue = safeArr(projTasks).filter(t => !t.due);
-              const priLabels = { 4: "Urgent", 3: "High", 2: "Medium", 1: "Normal" };
-              const priColors = { 4: "#ff6b4a", 3: "#dba94e", 2: "#3da5db", 1: "var(--textMuted)" };
-
-              const createTodoistProject = async () => {
-                if (!todoistKey || !project.code) return;
-                setTodoistLoading(true);
-                const tpNewId = await createTodoistProjectForCC(project.code);
-                if (tpNewId) {
-                  setProjects(prev => prev.map(p => p.id === project.id ? { ...p, todoistProjectId: tpNewId } : p));
-                  syncTodoistCollaborators({ ...project, todoistProjectId: tpNewId });
-                }
-                setTodoistLoading(false);
-              };
-
-              const adptvParent = getAdptvParentId();
-
-              const addTaskToProject = async (content, dueDate, priority) => {
-                if (!todoistKey || !tpId || !content.trim()) return;
-                const body = { content: content.trim(), project_id: tpId };
-                if (dueDate) body.due_date = dueDate;
-                if (priority && priority > 1) body.priority = priority;
-                await fetch("https://api.todoist.com/rest/v2/tasks", { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
-                todoistFetch();
-              };
-
-              const updateTask = async (taskId, updates) => {
-                if (!todoistKey) return;
-                await fetch(`https://api.todoist.com/rest/v2/tasks/${taskId}`, { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify(updates) });
-                todoistFetch();
-              };
-
-              const renderTask = (task) => {
-                const isOverdue = task.due && task.due.date < today;
-                const isToday = task.due && task.due.date === today;
-                const dueLabel = !task.due ? null : isToday ? "Today" : isOverdue ? (() => { const d = Math.ceil((new Date() - new Date(task.due.date + "T23:59:59")) / 86400000); return `${d}d overdue`; })() : task.due.string || (() => { const d = new Date(task.due.date + "T12:00:00"); return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); })();
-                return (
-                  <div key={task.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--calLine)", background: isOverdue ? "#e854540a" : "transparent", transition: "background 0.1s" }} onMouseEnter={e => { if (!isOverdue) e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => { e.currentTarget.style.background = isOverdue ? "#e854540a" : "transparent"; }}>
-                    {/* Priority circle / check */}
-                    <div onClick={() => todoistClose(task.id)} style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} title="Complete task">
-                      <span style={{ fontSize: 11, opacity: 0.3 }}>✓</span>
-                    </div>
-                    {/* Task content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500, lineHeight: 1.4 }}>{task.content}</div>
-                      {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 3, lineHeight: 1.4 }}>{task.description.slice(0, 120)}{task.description.length > 120 ? "..." : ""}</div>}
-                      <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        {dueLabel && <span style={{ fontSize: 10, fontWeight: 600, color: isOverdue ? "#e85454" : isToday ? "#ff6b4a" : "var(--textFaint)", display: "flex", alignItems: "center", gap: 3 }}>{isOverdue ? "⚠" : isToday ? "📅" : "📅"} {dueLabel}</span>}
-                        {task.priority > 1 && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: priColors[task.priority] + "18", color: priColors[task.priority] }}>{priLabels[task.priority]}</span>}
-                        {task.comment_count > 0 && <span style={{ fontSize: 10, color: "var(--textGhost)", display: "flex", alignItems: "center", gap: 2 }}>💬 {task.comment_count}</span>}
-                        {task.labels?.length > 0 && safeArr(task.labels).map(l => <span key={l} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "var(--bgHover)", color: "var(--textFaint)", fontWeight: 600 }}>@{l}</span>)}
-                      </div>
-                    </div>
-                    {/* Quick actions */}
-                    <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
-                      {/* Due date quick-set */}
-                      <input type="date" value={task.due?.date || ""} onChange={e => updateTask(task.id, e.target.value ? { due_date: e.target.value } : { due_string: "no date" })} style={{ width: 18, height: 18, opacity: 0.3, cursor: "pointer", background: "none", border: "none", padding: 0 }} title="Set due date" />
-                      {/* Priority cycle */}
-                      <button onClick={() => { const next = task.priority >= 4 ? 1 : task.priority + 1; updateTask(task.id, { priority: next }); }} style={{ background: "none", border: "none", color: priColors[task.priority] || "var(--textGhost)", cursor: "pointer", fontSize: 11, padding: "2px 4px", opacity: 0.5 }} title={`Priority: ${priLabels[task.priority] || "Normal"} (click to cycle)`}>⚑</button>
-                      <button onClick={() => todoistDelete(task.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13, padding: "2px 4px", opacity: 0.4 }} title="Delete">×</button>
-                    </div>
-                  </div>
-                );
-              };
-
-              return (
-                <div style={{ animation: "fadeUp 0.3s ease" }}>
-
-                  {!todoistKey ? (
-                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                      <div style={{ fontSize: 40, marginBottom: 14 }}>✅</div>
-                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Connect Todoist</div>
-                      <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6, marginBottom: 4 }}>Go to the <span style={{ color: "#ff6b4a", fontWeight: 600, cursor: "pointer" }} onClick={() => setActiveTab("todoist")}>Todoist tab</span> in the top bar to connect your API token first.</div>
-                    </div>
-                  ) : !tpId ? (
-                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 48, textAlign: "center" }}>
-                      <div style={{ fontSize: 40, marginBottom: 14 }}>✅</div>
-                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Create Todoist Project</div>
-                      <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6, marginBottom: 6 }}>Set up a Todoist project for this event to start tracking tasks.</div>
-                      <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Project will be named: {project.code || project.name}</div>
-                      <div style={{ fontSize: 10, color: adptvParent.parent_id ? "#4ecb71" : adptvParent.workspace_id ? "#4ecb71" : "#dba94e", marginBottom: 8 }}>
-                        {adptvParent.parent_id ? "✓ Will be created under ADPTV" : adptvParent.workspace_id ? "✓ Will be created in ADPTV workspace" : "⚠ ADPTV parent not found — will create at root level"}
-                      </div>
-                      <details style={{ marginBottom: 16, textAlign: "left" }}>
-                        <summary style={{ fontSize: 9, color: "var(--textGhost)", cursor: "pointer" }}>Debug: {todoistProjects.length} Todoist projects loaded</summary>
-                        <div style={{ maxHeight: 120, overflowY: "auto", padding: "6px 8px", background: "var(--bgInput)", borderRadius: 6, marginTop: 4, fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "var(--textFaint)", lineHeight: 1.6 }}>
-                          {safeArr(todoistProjects).map(p => (
-                            <div key={p.id}>{p.name} <span style={{ color: "var(--textGhost)" }}>id:{p.id} parent:{p.parent_id || "none"}</span></div>
-                          ))}
-                        </div>
-                      </details>
-                      {(project.producers?.length > 0 || project.managers?.length > 0 || (project.staff || []).length > 0) && (
-                        <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 16 }}>
-                          Team members with emails on file will be auto-invited as collaborators.
-                        </div>
-                      )}
-                      <button onClick={createTodoistProject} disabled={todoistLoading} style={{ padding: "12px 28px", background: todoistLoading ? "var(--borderActive)" : "#e44232", border: "none", borderRadius: 8, color: "#fff", cursor: todoistLoading ? "wait" : "pointer", fontSize: 14, fontWeight: 700, letterSpacing: 0.3 }}>
-                        {todoistLoading ? "Creating..." : "Create Project"}
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      {/* Todoist-style header */}
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, padding: "0 2px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Instrument Sans'", color: "var(--text)" }}>{project.code}</span>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{projTasks.length} task{projTasks.length !== 1 ? "s" : ""}</span>
-                        </div>
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                          <button onClick={() => todoistFetch()} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, color: "var(--textMuted)", fontWeight: 600 }}>↻</button>
-                          <button onClick={() => syncTodoistCollaborators(project)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, color: "var(--textMuted)", fontWeight: 600 }} title="Sync team as collaborators">👥 Sync Team</button>
-                          <a href={`https://todoist.com/app/project/${tpId}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 12px", background: "#e44232", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>Open in Todoist ↗</a>
-                        </div>
-                      </div>
-
-                      {/* Quick stats row */}
-                      <div style={{ display: "flex", gap: 16, marginBottom: 16, padding: "8px 0", borderBottom: "1px solid var(--borderSub)" }}>
-                        <span style={{ fontSize: 11, color: "var(--textFaint)" }}>{projTasks.length} open</span>
-                        {overdue.length > 0 && <span style={{ fontSize: 11, color: "#e85454", fontWeight: 600 }}>⚠ {overdue.length} overdue</span>}
-                        {dueToday.length > 0 && <span style={{ fontSize: 11, color: "#ff6b4a", fontWeight: 600 }}>{dueToday.length} due today</span>}
-                        {upcoming.length > 0 && <span style={{ fontSize: 11, color: "var(--textMuted)" }}>{upcoming.length} upcoming</span>}
-                        {noDue.length > 0 && <span style={{ fontSize: 11, color: "var(--textGhost)" }}>{noDue.length} no date</span>}
-                      </div>
-
-                      {/* Add task — Todoist-style inline */}
-                      <div style={{ marginBottom: 20 }}>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px dashed var(--borderSub)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            <span style={{ fontSize: 14, color: "var(--textGhost)" }}>+</span>
-                          </div>
-                          <input id="projTodoistInput" placeholder="Add a task..." onKeyDown={async (e) => {
-                            if (e.key === "Enter" && e.target.value.trim()) {
-                              const content = e.target.value.trim();
-                              const dueDateEl = document.getElementById("projTodoistDue");
-                              const priEl = document.getElementById("projTodoistPri");
-                              const dueDate = dueDateEl?.value || null;
-                              const pri = parseInt(priEl?.value || "1");
-                              e.target.value = "";
-                              if (dueDateEl) dueDateEl.value = "";
-                              if (priEl) priEl.value = "1";
-                              await addTaskToProject(content, dueDate, pri);
-                            }
-                          }} style={{ flex: 1, padding: "10px 0", background: "transparent", border: "none", borderBottom: "1px solid var(--borderSub)", color: "var(--text)", fontSize: 14, outline: "none", fontFamily: "'DM Sans'" }} />
-                        </div>
-                        <div style={{ display: "flex", gap: 8, marginTop: 8, marginLeft: 30, alignItems: "center" }}>
-                          <input id="projTodoistDue" type="date" style={{ padding: "4px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }} />
-                          <select id="projTodoistPri" defaultValue="1" style={{ padding: "4px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }}>
-                            <option value="1">Normal</option>
-                            <option value="2">Medium</option>
-                            <option value="3">High</option>
-                            <option value="4">Urgent</option>
-                          </select>
-                          <button onClick={async () => {
-                            const inp = document.getElementById("projTodoistInput");
-                            const dueDateEl = document.getElementById("projTodoistDue");
-                            const priEl = document.getElementById("projTodoistPri");
-                            if (!inp?.value.trim()) return;
-                            const content = inp.value.trim();
-                            const dueDate = dueDateEl?.value || null;
-                            const pri = parseInt(priEl?.value || "1");
-                            inp.value = ""; if (dueDateEl) dueDateEl.value = ""; if (priEl) priEl.value = "1";
-                            await addTaskToProject(content, dueDate, pri);
-                          }} style={{ padding: "5px 14px", background: "#e44232", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>Add Task</button>
-                        </div>
-                      </div>
-
-                      {/* Task sections */}
-                      <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
-                        {/* Overdue section */}
-                        {overdue.length > 0 && (
-                          <div>
-                            <div style={{ padding: "8px 16px", background: "#e854540a", borderBottom: "1px solid #e8545420", fontSize: 11, fontWeight: 700, color: "#e85454", display: "flex", alignItems: "center", gap: 6 }}>⚠ Overdue <span style={{ fontWeight: 400, fontSize: 10 }}>({overdue.length})</span></div>
-                            {overdue.sort((a, b) => (a.due?.date || "").localeCompare(b.due?.date || "")).map(renderTask)}
-                          </div>
-                        )}
-                        {/* Due today section */}
-                        {dueToday.length > 0 && (
-                          <div>
-                            <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid #ff6b4a20", fontSize: 11, fontWeight: 700, color: "#ff6b4a", display: "flex", alignItems: "center", gap: 6 }}>📅 Today <span style={{ fontWeight: 400, fontSize: 10 }}>({dueToday.length})</span></div>
-                            {safeArr(dueToday).map(renderTask)}
-                          </div>
-                        )}
-                        {/* Upcoming section */}
-                        {upcoming.length > 0 && (
-                          <div>
-                            <div style={{ padding: "8px 16px", background: "var(--bgSub)", borderBottom: "1px solid var(--borderSub)", fontSize: 11, fontWeight: 700, color: "var(--textMuted)", display: "flex", alignItems: "center", gap: 6 }}>📋 Upcoming <span style={{ fontWeight: 400, fontSize: 10 }}>({upcoming.length})</span></div>
-                            {upcoming.sort((a, b) => (a.due?.date || "").localeCompare(b.due?.date || "")).map(renderTask)}
-                          </div>
-                        )}
-                        {/* No date section */}
-                        {noDue.length > 0 && (
-                          <div>
-                            <div style={{ padding: "8px 16px", background: "var(--bgSub)", borderBottom: "1px solid var(--borderSub)", fontSize: 11, fontWeight: 700, color: "var(--textGhost)", display: "flex", alignItems: "center", gap: 6 }}>📌 No Date <span style={{ fontWeight: 400, fontSize: 10 }}>({noDue.length})</span></div>
-                            {safeArr(noDue).map(renderTask)}
-                          </div>
-                        )}
-                        {projTasks.length === 0 && (
-                          <div style={{ padding: 40, textAlign: "center" }}>
-                            <div style={{ fontSize: 32, marginBottom: 10 }}>🎯</div>
-                            <div style={{ fontSize: 14, color: "var(--textMuted)", fontWeight: 500 }}>All clear! Add a task above to get started.</div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
             {/* ═══ WORK BACK ═══ */}
             {activeTab === "workback" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
@@ -3932,7 +3446,7 @@ function DashboardInner({ user, onLogout }) {
                 </div>
                 <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "100px 2fr 1.2fr 1fr 1fr 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
-                  {safeArr(workback).map((wb, i) => {
+                  {workback.map((wb, i) => {
                     // Deadline color-coding
                     const wbDeadlineStyle = (() => {
                       if (!wb.date || wb.status === "Done") return { borderLeft: wb.isEvent ? "3px solid #ff6b4a40" : "3px solid transparent", bg: wb.isEvent ? "#ff6b4a0a" : "transparent" };
@@ -3982,7 +3496,7 @@ function DashboardInner({ user, onLogout }) {
                     <span style={{ fontSize: 14 }}>📄</span> Export PDF
                   </button>
                 </div>
-                {safeArr(days).map(day => {
+                {days.map(day => {
                   const dayDate = ros.find(r => r.day === day)?.dayDate || "";
                   const setDayDate = (newDate) => setROS(prev => prev.map(r => r.day === day ? { ...r, dayDate: newDate } : r));
                   return (
@@ -3997,14 +3511,14 @@ function DashboardInner({ user, onLogout }) {
                     </div>
                     <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                       <div style={{ display: "grid", gridTemplateColumns: "65px 1.6fr 0.7fr 1fr 0.9fr 0.7fr 0.7fr 1fr 30px", padding: "8px 12px", borderBottom: "1px solid var(--borderSub)", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>TIME</span><span>ITEM</span><span>DEPT</span><span>VENDORS</span><span>LOCATION</span><span>CONTACT</span><span>OWNER</span><span>NOTES</span><span></span></div>
-                      {safeArr(ros).filter(r => r.day === day).map(entry => {
-                        const isS = (entry.item || "").includes("🎬"); const isW = (entry.item || "").includes("WRAP") || (entry.item || "").includes("LUNCH");
+                      {ros.filter(r => r.day === day).map(entry => {
+                        const isS = entry.item.includes("🎬"); const isW = entry.item.includes("WRAP") || entry.item.includes("LUNCH");
                         return (
                           <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "65px 1.6fr 0.7fr 1fr 0.9fr 0.7fr 0.7fr 1fr 30px", padding: "6px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isS ? "var(--bgCard)" : isW ? "var(--bgInput)" : "transparent" }}>
                             <EditableText value={entry.time} onChange={v => updateROS(entry.id, "time", v)} fontSize={10} color={isS ? "#ff6b4a" : "var(--textMuted)"} placeholder="Time" />
                             <EditableText value={entry.item} onChange={v => updateROS(entry.id, "item", v)} fontSize={11} color={isS ? "#ff6b4a" : "var(--textSub)"} fontWeight={isS ? 700 : 500} placeholder="Item..." />
                             <Dropdown value={entry.dept} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
-                            <MultiDropdown values={entry.vendors} options={safeArr(vendors).map(v => v.id)} onChange={v => updateROS(entry.id, "vendors", v)} colorMap={Object.fromEntries(safeArr(vendors).map(v => [v.id, DEPT_COLORS[v.deptId] || "var(--textMuted)"]))} renderLabel={id => { const v = vendors.find(x => x.id === id); return v ? v.name.split(" ")[0] : id; }} />
+                            <MultiDropdown values={entry.vendors} options={vendors.map(v => v.id)} onChange={v => updateROS(entry.id, "vendors", v)} colorMap={Object.fromEntries(vendors.map(v => [v.id, DEPT_COLORS[v.deptId] || "var(--textMuted)"]))} renderLabel={id => { const v = vendors.find(x => x.id === id); return v ? v.name.split(" ")[0] : id; }} />
                             <EditableText value={entry.location} onChange={v => updateROS(entry.id, "location", v)} fontSize={10} color="var(--textMuted)" placeholder="Location" />
                             <Dropdown value={entry.contact} options={eventContactNames} onChange={v => updateROS(entry.id, "contact", v)} width="100%" allowBlank blankLabel="—" />
                             <Dropdown value={entry.owner} options={eventContactNames} onChange={v => updateROS(entry.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
@@ -4097,10 +3611,10 @@ function DashboardInner({ user, onLogout }) {
                       <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--borderSub)" }}>
                         <span style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.5 }}>GOOGLE DRIVE — {driveResults.length} result{driveResults.length !== 1 ? "s" : ""}</span>
                       </div>
-                      {safeArr(driveResults).map((dv, di) => {
+                      {driveResults.map((dv, di) => {
                         const docKeys = ["coi", "w9", "banking", "contract", "invoice"];
-                        const found = safeArr(docKeys).filter(k => dv.drive[k]?.found).length;
-                        const alreadyAdded = safeArr(vendors).some(v => v.name.toLowerCase() === dv.name.toLowerCase());
+                        const found = docKeys.filter(k => dv.drive[k]?.found).length;
+                        const alreadyAdded = vendors.some(v => v.name.toLowerCase() === dv.name.toLowerCase());
                         return (
                           <div key={di} onClick={() => { if (!alreadyAdded) importFromDrive(dv); }} style={{ padding: "10px 12px", borderBottom: di < driveResults.length - 1 ? "1px solid var(--borderSub)" : "none", display: "flex", alignItems: "center", gap: 12, cursor: alreadyAdded ? "default" : "pointer", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = alreadyAdded ? "transparent" : "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                             <div style={{ flex: 1, minWidth: 0 }}>
@@ -4115,7 +3629,7 @@ function DashboardInner({ user, onLogout }) {
                                 </div>
                               )}
                               <div style={{ display: "flex", gap: 4 }}>
-                                {safeArr(docKeys).map(k => (
+                                {docKeys.map(k => (
                                   <span key={k} title={dv.drive[k]?.found ? `Found: ${dv.drive[k].file}` : `Not found in Drive`} style={{ fontSize: 7, fontWeight: 700, padding: "1px 4px", borderRadius: 2, background: dv.drive[k]?.found ? "#4ecb7110" : "transparent", color: dv.drive[k]?.found ? "#4ecb71" : "var(--borderActive)" }}>
                                     {dv.drive[k]?.found ? "✓" : "·"} {k.toUpperCase()}
                                   </span>
@@ -4152,7 +3666,7 @@ function DashboardInner({ user, onLogout }) {
                     {vendors.length > 0 && (
                       <button onClick={() => {
                         if (selectedVendorIds.size === vendors.length) setSelectedVendorIds(new Set());
-                        else setSelectedVendorIds(new Set(safeArr(vendors).map(v => v.id)));
+                        else setSelectedVendorIds(new Set(vendors.map(v => v.id)));
                       }} style={{ padding: "6px 12px", background: selectedVendorIds.size > 0 ? "#3da5db10" : "var(--bgCard)", border: `1px solid ${selectedVendorIds.size > 0 ? "#3da5db30" : "var(--borderSub)"}`, borderRadius: 6, color: selectedVendorIds.size > 0 ? "#3da5db" : "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>
                         {selectedVendorIds.size === vendors.length ? "Deselect All" : selectedVendorIds.size > 0 ? `${selectedVendorIds.size} Selected` : "Select"}
                       </button>
@@ -4187,8 +3701,8 @@ function DashboardInner({ user, onLogout }) {
                       <div style={{ fontSize: 11, color: "var(--textGhost)" }}>Search Google Drive above or click "+ Add Vendor" to get started</div>
                     </div>
                   )}
-                  {safeArr(vendors).map((v, vi) => {
-                    const done = v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0;
+                  {vendors.map((v, vi) => {
+                    const done = Object.values(v.compliance).filter(c => c.done).length;
                     const isExp = expandedVendor === v.id;
                     const isSelected = selectedVendorIds.has(v.id);
                     return (
@@ -4276,17 +3790,17 @@ function DashboardInner({ user, onLogout }) {
                   const PROJECT_ROLES = (appSettings.projectRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort();
                   const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8" };
 
-                  const teamPeople = [...(project.producers || []).map(n => ({ name: n, role: "Producer", source: "producers" })), ...(project.managers || []).map(n => ({ name: n, role: "Manager", source: "managers" })), ...(project.staff || []).map(n => ({ name: n, role: "Staff / Crew", source: "staff" }))];
+                  const teamPeople = [...project.producers.map(n => ({ name: n, role: "Producer", source: "producers" })), ...project.managers.map(n => ({ name: n, role: "Manager", source: "managers" })), ...(project.staff || []).map(n => ({ name: n, role: "Staff / Crew", source: "staff" }))];
                   const clientPeople = (project.clientContacts || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Client", source: "clientContacts", dept: p.dept || "" }));
                   const pocPeople = (project.pocs || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Point of Contact", source: "pocs", dept: p.dept || "" }));
                   const billingPeople = (project.billingContacts || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Billing", source: "billingContacts", dept: p.dept || "" }));
                   const allProjectPeople = [...teamPeople, ...clientPeople, ...pocPeople, ...billingPeople];
-                  const filtered = contactSearch ? safeArr(allProjectPeople).filter(p => p.name.toLowerCase().includes(contactSearch.toLowerCase()) || p.role.toLowerCase().includes(contactSearch.toLowerCase()) || (p.dept || "").toLowerCase().includes(contactSearch.toLowerCase())) : allProjectPeople;
+                  const filtered = contactSearch ? allProjectPeople.filter(p => p.name.toLowerCase().includes(contactSearch.toLowerCase()) || p.role.toLowerCase().includes(contactSearch.toLowerCase()) || (p.dept || "").toLowerCase().includes(contactSearch.toLowerCase())) : allProjectPeople;
 
                   const addPersonToProject = (contact, role, dept) => {
                     const entry = { name: contact.name || contact, phone: contact.phone || "", email: contact.email || "", address: contact.address || "", company: contact.company || "", dept: dept || "", role: role, fromContacts: !!contact.id };
-                    if (role === "Producer") updateProject("producers", [...(project.producers || []), entry.name]);
-                    else if (role === "Manager") updateProject("managers", [...(project.managers || []), entry.name]);
+                    if (role === "Producer") updateProject("producers", [...project.producers, entry.name]);
+                    else if (role === "Manager") updateProject("managers", [...project.managers, entry.name]);
                     else if (role === "Staff / Crew") updateProject("staff", [...(project.staff || []), entry.name]);
                     else if (role === "Client") updateProject("clientContacts", [...(project.clientContacts || []), entry]);
                     else if (role === "Billing") updateProject("billingContacts", [...(project.billingContacts || []), entry]);
@@ -4295,8 +3809,8 @@ function DashboardInner({ user, onLogout }) {
                   };
 
                   const removePersonFromProject = (person) => {
-                    if (person.source === "producers") updateProject("producers", (project.producers || []).filter(n => n !== person.name));
-                    else if (person.source === "managers") updateProject("managers", (project.managers || []).filter(n => n !== person.name));
+                    if (person.source === "producers") updateProject("producers", project.producers.filter(n => n !== person.name));
+                    else if (person.source === "managers") updateProject("managers", project.managers.filter(n => n !== person.name));
                     else if (person.source === "staff") updateProject("staff", (project.staff || []).filter(n => n !== person.name));
                     else if (person.source === "clientContacts") updateProject("clientContacts", (project.clientContacts || []).filter(p => p.name !== person.name));
                     else if (person.source === "pocs") updateProject("pocs", (project.pocs || []).filter(p => p.name !== person.name));
@@ -4348,7 +3862,7 @@ function DashboardInner({ user, onLogout }) {
                         <div style={{ display: "grid", gridTemplateColumns: "2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
                           <span>NAME</span><span>ROLE</span><span>DEPARTMENT</span><span>PHONE</span><span>EMAIL</span><span>ACTIONS</span>
                         </div>
-                        {safeArr(filtered).map((person, i) => {
+                        {filtered.map((person, i) => {
                           const c = contacts.find(ct => ct.name === person.name);
                           const inGlobal = !!c;
                           const rc = ROLE_COLORS[person.role] || "var(--textMuted)";
@@ -4369,7 +3883,7 @@ function DashboardInner({ user, onLogout }) {
                               {/* ROLE - dropdown */}
                               <div>
                                 <select value={person.role} onChange={e => changePersonRole(person, e.target.value)} style={{ padding: "3px 6px", background: `${rc}15`, border: `1px solid ${rc}30`, borderRadius: 4, color: rc, fontSize: 9, fontWeight: 700, cursor: "pointer", outline: "none", appearance: "auto" }}>
-                                  {safeArr(PROJECT_ROLES).map(r => <option key={r} value={r}>{r}</option>)}
+                                  {PROJECT_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
                                 </select>
                               </div>
                               {/* DEPARTMENT - dropdown */}
@@ -4414,7 +3928,7 @@ function DashboardInner({ user, onLogout }) {
 
       {/* ═══ PRINT ROS OVERLAY ═══ */}
       {showPrintROS && (() => {
-        const vMap = Object.fromEntries(safeArr(vendors).map(v => [v.id, v.name]));
+        const vMap = Object.fromEntries(vendors.map(v => [v.id, v.name]));
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "#fff", color: "#1a1a1a", overflowY: "auto", fontFamily: "'DM Sans', sans-serif" }}>
             {/* Toolbar */}
@@ -4436,14 +3950,14 @@ function DashboardInner({ user, onLogout }) {
                 </div>
                 <div style={{ textAlign: "right", fontSize: 11, color: "#666", lineHeight: 1.8 }}>
                   {project.eventDates.start && <div>Event: {new Date(project.eventDates.start + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} — {new Date(project.eventDates.end + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>}
-                  <div>Producers: {(project.producers || []).join(", ")}</div>
+                  <div>Producers: {project.producers.join(", ")}</div>
                   <div>Managers: {(project.managers || []).join(", ")}</div>
                   <div style={{ marginTop: 6, fontStyle: "italic" }}>Generated {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
                 </div>
               </div>
 
               {/* Days */}
-              {safeArr(days).map(day => {
+              {days.map(day => {
                 const dayDate = project.eventDates.start ? new Date(new Date(project.eventDates.start + "T12:00:00").getTime() + (day - 1) * 86400000).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }) : "";
                 return (
                   <div key={day} style={{ marginBottom: 24 }}>
@@ -4457,7 +3971,7 @@ function DashboardInner({ user, onLogout }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {safeArr(ros).filter(r => r.day === day).map(r => {
+                        {ros.filter(r => r.day === day).map(r => {
                           const isShoot = r.item.includes("🎬");
                           const isBreak = r.item.includes("WRAP") || r.item.includes("LUNCH");
                           return (
@@ -4557,7 +4071,7 @@ function DashboardInner({ user, onLogout }) {
                                 const updated = { ...appSettings, userPermissions: { ...appSettings.userPermissions, [email]: { ...perms, role: e.target.value } } };
                                 setAppSettings(updated); setSettingsDirty(true);
                               }} style={{ padding: "2px 6px", fontSize: 9, fontWeight: 700, borderRadius: 4, background: perms.role === "admin" ? "#ff6b4a10" : perms.role === "viewer" ? "#3da5db10" : "#4ecb7110", border: `1px solid ${perms.role === "admin" ? "#ff6b4a30" : perms.role === "viewer" ? "#3da5db30" : "#4ecb7130"}`, color: perms.role === "admin" ? "#ff6b4a" : perms.role === "viewer" ? "#3da5db" : "#4ecb71", cursor: "pointer", textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0 }}>
-                                {safeArr(ROLE_OPTIONS).filter(r => r !== "owner").map(r => <option key={r} value={r}>{r}</option>)}
+                                {ROLE_OPTIONS.filter(r => r !== "owner").map(r => <option key={r} value={r}>{r}</option>)}
                               </select>
                             )}
                           </div>
@@ -4599,13 +4113,13 @@ function DashboardInner({ user, onLogout }) {
                               </div>
                               {perms.projectAccess !== "all" && (
                                 <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid var(--borderSub)", borderRadius: 6, padding: "6px 8px" }}>
-                                  {safeArr(projects).filter(p => !p.archived).map(p => {
+                                  {projects.filter(p => !p.archived).map(p => {
                                     const checked = (perms.projectAccess || []).includes(p.id);
                                     return (
                                       <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 4px", fontSize: 10, color: "var(--textSub)", cursor: "pointer", borderRadius: 3 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                         <input type="checkbox" checked={checked} onChange={() => {
                                           const current = perms.projectAccess || [];
-                                          const updated = checked ? safeArr(current).filter(id => id !== p.id) : [...current, p.id];
+                                          const updated = checked ? current.filter(id => id !== p.id) : [...current, p.id];
                                           setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, projectAccess: updated } } }));
                                           setSettingsDirty(true);
                                         }} style={{ accentColor: "#dba94e" }} />
@@ -4621,12 +4135,12 @@ function DashboardInner({ user, onLogout }) {
                             <div>
                               <div style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.8, marginBottom: 8 }}>SECTION VISIBILITY</div>
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                {safeArr(SECTION_OPTIONS).map(s => {
+                                {SECTION_OPTIONS.map(s => {
                                   const hidden = (perms.hiddenSections || []).includes(s.key);
                                   return (
                                     <button key={s.key} onClick={() => {
                                       const current = perms.hiddenSections || [];
-                                      const updated = hidden ? safeArr(current).filter(k => k !== s.key) : [...current, s.key];
+                                      const updated = hidden ? current.filter(k => k !== s.key) : [...current, s.key];
                                       setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, hiddenSections: updated } } }));
                                       setSettingsDirty(true);
                                     }} style={{
@@ -4752,7 +4266,7 @@ function DashboardInner({ user, onLogout }) {
                         <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, marginBottom: 6 }}>CONNECTION</div>
                         {driveDiag.connection ? (
                           <div>
-                            <div style={{ fontSize: 11, color: (driveDiag.connection.status || "").includes("✅") ? "#4ecb71" : "#e85454", fontWeight: 600, marginBottom: 2 }}>{driveDiag.connection.status}</div>
+                            <div style={{ fontSize: 11, color: driveDiag.connection.status.includes("✅") ? "#4ecb71" : "#e85454", fontWeight: 600, marginBottom: 2 }}>{driveDiag.connection.status}</div>
                             {driveDiag.connection.authenticatedAs && <div style={{ fontSize: 10, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace" }}>Authenticated as: {driveDiag.connection.authenticatedAs}</div>}
                           </div>
                         ) : driveDiag.error ? (
@@ -4767,7 +4281,7 @@ function DashboardInner({ user, onLogout }) {
                           {driveDiag.accessibleFiles.folders.length > 0 && (
                             <div style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, marginBottom: 4 }}>📁 Shared Folders:</div>
-                              {safeArr(driveDiag.accessibleFiles.folders).map((f, i) => (
+                              {driveDiag.accessibleFiles.folders.map((f, i) => (
                                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 0" }}>
                                   <span style={{ fontSize: 10, color: "var(--textSub)" }}>📁 {f.name}</span>
                                   <span style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>ID: {f.id}</span>
@@ -4782,7 +4296,7 @@ function DashboardInner({ user, onLogout }) {
                           {driveDiag.accessibleFiles.recentFiles.length > 0 && (
                             <div>
                               <div style={{ fontSize: 9, color: "var(--textGhost)", fontWeight: 600, marginBottom: 4 }}>📄 Recent Files:</div>
-                              {safeArr(driveDiag.accessibleFiles.recentFiles).map((f, i) => (
+                              {driveDiag.accessibleFiles.recentFiles.map((f, i) => (
                                 <div key={i} style={{ fontSize: 10, color: "var(--textMuted)", padding: "2px 0", fontFamily: "'JetBrains Mono', monospace" }}>
                                   {f.name}
                                 </div>
@@ -5189,7 +4703,6 @@ function DashboardInner({ user, onLogout }) {
                   <div onClick={(e) => copyToClipboard(c.name, "Name", e)} style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }} onMouseEnter={e => e.currentTarget.style.color = "#fff"} onMouseLeave={e => e.currentTarget.style.color = "var(--text)"}>
                     {c.name} <span style={{ fontSize: 8, color: "var(--textGhost)" }}>⧉</span>
                   </div>
-                  {c.contactCategory && <span style={{ fontSize: 8, fontWeight: 700, padding: "2px 6px", borderRadius: 3, marginLeft: 6, background: c.contactCategory === "Client" ? "#dba94e18" : "#9b6dff18", color: c.contactCategory === "Client" ? "#dba94e" : "#9b6dff", border: `1px solid ${c.contactCategory === "Client" ? "#dba94e30" : "#9b6dff30"}` }}>{c.contactCategory === "Client" ? "CLIENT" : "PARTNER"}</span>}
                   {c.position && <div style={{ fontSize: 11, color: "#ff6b4a", fontWeight: 600 }}>{c.position}</div>}
                   {c.company && <div style={{ fontSize: 10, color: "var(--textFaint)" }}>{c.company}</div>}
                 </div>
@@ -5249,43 +4762,23 @@ function DashboardInner({ user, onLogout }) {
               </div>
             </div>
             <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
-              {/* Client / Partner toggle */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>CONTACT TYPE</label>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {[{ key: "Client", color: "#dba94e", desc: "Client" }, { key: "Partner", color: "#9b6dff", desc: "Subcontractor / Vendor" }].map(opt => (
-                    <button key={opt.key} onClick={() => updateCF("contactCategory", contactForm.contactCategory === opt.key ? "" : opt.key)} style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: `1px solid ${contactForm.contactCategory === opt.key ? opt.color + "50" : "var(--borderSub)"}`, background: contactForm.contactCategory === opt.key ? opt.color + "12" : "var(--bgCard)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
-                      <div style={{ width: 14, height: 14, borderRadius: "50%", border: `2px solid ${contactForm.contactCategory === opt.key ? opt.color : "var(--textGhost)"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {contactForm.contactCategory === opt.key && <div style={{ width: 7, height: 7, borderRadius: "50%", background: opt.color }} />}
-                      </div>
-                      <div style={{ textAlign: "left" }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: contactForm.contactCategory === opt.key ? opt.color : "var(--textSub)" }}>{opt.key}</div>
-                        <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{opt.desc}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>{contactForm.contactCategory === "Client" ? "CLIENT / COMPANY NAME" : "VENDOR / COMPANY NAME"}</label>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>VENDOR / COMPANY NAME</label>
                 <input value={contactForm.vendorName || contactForm.company || ""} onChange={e => { updateCF("vendorName", e.target.value); updateCF("company", e.target.value); }} placeholder="e.g. GDRB, Collins Visual Media..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME</label><input value={contactForm.firstName} onChange={e => updateCF("firstName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME</label><input value={contactForm.lastName} onChange={e => updateCF("lastName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: contactForm.contactCategory === "Client" ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>POSITION / TITLE</label><input value={contactForm.position} onChange={e => updateCF("position", e.target.value)} placeholder="Executive Producer, DP, PM..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
-                {contactForm.contactCategory !== "Client" && (
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
                   <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                     <option value="">Select...</option>
                     {[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort().map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
-                )}
               </div>
-              {contactForm.contactCategory !== "Client" && (
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
                 <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
@@ -5293,7 +4786,6 @@ function DashboardInner({ user, onLogout }) {
                   {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map(rt => <option key={rt} value={rt}>{rt}</option>)}
                 </select>
               </div>
-              )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><PhoneWithCode value={contactForm.phone} onChange={v => updateCF("phone", v)} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={contactForm.email} onChange={e => updateCF("email", e.target.value)} placeholder="name@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
@@ -5354,7 +4846,7 @@ function DashboardInner({ user, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 14, marginBottom: 14 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>CLIENT *</label>
-                  <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} contacts={contacts} />
+                  <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} />
                 </div>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT NAME *</label>
@@ -5371,7 +4863,7 @@ function DashboardInner({ user, onLogout }) {
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>STATUS</label>
                   <select value={newProjectForm.status} onChange={e => updateNPF("status", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
-                    {safeArr(STATUSES).map(s => <option key={s} value={s}>{s}</option>)}
+                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
                 <div>
@@ -5422,7 +4914,7 @@ function DashboardInner({ user, onLogout }) {
                   <input type="number" value={newProjectForm.budget || ""} onChange={e => updateNPF("budget", Number(e.target.value))} placeholder="0" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>MULTI-DATE / TOUR</label>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT TYPE</label>
                   <div onClick={() => updateNPF("isTour", !newProjectForm.isTour)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: newProjectForm.isTour ? "#ff6b4a10" : "var(--bgInput)", border: `1px solid ${newProjectForm.isTour ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, cursor: "pointer", transition: "all 0.15s" }}>
                     <div style={{ width: 36, height: 20, borderRadius: 10, background: newProjectForm.isTour ? "#ff6b4a" : "var(--borderSub)", position: "relative", transition: "background 0.2s" }}>
                       <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: newProjectForm.isTour ? 18 : 2, transition: "left 0.2s" }} />
@@ -5481,7 +4973,7 @@ function DashboardInner({ user, onLogout }) {
                     const fileIdMatch = link.match(/\/d\/([a-zA-Z0-9_-]+)/);
                     if (fileIdMatch) return `https://drive.google.com/file/d/${fileIdMatch[1]}/preview`;
                     // Already a preview link
-                    if ((link || "").includes('/preview')) return link;
+                    if (link.includes('/preview')) return link;
                     // Fallback: try replacing /view with /preview
                     return link.replace(/\/view.*$/, '/preview');
                   })()}
@@ -5555,7 +5047,7 @@ function DashboardInner({ user, onLogout }) {
                   <div style={{ fontSize: 12 }}>No version history yet. History is created automatically with every save.</div>
                   <div style={{ fontSize: 10, marginTop: 8, color: "var(--textGhost)" }}>Run the migration <code>005_state_history.sql</code> in Supabase to enable.</div>
                 </div>
-              ) : safeArr(versionHistory).map((v, i) => {
+              ) : versionHistory.map((v, i) => {
                 const d = new Date(v.saved_at);
                 const timeAgo = (() => {
                   const mins = Math.round((Date.now() - d.getTime()) / 60000);
@@ -5644,7 +5136,7 @@ function DashboardInner({ user, onLogout }) {
                   <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Contact Type</label>
                   <select value={vendorForm.contactType} onChange={e => updateVF("contactType", e.target.value)} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", appearance: "auto" }}>
                     <option value="">Select...</option>
-                    {safeArr(CONTACT_TYPES).map(ct => <option key={ct} value={ct}>{ct}</option>)}
+                    {CONTACT_TYPES.map(ct => <option key={ct} value={ct}>{ct}</option>)}
                   </select>
                 </div>
                 <div>
@@ -5735,8 +5227,4 @@ function DashboardInner({ user, onLogout }) {
 
     </div>
   );
-}
-
-export default function Dashboard(props) {
-  return React.createElement(DashboardErrorBoundary, null, React.createElement(DashboardInner, props));
 }
