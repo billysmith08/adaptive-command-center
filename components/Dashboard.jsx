@@ -308,14 +308,19 @@ function AddressAutocomplete({ value, onChange, copyToClipboard, inputStyle, wra
     if (typeof window === 'undefined') return;
     // If Google Maps is already loaded
     if (window.google?.maps?.places) { setLoaded(true); return; }
-    // Try to load it if we have an API key
-    const key = typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
-    if (!key) return;
-    if (document.querySelector('script[src*="maps.googleapis.com"]')) return;
+    // NEXT_PUBLIC_ vars are inlined at build time by Next.js
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || '';
+    if (!key) { console.log('AddressAutocomplete: No NEXT_PUBLIC_GOOGLE_MAPS_KEY set — add it in Vercel Environment Variables'); return; }
+    if (document.querySelector('script[src*="maps.googleapis.com"]')) {
+      // Script exists but may still be loading
+      const check = setInterval(() => { if (window.google?.maps?.places) { setLoaded(true); clearInterval(check); } }, 200);
+      setTimeout(() => clearInterval(check), 10000);
+      return;
+    }
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
     script.async = true;
-    script.onload = () => setLoaded(true);
+    script.onload = () => setTimeout(() => setLoaded(true), 100);
     document.head.appendChild(script);
   }, []);
 
@@ -374,6 +379,56 @@ const COUNTRY_CODES = [
 ];
 
 function PhoneWithCode({ value, onChange, placeholder, inputStyle, compact }) {
+  // Country-specific phone formatting
+  const formatByCountry = (code, raw) => {
+    const d = raw.replace(/\D/g, '');
+    if (!d) return '';
+    switch (code) {
+      case '+1': // US/CA: (XXX) XXX-XXXX
+        if (d.length <= 3) return '(' + d;
+        if (d.length <= 6) return '(' + d.slice(0,3) + ') ' + d.slice(3);
+        return '(' + d.slice(0,3) + ') ' + d.slice(3,6) + '-' + d.slice(6,10);
+      case '+44': // UK: XXXX-XXX-XXX
+        if (d.length <= 4) return d;
+        if (d.length <= 7) return d.slice(0,4) + '-' + d.slice(4);
+        return d.slice(0,4) + '-' + d.slice(4,7) + '-' + d.slice(7,10);
+      case '+61': // AU: XXXX-XXX-XXX
+        if (d.length <= 4) return d;
+        if (d.length <= 7) return d.slice(0,4) + '-' + d.slice(4);
+        return d.slice(0,4) + '-' + d.slice(4,7) + '-' + d.slice(7,10);
+      case '+33': // FR: X XX XX XX XX
+        if (d.length <= 1) return d;
+        if (d.length <= 3) return d.slice(0,1) + ' ' + d.slice(1);
+        if (d.length <= 5) return d.slice(0,1) + ' ' + d.slice(1,3) + ' ' + d.slice(3);
+        if (d.length <= 7) return d.slice(0,1) + ' ' + d.slice(1,3) + ' ' + d.slice(3,5) + ' ' + d.slice(5);
+        if (d.length <= 9) return d.slice(0,1) + ' ' + d.slice(1,3) + ' ' + d.slice(3,5) + ' ' + d.slice(5,7) + ' ' + d.slice(7);
+        return d.slice(0,1) + ' ' + d.slice(1,3) + ' ' + d.slice(3,5) + ' ' + d.slice(5,7) + ' ' + d.slice(7,9);
+      case '+49': // DE: XXXX XXXXXXX
+        if (d.length <= 4) return d;
+        return d.slice(0,4) + ' ' + d.slice(4,11);
+      case '+52': // MX: XXX-XXX-XXXX
+        if (d.length <= 3) return d;
+        if (d.length <= 6) return d.slice(0,3) + '-' + d.slice(3);
+        return d.slice(0,3) + '-' + d.slice(3,6) + '-' + d.slice(6,10);
+      default: // Generic: group in 3s/4s
+        if (d.length <= 4) return d;
+        if (d.length <= 7) return d.slice(0,3) + '-' + d.slice(3);
+        return d.slice(0,3) + '-' + d.slice(3,6) + '-' + d.slice(6,10);
+    }
+  };
+
+  const placeholderByCountry = (code) => {
+    switch (code) {
+      case '+1': return '(555) 000-0000';
+      case '+44': return '7XXX-XXX-XXX';
+      case '+61': return '4XXX-XXX-XXX';
+      case '+33': return '6 XX XX XX XX';
+      case '+49': return '1XXX XXXXXXX';
+      case '+52': return 'XXX-XXX-XXXX';
+      default: return 'XXX-XXX-XXXX';
+    }
+  };
+
   // Parse existing value: detect country code prefix
   const detectCode = (v) => {
     if (!v) return { cc: '+1', num: '' };
@@ -387,11 +442,15 @@ function PhoneWithCode({ value, onChange, placeholder, inputStyle, compact }) {
 
   const handleCodeChange = (newCode) => {
     const { num: n } = detectCode(value);
-    onChange(`${newCode} ${n}`.trim());
+    // Re-format number for new country
+    const digits = n.replace(/\D/g, '');
+    const formatted = formatByCountry(newCode, digits);
+    onChange(`${newCode} ${formatted}`.trim());
   };
   const handleNumChange = (newNum) => {
     const { cc: c } = detectCode(value);
-    onChange(`${c} ${newNum}`.trim());
+    const formatted = formatByCountry(c, newNum);
+    onChange(`${c} ${formatted}`.trim());
   };
 
   const baseInput = inputStyle || { width: '100%', padding: '9px 12px', background: 'var(--bgInput)', border: '1px solid var(--borderSub)', borderRadius: 7, color: 'var(--text)', fontSize: 13, outline: 'none' };
@@ -403,7 +462,7 @@ function PhoneWithCode({ value, onChange, placeholder, inputStyle, compact }) {
       <select value={cc} onChange={e => handleCodeChange(e.target.value)} style={selectSt}>
         {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.code}</option>)}
       </select>
-      <input value={num} onChange={e => handleNumChange(e.target.value)} placeholder={placeholder || '(555) 000-0000'} style={phoneSt} />
+      <input value={num} onChange={e => handleNumChange(e.target.value)} placeholder={placeholder || placeholderByCountry(cc)} style={phoneSt} />
     </div>
   );
 }
@@ -1447,6 +1506,7 @@ export default function Dashboard({ user, onLogout }) {
   const [appSettings, setAppSettings] = useState({
     authorizedUsers: ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"],
     pendingUsers: [],
+    userPermissions: {}, // { email: { role: "owner"|"admin"|"editor"|"viewer", projectAccess: "all"|[ids], hiddenSections: [] } }
     driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
     statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
     projectTypes: ["Brand Event", "Experiential", "Festival", "Internal", "Live Event", "Private Event", "Touring"],
@@ -1482,6 +1542,40 @@ export default function Dashboard({ user, onLogout }) {
   const [driveTestSearch, setDriveTestSearch] = useState("");
   const isAdmin = appSettings.authorizedUsers.includes(user?.email) || user?.email === "billy@weareadptv.com" || user?.email === "clancy@weareadptv.com" || user?.email === "billysmith08@gmail.com";
   const isOwner = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"].includes(user?.email);
+  
+  // ─── PERMISSION HELPERS ──────────────────────────────────────────
+  const ROLE_OPTIONS = ["owner", "admin", "editor", "viewer"];
+  const SECTION_OPTIONS = [
+    { key: "overview", label: "Overview" },
+    { key: "budget", label: "Budget" },
+    { key: "workback", label: "Work Back" },
+    { key: "ros", label: "Run of Show" },
+    { key: "drive", label: "Drive" },
+    { key: "vendors", label: "Contractors/Vendors" },
+    { key: "eventContacts", label: "Event Contacts" },
+    { key: "globalContacts", label: "Global Contacts" },
+    { key: "todoist", label: "Todoist" },
+    { key: "macroView", label: "Macro View" },
+    { key: "settings", label: "Settings" },
+  ];
+  const getUserPerms = (email) => {
+    const p = appSettings.userPermissions?.[email];
+    const ownerEmails = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"];
+    if (ownerEmails.includes(email)) return { role: "owner", projectAccess: "all", hiddenSections: [] };
+    return p || { role: "editor", projectAccess: "all", hiddenSections: [] };
+  };
+  const currentUserPerms = getUserPerms(user?.email);
+  const canSeeProject = (projectId) => {
+    if (currentUserPerms.role === "owner" || currentUserPerms.role === "admin") return true;
+    if (currentUserPerms.projectAccess === "all") return true;
+    return (currentUserPerms.projectAccess || []).includes(projectId);
+  };
+  const canSeeSection = (sectionKey) => {
+    if (currentUserPerms.role === "owner" || currentUserPerms.role === "admin") return true;
+    return !(currentUserPerms.hiddenSections || []).includes(sectionKey);
+  };
+  const [editingUserPerms, setEditingUserPerms] = useState(null); // email being configured
+  
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState(null);
@@ -1698,6 +1792,35 @@ export default function Dashboard({ user, onLogout }) {
     const rect = e?.target?.getBoundingClientRect();
     setClipboardToast({ text: `${label} copied!`, x: rect?.left || 100, y: rect?.top || 100 });
     setTimeout(() => setClipboardToast(null), 1800);
+  };
+
+  // ─── SAVE TO MAC CONTACTS (vCard) ──────────────────────────────────────
+  const downloadVCard = (contact) => {
+    const fn = contact.firstName || contact.name?.split(' ')[0] || '';
+    const ln = contact.lastName || contact.name?.split(' ').slice(1).join(' ') || '';
+    const fullName = [fn, ln].filter(Boolean).join(' ') || contact.name || 'Unknown';
+    // Strip country code formatting for TEL field
+    const rawPhone = (contact.phone || '').replace(/[^\d+]/g, '');
+    const lines = [
+      'BEGIN:VCARD',
+      'VERSION:3.0',
+      `FN:${fullName}`,
+      `N:${ln};${fn};;;`,
+    ];
+    if (contact.company) lines.push(`ORG:${contact.company}`);
+    if (contact.position || contact.title) lines.push(`TITLE:${contact.position || contact.title}`);
+    if (rawPhone) lines.push(`TEL;TYPE=WORK,VOICE:${rawPhone}`);
+    if (contact.email) lines.push(`EMAIL;TYPE=WORK:${contact.email}`);
+    if (contact.address) lines.push(`ADR;TYPE=WORK:;;${contact.address.replace(/,/g, ';')};;;;`);
+    if (contact.notes) lines.push(`NOTE:${contact.notes}`);
+    lines.push('END:VCARD');
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/vcard;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${fullName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/\s+/g, '_')}.vcf`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // Drive vendor search — searches entire Google Drive
@@ -2194,12 +2317,13 @@ export default function Dashboard({ user, onLogout }) {
   const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
   const filteredProjects = projects.filter(p => {
+    if (!canSeeProject(p.id)) return false;
     if (!showArchived && p.archived) return false;
     return p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
   });
   const archivedCount = projects.filter(p => p.archived).length;
 
-  const tabs = [
+  const allTabs = [
     { id: "overview", label: "Overview", icon: "◉" },
     { id: "budget", label: "Budget", icon: "$" },
     { id: "workback", label: "Work Back", icon: "◄" },
@@ -2208,6 +2332,7 @@ export default function Dashboard({ user, onLogout }) {
     { id: "vendors", label: "Contractors/Vendors", icon: "⊕" },
     { id: "contacts", label: "Event Contacts", icon: "👤" },
   ];
+  const tabs = allTabs.filter(t => canSeeSection(t.id === "contacts" ? "eventContacts" : t.id));
 
   // ─── APPROVAL GATE ─────────────────────────────────────────────
   const ADMIN_EMAILS = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"];
@@ -2291,13 +2416,17 @@ export default function Dashboard({ user, onLogout }) {
           <button onClick={() => setActiveTab("calendar")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "calendar" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
             📅 Adaptive at a Glance
           </button>
-          <button onClick={() => setActiveTab("globalContacts")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "globalContacts" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
-            👤 Global Contacts {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
-          </button>
-          <button onClick={() => { setActiveTab("todoist"); if (!todoistTasks.length && todoistKey) todoistFetch(); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "todoist" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
-            ✅ Todoist {todoistTasks.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{todoistTasks.length}</span>}
-          </button>
-          {isAdmin && (
+          {canSeeSection("globalContacts") && (
+            <button onClick={() => setActiveTab("globalContacts")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "globalContacts" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+              👤 Global Contacts {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
+            </button>
+          )}
+          {canSeeSection("todoist") && (
+            <button onClick={() => { setActiveTab("todoist"); if (!todoistTasks.length && todoistKey) todoistFetch(); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "todoist" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+              ✅ Todoist {todoistTasks.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{todoistTasks.length}</span>}
+            </button>
+          )}
+          {canSeeSection("macroView") && isAdmin && (
             <button onClick={() => setActiveTab("macro")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "macro" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
               📋 Macro View
             </button>
@@ -2305,7 +2434,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Settings gear (admin only) */}
-          {isAdmin && (
+          {canSeeSection("settings") && isAdmin && (
             <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title="Settings">
               <span style={{ fontSize: 12 }}>⚙️</span>
               <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>SETTINGS</span>
@@ -2631,6 +2760,7 @@ export default function Dashboard({ user, onLogout }) {
                             )}
                           </div>
                           <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
+                          <button onClick={() => downloadVCard(c)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setContacts(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
                         {/* DOCS column - functional upload buttons synced with vendor compliance */}
@@ -3313,7 +3443,7 @@ export default function Dashboard({ user, onLogout }) {
                         const found = docKeys.filter(k => dv.drive[k]?.found).length;
                         const alreadyAdded = vendors.some(v => v.name.toLowerCase() === dv.name.toLowerCase());
                         return (
-                          <div key={di} style={{ padding: "10px 12px", borderBottom: di < driveResults.length - 1 ? "1px solid var(--borderSub)" : "none", display: "flex", alignItems: "center", gap: 12, cursor: "pointer", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                          <div key={di} onClick={() => { if (!alreadyAdded) importFromDrive(dv); }} style={{ padding: "10px 12px", borderBottom: di < driveResults.length - 1 ? "1px solid var(--borderSub)" : "none", display: "flex", alignItems: "center", gap: 12, cursor: alreadyAdded ? "default" : "pointer", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = alreadyAdded ? "transparent" : "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
                                 <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{dv.name}</span>
@@ -3467,6 +3597,7 @@ export default function Dashboard({ user, onLogout }) {
                                   setEditingVendorId(v.id);
                                   setShowAddVendor(true);
                                 }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
+                                <button onClick={() => downloadVCard({ name: v.contact || v.name, firstName: (v.contact || v.name || '').split(' ')[0], lastName: (v.contact || v.name || '').split(' ').slice(1).join(' '), phone: v.phone, email: v.email, company: v.name, position: v.title, address: v.address })} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
                                 <button onClick={() => { if (confirm(`Remove ${v.name}?`)) setVendors(prev => prev.filter(x => x.id !== v.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>Remove</button>
                               </div>
                             </div>
@@ -3750,17 +3881,108 @@ export default function Dashboard({ user, onLogout }) {
                   )}
 
                   <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 12, lineHeight: 1.5 }}>Manage who can access the Command Center. New sign-ups require approval from an admin.</div>
-                  {appSettings.authorizedUsers.map((email, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: "var(--bgInput)", borderRadius: 6, marginBottom: 4, border: "1px solid var(--borderSub)" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 13, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{email}</span>
-                        {(email === "billy@weareadptv.com" || email === "clancy@weareadptv.com") && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5 }}>OWNER</span>}
+                  {appSettings.authorizedUsers.map((email, i) => {
+                    const perms = getUserPerms(email);
+                    const ownerEmails = ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"];
+                    const isThisOwner = ownerEmails.includes(email);
+                    const isExpanded = editingUserPerms === email;
+                    return (
+                      <div key={i} style={{ marginBottom: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", background: isExpanded ? "var(--bgHover)" : "var(--bgInput)", borderRadius: isExpanded ? "6px 6px 0 0" : 6, border: `1px solid ${isExpanded ? "var(--borderActive)" : "var(--borderSub)"}`, borderBottom: isExpanded ? "none" : undefined }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                            <span style={{ fontSize: 12, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{email}</span>
+                            {isThisOwner ? (
+                              <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5, flexShrink: 0 }}>OWNER</span>
+                            ) : (
+                              <select value={perms.role} onChange={e => {
+                                const updated = { ...appSettings, userPermissions: { ...appSettings.userPermissions, [email]: { ...perms, role: e.target.value } } };
+                                setAppSettings(updated); setSettingsDirty(true);
+                              }} style={{ padding: "2px 6px", fontSize: 9, fontWeight: 700, borderRadius: 4, background: perms.role === "admin" ? "#ff6b4a10" : perms.role === "viewer" ? "#3da5db10" : "#4ecb7110", border: `1px solid ${perms.role === "admin" ? "#ff6b4a30" : perms.role === "viewer" ? "#3da5db30" : "#4ecb7130"}`, color: perms.role === "admin" ? "#ff6b4a" : perms.role === "viewer" ? "#3da5db" : "#4ecb71", cursor: "pointer", textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0 }}>
+                                {ROLE_OPTIONS.filter(r => r !== "owner").map(r => <option key={r} value={r}>{r}</option>)}
+                              </select>
+                            )}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                            {!isThisOwner && (
+                              <button onClick={() => setEditingUserPerms(isExpanded ? null : email)} style={{ padding: "3px 8px", background: "none", border: `1px solid ${isExpanded ? "var(--borderActive)" : "var(--borderSub)"}`, borderRadius: 4, color: isExpanded ? "#dba94e" : "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>
+                                {isExpanded ? "▾ Close" : "⚙ Access"}
+                              </button>
+                            )}
+                            {!isThisOwner && (
+                              <button onClick={() => { const updated = { ...appSettings, authorizedUsers: appSettings.authorizedUsers.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer", padding: "2px 6px" }}>✕</button>
+                            )}
+                          </div>
+                        </div>
+                        {/* Expanded permissions panel */}
+                        {isExpanded && !isThisOwner && (
+                          <div style={{ padding: "14px 16px", background: "var(--bgInput)", border: "1px solid var(--borderActive)", borderTop: "1px dashed var(--borderSub)", borderRadius: "0 0 6px 6px" }}>
+                            {/* Project Access */}
+                            <div style={{ marginBottom: 14 }}>
+                              <div style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.8, marginBottom: 8 }}>PROJECT ACCESS</div>
+                              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                                <button onClick={() => {
+                                  setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, projectAccess: "all" } } }));
+                                  setSettingsDirty(true);
+                                }} style={{ padding: "4px 10px", fontSize: 9, fontWeight: 600, borderRadius: 4, border: `1px solid ${perms.projectAccess === "all" ? "#4ecb7140" : "var(--borderSub)"}`, background: perms.projectAccess === "all" ? "#4ecb7112" : "transparent", color: perms.projectAccess === "all" ? "#4ecb71" : "var(--textFaint)", cursor: "pointer" }}>
+                                  All Projects
+                                </button>
+                                <button onClick={() => {
+                                  setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, projectAccess: [] } } }));
+                                  setSettingsDirty(true);
+                                }} style={{ padding: "4px 10px", fontSize: 9, fontWeight: 600, borderRadius: 4, border: `1px solid ${perms.projectAccess !== "all" ? "#dba94e40" : "var(--borderSub)"}`, background: perms.projectAccess !== "all" ? "#dba94e12" : "transparent", color: perms.projectAccess !== "all" ? "#dba94e" : "var(--textFaint)", cursor: "pointer" }}>
+                                  Specific Projects
+                                </button>
+                              </div>
+                              {perms.projectAccess !== "all" && (
+                                <div style={{ maxHeight: 160, overflowY: "auto", border: "1px solid var(--borderSub)", borderRadius: 6, padding: "6px 8px" }}>
+                                  {projects.filter(p => !p.archived).map(p => {
+                                    const checked = (perms.projectAccess || []).includes(p.id);
+                                    return (
+                                      <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 4px", fontSize: 10, color: "var(--textSub)", cursor: "pointer", borderRadius: 3 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                        <input type="checkbox" checked={checked} onChange={() => {
+                                          const current = perms.projectAccess || [];
+                                          const updated = checked ? current.filter(id => id !== p.id) : [...current, p.id];
+                                          setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, projectAccess: updated } } }));
+                                          setSettingsDirty(true);
+                                        }} style={{ accentColor: "#dba94e" }} />
+                                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                                        <span style={{ fontSize: 8, color: "var(--textGhost)", flexShrink: 0 }}>{p.client}</span>
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                            {/* Section Access */}
+                            <div>
+                              <div style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.8, marginBottom: 8 }}>SECTION VISIBILITY</div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {SECTION_OPTIONS.map(s => {
+                                  const hidden = (perms.hiddenSections || []).includes(s.key);
+                                  return (
+                                    <button key={s.key} onClick={() => {
+                                      const current = perms.hiddenSections || [];
+                                      const updated = hidden ? current.filter(k => k !== s.key) : [...current, s.key];
+                                      setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, hiddenSections: updated } } }));
+                                      setSettingsDirty(true);
+                                    }} style={{
+                                      padding: "4px 8px", fontSize: 9, fontWeight: 600, borderRadius: 4, cursor: "pointer",
+                                      background: hidden ? "#e8545410" : "#4ecb7112",
+                                      border: `1px solid ${hidden ? "#e8545425" : "#4ecb7130"}`,
+                                      color: hidden ? "#e85454" : "#4ecb71",
+                                    }}>
+                                      {hidden ? "✕" : "✓"} {s.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <div style={{ fontSize: 8, color: "var(--textGhost)", marginTop: 6 }}>Green = visible · Red = hidden for this user</div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      {email !== "billy@weareadptv.com" && email !== "clancy@weareadptv.com" && (
-                        <button onClick={() => { const updated = { ...appSettings, authorizedUsers: appSettings.authorizedUsers.filter((_, j) => j !== i) }; setAppSettings(updated); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "#e85454", fontSize: 14, cursor: "pointer", padding: "2px 6px" }}>✕</button>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
                     <input id="newUserEmail" type="email" placeholder="Add email address..." style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textSub)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }}
                       onKeyDown={(e) => {
@@ -4337,7 +4559,10 @@ export default function Dashboard({ user, onLogout }) {
               )}
             </div>
             <div style={{ padding: "8px 18px 12px", display: "flex", justifyContent: "space-between" }}>
-              <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); setContactPopover(null); }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); setContactPopover(null); }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
+                <button onClick={() => downloadVCard(c)} style={{ padding: "5px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇 Save</button>
+              </div>
               <button onClick={() => setContactPopover(null)} style={{ padding: "5px 12px", background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 10 }}>Close</button>
             </div>
           </div>
