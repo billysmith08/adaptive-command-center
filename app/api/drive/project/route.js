@@ -455,14 +455,8 @@ async function handleScanVendors(body) {
           vendors[gvf.name].globalFolderId = { [docType]: vendors[gvf.name].globalFolderId };
         }
         vendors[gvf.name].globalFolderId[docType] = gvf.id;
-      } else {
-        // Vendor only in global — add with doc status
-        vendors[gvf.name] = {
-          docs: { [docType]: globalDocs[docType] || null },
-          fileCount: files.length, folderId: gvf.id,
-          globalFolderId: { [docType]: gvf.id },
-        };
       }
+      // Skip vendors that only exist in global — they're not part of this project
     }
   }
 
