@@ -10,6 +10,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
 import Color from "@tiptap/extension-color";
 import TextStyle from "@tiptap/extension-text-style";
+import { CSV_CONTACTS } from "@/data/csvContacts";
 
 // ─── RICH TEXT EDITOR ────────────────────────────────────────────────────────
 
@@ -1033,7 +1034,7 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
 // ─── ADAPTIVE AT A GLANCE ──────────────────────────────────────────────────────────
 
 function MasterCalendar({ projects, workback, onSelectProject }) {
-  const [calView, setCalView] = useState("week");
+  const [calView, setCalView] = useState("month");
   const [navOffset, setNavOffset] = useState(0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split("T")[0];
@@ -1440,7 +1441,35 @@ export default function Dashboard({ user, onLogout }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
   const saveTimeoutRef = useRef(null);
-  const [projects, setProjects] = useState(initProjects);
+
+  // ─── LOCALSTORAGE PERSISTENCE ───────────────────────────────────
+  const loadLS = (key, fallback) => {
+    if (typeof window === 'undefined') return fallback;
+    try { const v = localStorage.getItem('acc-' + key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+  };
+  const saveLS = (key, value) => {
+    if (typeof window === 'undefined') return;
+    try { localStorage.setItem('acc-' + key, JSON.stringify(value)); } catch (e) { console.warn('LS save error:', key, e); }
+  };
+
+  // Expand CSV_CONTACTS compact format to full contact objects
+  const expandCSVContacts = () => CSV_CONTACTS.map(c => ({
+    id: c.id, name: c.nm, firstName: c.fn || "", lastName: c.ln || "",
+    phone: c.ph || "", email: c.em || "", company: c.co || "",
+    position: c.pos || "", department: "", address: "",
+    resourceType: c.rt || "", notes: c.nt || "", source: "csv",
+    contactCategory: c.cat || "", vendorName: c.vn || ""
+  }));
+
+  const systemContacts = [
+    { id: "ct_billy", name: "Billy Smith", firstName: "Billy", lastName: "Smith", phone: "+1 (310) 986-5581", email: "billy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: +1 (310) 853-3497 · Intl: +1 (424) 375-5699 · Personal: billysmith08@gmail.com · Home: 15 Wavecrest Ave, Venice CA 90291 · Office: 133 Horizon Ave, Venice CA 90291", source: "system", contactCategory: "" },
+    { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system", contactCategory: "" },
+    { id: "ct_eden", name: "Eden Sweeden", firstName: "Eden", lastName: "Sweeden", phone: "+1 (310) 625-2453", email: "eden@weareadptv.com", company: "Adaptive by Design", position: "", department: "", notes: "Personal: edenschroder@icloud.com · Birthday: January 8, 1989", source: "system", contactCategory: "" },
+  ];
+
+  const defaultContacts = [...systemContacts, ...expandCSVContacts()];
+
+  const [projects, setProjects] = useState(() => loadLS('projects', initProjects));
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('acc-theme');
@@ -1472,10 +1501,10 @@ export default function Dashboard({ user, onLogout }) {
 
   const toggleDarkMode = () => setDarkMode(m => { const next = !m; localStorage.setItem('acc-theme', next ? 'dark' : 'light'); return next; });
   const T = THEMES[darkMode ? "dark" : "light"];
-  const [activeProjectId, setActiveProjectId] = useState("p1");
-  const [activeTab, setActiveTab] = useState("calendar");
-  const [glanceTab, setGlanceTab] = useState("cal");
-  const [projectVendors, setProjectVendors] = useState({});
+  const [activeProjectId, setActiveProjectId] = useState(() => loadLS('activeProjectId', "p1"));
+  const [activeTab, setActiveTab] = useState(() => loadLS('activeTab', "calendar"));
+  const [glanceTab, setGlanceTab] = useState(() => loadLS('glanceTab', "cal"));
+  const [projectVendors, setProjectVendors] = useState(() => loadLS('projectVendors', {}));
   // Derive vendors for active project — all existing code keeps working
   const vendors = projectVendors[activeProjectId] || [];
   const setVendors = (updater) => {
@@ -1486,7 +1515,7 @@ export default function Dashboard({ user, onLogout }) {
   };
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
-  const [projectWorkback, setProjectWorkback] = useState({});
+  const [projectWorkback, setProjectWorkback] = useState(() => loadLS('projectWorkback', {}));
   const workback = projectWorkback[activeProjectId] || [];
   const setWorkback = (updater) => {
     setProjectWorkback(prev => ({
@@ -1495,7 +1524,7 @@ export default function Dashboard({ user, onLogout }) {
     }));
   };
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
-  const [projectROS, setProjectROS] = useState({});
+  const [projectROS, setProjectROS] = useState(() => loadLS('projectROS', {}));
   const ros = projectROS[activeProjectId] || [];
   const setROS = (updater) => {
     setProjectROS(prev => ({
@@ -1518,17 +1547,17 @@ export default function Dashboard({ user, onLogout }) {
   const [contextMenu, setContextMenu] = useState(null); // { x, y, projectId, projectName, archived }
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState("users");
-  const [appSettings, setAppSettings] = useState({
+  const [appSettings, setAppSettings] = useState(() => loadLS('appSettings', {
     authorizedUsers: ["billy@weareadptv.com", "clancy@weareadptv.com", "billysmith08@gmail.com"],
     pendingUsers: [],
-    userPermissions: {}, // { email: { role: "owner"|"admin"|"editor"|"viewer", projectAccess: "all"|[ids], hiddenSections: [] } }
+    userPermissions: {},
     driveConnections: [{ name: "ADMIN", folderId: "", serviceEmail: "command-center-drive@adaptive-command-center.iam.gserviceaccount.com" }],
     statuses: ["In-Production", "Pre-Production", "Wrap", "On-Hold", "Complete"],
     projectTypes: ["Brand Event", "Experiential", "Festival", "Internal", "Live Event", "Private Event", "Touring"],
     departments: [...DEPT_OPTIONS],
     resourceTypes: ["AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"],
     projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
-  });
+  }));
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [backupStatus, setBackupStatus] = useState(null);
@@ -1610,13 +1639,16 @@ export default function Dashboard({ user, onLogout }) {
   const [contactPopover, setContactPopover] = useState(null); // { contact, x, y }
   const [showAddContact, setShowAddContact] = useState(false);
   const [assignContactPopover, setAssignContactPopover] = useState(null); // { contactId, selectedProject, selectedRole }
-  const [contacts, setContacts] = useState([
-    { id: "ct_billy", name: "Billy Smith", firstName: "Billy", lastName: "Smith", phone: "+1 (310) 986-5581", email: "billy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: +1 (310) 853-3497 · Intl: +1 (424) 375-5699 · Personal: billysmith08@gmail.com · Home: 15 Wavecrest Ave, Venice CA 90291 · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
-    { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
-    { id: "ct_eden", name: "Eden Sweeden", firstName: "Eden", lastName: "Sweeden", phone: "+1 (310) 625-2453", email: "eden@weareadptv.com", company: "Adaptive by Design", position: "", department: "", notes: "Personal: edenschroder@icloud.com · Birthday: January 8, 1989", source: "system" },
-  ]);
+  const [contacts, setContacts] = useState(() => {
+    const saved = loadLS('contacts', null);
+    if (!saved) return defaultContacts;
+    // Migration: if saved contacts exist but no CSV contacts, merge them in
+    const hasCSV = saved.some(c => c.id && c.id.startsWith('ct_csv_'));
+    if (!hasCSV) return [...saved, ...expandCSVContacts()];
+    return saved;
+  });
   const [contactSearch, setContactSearch] = useState("");
-  const [todoistKey, setTodoistKey] = useState("564b99b7c52b83c83ab621c45b75787f65c6190a");
+  const [todoistKey, setTodoistKey] = useState(() => loadLS('todoistKey', "564b99b7c52b83c83ab621c45b75787f65c6190a"));
   const [todoistTasks, setTodoistTasks] = useState([]);
   const [todoistProjects, setTodoistProjects] = useState([]);
   const [todoistLoading, setTodoistLoading] = useState(false);
@@ -1632,7 +1664,9 @@ export default function Dashboard({ user, onLogout }) {
       ]);
       if (!tasksRes.ok) throw new Error("Invalid API key");
       setTodoistTasks(await tasksRes.json());
-      setTodoistProjects(await projsRes.json());
+      const projData = await projsRes.json();
+      console.log("Todoist projects:", projData.map(p => ({ id: p.id, name: p.name, parent_id: p.parent_id, workspace_id: p.workspace_id })));
+      setTodoistProjects(projData);
     } catch (e) { console.error("Todoist:", e); }
     setTodoistLoading(false);
   }, [todoistKey]);
@@ -1823,10 +1857,16 @@ export default function Dashboard({ user, onLogout }) {
 
   // Find ADPTV workspace/folder in Todoist to nest projects under
   const getAdptvParentId = () => {
-    // Check if ADPTV is a project (parent_id approach)
+    // Try exact match first (case-insensitive)
     const adptv = todoistProjects.find(p => (p.name || "").toUpperCase() === "ADPTV");
     if (adptv) return { parent_id: adptv.id };
-    // Check if existing CC-style projects share a parent_id or workspace_id
+    // Try partial match (contains "adptv" or "adaptive")
+    const partial = todoistProjects.find(p => {
+      const n = (p.name || "").toLowerCase();
+      return n.includes("adptv") || n.includes("adaptive");
+    });
+    if (partial) return { parent_id: partial.id };
+    // Check if existing CC-style projects (YY-MMDD format) share a parent_id
     const ccProject = todoistProjects.find(p => /^\d{2}-\d{4}/.test(p.name));
     if (ccProject?.parent_id) return { parent_id: ccProject.parent_id };
     if (ccProject?.workspace_id) return { workspace_id: ccProject.workspace_id };
@@ -2111,6 +2151,18 @@ export default function Dashboard({ user, onLogout }) {
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { if (todoistKey) todoistFetch(todoistKey); }, []);
+
+  // ─── LOCALSTORAGE PERSISTENCE ───────────────────────────────────
+  useEffect(() => { saveLS('projects', projects); }, [projects]);
+  useEffect(() => { saveLS('contacts', contacts); }, [contacts]);
+  useEffect(() => { saveLS('activeTab', activeTab); }, [activeTab]);
+  useEffect(() => { saveLS('activeProjectId', activeProjectId); }, [activeProjectId]);
+  useEffect(() => { saveLS('glanceTab', glanceTab); }, [glanceTab]);
+  useEffect(() => { saveLS('projectVendors', projectVendors); }, [projectVendors]);
+  useEffect(() => { saveLS('projectWorkback', projectWorkback); }, [projectWorkback]);
+  useEffect(() => { saveLS('projectROS', projectROS); }, [projectROS]);
+  useEffect(() => { saveLS('appSettings', appSettings); }, [appSettings]);
+  useEffect(() => { saveLS('todoistKey', todoistKey); }, [todoistKey]);
 
   // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
   // Load app settings (global)
@@ -3579,9 +3631,17 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Create Todoist Project</div>
                       <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6, marginBottom: 6 }}>Set up a Todoist project for this event to start tracking tasks.</div>
                       <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Project will be named: {project.code || project.name}</div>
-                      <div style={{ fontSize: 10, color: adptvParent.parent_id ? "#4ecb71" : adptvParent.workspace_id ? "#4ecb71" : "#dba94e", marginBottom: 16 }}>
+                      <div style={{ fontSize: 10, color: adptvParent.parent_id ? "#4ecb71" : adptvParent.workspace_id ? "#4ecb71" : "#dba94e", marginBottom: 8 }}>
                         {adptvParent.parent_id ? "✓ Will be created under ADPTV" : adptvParent.workspace_id ? "✓ Will be created in ADPTV workspace" : "⚠ ADPTV parent not found — will create at root level"}
                       </div>
+                      <details style={{ marginBottom: 16, textAlign: "left" }}>
+                        <summary style={{ fontSize: 9, color: "var(--textGhost)", cursor: "pointer" }}>Debug: {todoistProjects.length} Todoist projects loaded</summary>
+                        <div style={{ maxHeight: 120, overflowY: "auto", padding: "6px 8px", background: "var(--bgInput)", borderRadius: 6, marginTop: 4, fontSize: 9, fontFamily: "'JetBrains Mono', monospace", color: "var(--textFaint)", lineHeight: 1.6 }}>
+                          {todoistProjects.map(p => (
+                            <div key={p.id}>{p.name} <span style={{ color: "var(--textGhost)" }}>id:{p.id} parent:{p.parent_id || "none"}</span></div>
+                          ))}
+                        </div>
+                      </details>
                       {(project.producers?.length > 0 || project.managers?.length > 0 || (project.staff || []).length > 0) && (
                         <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 16 }}>
                           Team members with emails on file will be auto-invited as collaborators.
@@ -5051,15 +5111,18 @@ export default function Dashboard({ user, onLogout }) {
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME</label><input value={contactForm.firstName} onChange={e => updateCF("firstName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME</label><input value={contactForm.lastName} onChange={e => updateCF("lastName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: contactForm.contactCategory === "Client" ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>POSITION / TITLE</label><input value={contactForm.position} onChange={e => updateCF("position", e.target.value)} placeholder="Executive Producer, DP, PM..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                {contactForm.contactCategory !== "Client" && (
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
                   <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                     <option value="">Select...</option>
                     {[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort().map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
+                )}
               </div>
+              {contactForm.contactCategory !== "Client" && (
               <div style={{ marginBottom: 14 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
                 <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
@@ -5067,6 +5130,7 @@ export default function Dashboard({ user, onLogout }) {
                   {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map(rt => <option key={rt} value={rt}>{rt}</option>)}
                 </select>
               </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><PhoneWithCode value={contactForm.phone} onChange={v => updateCF("phone", v)} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={contactForm.email} onChange={e => updateCF("email", e.target.value)} placeholder="name@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
