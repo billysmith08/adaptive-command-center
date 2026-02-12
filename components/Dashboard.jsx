@@ -1460,6 +1460,7 @@ export default function Dashboard({ user, onLogout }) {
   const T = THEMES[darkMode ? "dark" : "light"];
   const [activeProjectId, setActiveProjectId] = useState("p1");
   const [activeTab, setActiveTab] = useState("calendar");
+  const [glanceTab, setGlanceTab] = useState("cal");
   const [projectVendors, setProjectVendors] = useState({});
   // Derive vendors for active project — all existing code keeps working
   const vendors = projectVendors[activeProjectId] || [];
@@ -2472,11 +2473,6 @@ export default function Dashboard({ user, onLogout }) {
               ✅ Todoist {todoistTasks.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{todoistTasks.length}</span>}
             </button>
           )}
-          {canSeeSection("macroView") && isAdmin && (
-            <button onClick={() => setActiveTab("macro")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "macro" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
-              📋 Macro View
-            </button>
-          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Settings gear (admin only) */}
@@ -2608,7 +2604,7 @@ export default function Dashboard({ user, onLogout }) {
                       const sw = swipeState[p.id];
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
-                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" || activeTab === "macro") setActiveTab("overview");
+                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" ) setActiveTab("overview");
                     }}
                     style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
@@ -2651,7 +2647,7 @@ export default function Dashboard({ user, onLogout }) {
         {/* MAIN */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "16px 28px 0" }}>
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "macro" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -2669,7 +2665,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
               </div>
             )}
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "macro" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
@@ -2684,14 +2680,232 @@ export default function Dashboard({ user, onLogout }) {
 
           <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 40px" }}>
 
-            {/* ═══ ADAPTIVE AT A GLANCE ═══ */}
+            {/* ═══ ADAPTIVE AT A GLANCE (3 tabs) ═══ */}
             {activeTab === "calendar" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL PROJECTS</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Adaptive at a Glance</div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL PROJECTS</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Adaptive at a Glance</div>
+                  </div>
                 </div>
-                <MasterCalendar projects={projects} workback={workback} onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }} />
+                {/* Sub-tabs */}
+                <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid var(--borderSub)" }}>
+                  {[{ key: "cal", label: "📅 Cal View" }, { key: "macro", label: "📋 Macro View" }, { key: "masterWB", label: "◄ Master Work Back" }].map(t => (
+                    <button key={t.key} onClick={() => setGlanceTab(t.key)} style={{ background: "none", border: "none", borderBottom: glanceTab === t.key ? "2px solid #ff6b4a" : "2px solid transparent", marginBottom: -2, cursor: "pointer", fontSize: 12, fontWeight: 600, color: glanceTab === t.key ? "#ff6b4a" : "var(--textFaint)", padding: "8px 18px", transition: "all 0.15s", letterSpacing: 0.3 }}>{t.label}</button>
+                  ))}
+                </div>
+
+                {/* ── Cal View ── */}
+                {glanceTab === "cal" && (
+                  <MasterCalendar projects={projects} workback={workback} onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }} />
+                )}
+
+                {/* ── Macro View ── */}
+                {glanceTab === "macro" && (
+                  <div>
+                    {/* Dashboard stats */}
+                    {(() => {
+                      const activeProjects = projects.filter(p => !p.archived && p.status !== "Complete");
+                      const today = new Date(); today.setHours(0, 0, 0, 0);
+                      const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
+                      const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => items.map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
+                      const overdueWB = allWB.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today);
+                      const dueThisWeek = allWB.filter(w => {
+                        if (!w.date || w.status === "Done") return false;
+                        const d = new Date(w.date + "T12:00:00");
+                        return d >= today && d <= weekFromNow;
+                      });
+                      const allVendors = Object.values(projectVendors).flat();
+                      const totalCompItems = allVendors.length * 5;
+                      const doneCompItems = allVendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
+                      const compPct = totalCompItems > 0 ? Math.round((doneCompItems / totalCompItems) * 100) : 0;
+                      const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
+                      const totalSpent = projects.reduce((s, p) => s + (p.spent || 0), 0);
+                      const upcoming = projects.filter(p => {
+                        if (p.archived || p.status === "Complete") return false;
+                        const d = p.eventDates?.start;
+                        if (!d) return false;
+                        const evtDate = new Date(d + "T12:00:00");
+                        return evtDate >= today && evtDate <= new Date(today.getTime() + 30 * 86400000);
+                      });
+
+                      return (
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 22 }}>
+                          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>ACTIVE PROJECTS</div>
+                            <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>{activeProjects.length}</div>
+                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{upcoming.length} event{upcoming.length !== 1 ? "s" : ""} in next 30 days</div>
+                          </div>
+                          <div style={{ background: overdueWB.length > 0 ? "#e854540a" : "var(--bgInput)", border: `1px solid ${overdueWB.length > 0 ? "#e8545430" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
+                            <div style={{ fontSize: 9, color: overdueWB.length > 0 ? "#e85454" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>OVERDUE TASKS</div>
+                            <div style={{ fontSize: 28, fontWeight: 700, color: overdueWB.length > 0 ? "#e85454" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{overdueWB.length}</div>
+                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{overdueWB.length > 0 ? `across ${new Set(overdueWB.map(w => w._pid)).size} project${new Set(overdueWB.map(w => w._pid)).size !== 1 ? "s" : ""}` : "all on track ✓"}</div>
+                          </div>
+                          <div style={{ background: dueThisWeek.length > 0 ? "#f5a6230a" : "var(--bgInput)", border: `1px solid ${dueThisWeek.length > 0 ? "#f5a62330" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
+                            <div style={{ fontSize: 9, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>DUE THIS WEEK</div>
+                            <div style={{ fontSize: 28, fontWeight: 700, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{dueThisWeek.length}</div>
+                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{dueThisWeek.length > 0 ? dueThisWeek.slice(0, 2).map(w => w.task || "untitled").join(", ") : "clear week"}</div>
+                          </div>
+                          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>VENDOR COMPLIANCE</div>
+                            <div style={{ fontSize: 28, fontWeight: 700, color: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", fontFamily: "'Instrument Sans'" }}>{compPct}%</div>
+                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{doneCompItems}/{totalCompItems} docs collected</div>
+                            <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${compPct}%`, background: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", borderRadius: 2, transition: "width 0.5s" }} />
+                            </div>
+                          </div>
+                          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>TOTAL BUDGET</div>
+                            <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>${totalBudget > 999999 ? `${(totalBudget / 1000000).toFixed(1)}M` : totalBudget > 999 ? `${(totalBudget / 1000).toFixed(0)}K` : totalBudget.toLocaleString()}</div>
+                            <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>${totalSpent.toLocaleString()} spent ({totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0}%)</div>
+                            {totalBudget > 0 && <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${Math.min(100, (totalSpent / totalBudget) * 100)}%`, background: (totalSpent / totalBudget) > 0.9 ? "#e85454" : (totalSpent / totalBudget) > 0.7 ? "#f5a623" : "#4ecb71", borderRadius: 2, transition: "width 0.5s" }} />
+                            </div>}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* Macro table */}
+                    <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                      <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
+                        <thead>
+                          <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
+                            {["Project", "Status", "Date(s)", "Client", "Project Type", "Location", "Producer(s)", "Manager(s)", "Services Needed", "Brief", "Project Code"].map(h => (
+                              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", position: "sticky", top: 0, background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...projects].sort((a, b) => {
+                            const da = a.eventDates?.start || a.engagementDates?.start || "9999";
+                            const db = b.eventDates?.start || b.engagementDates?.start || "9999";
+                            return da.localeCompare(db);
+                          }).map(p => {
+                            const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
+                            const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
+                            const dateStr = (() => {
+                              const s = p.eventDates?.start; const e = p.eventDates?.end;
+                              if (!s) return "–";
+                              const fmt2 = d => { const dt = new Date(d + "T12:00:00"); return `${dt.toLocaleDateString("en-US", { month: "short" })} ${dt.getDate()} '${dt.getFullYear().toString().slice(2)}`; };
+                              return e && e !== s ? `${fmt2(s)} - ${fmt2(e)}` : fmt2(s);
+                            })();
+                            return (
+                              <tr key={p.id} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ borderBottom: "1px solid var(--calLine)", cursor: "pointer", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</td>
+                                <td style={{ padding: "10px 12px" }}>
+                                  <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: sc.bg, color: sc.text, whiteSpace: "nowrap" }}>{p.status}</span>
+                                </td>
+                                <td style={{ padding: "10px 12px", color: "var(--textSub)", whiteSpace: "nowrap", fontSize: 10 }}>{dateStr}</td>
+                                <td style={{ padding: "10px 12px", color: "var(--textSub)", whiteSpace: "nowrap" }}>{p.client || "–"}</td>
+                                <td style={{ padding: "10px 12px" }}>
+                                  {p.projectType ? <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: ptc + "18", color: ptc, border: `1px solid ${ptc}30`, whiteSpace: "nowrap" }}>{p.projectType}</span> : <span style={{ color: "var(--textGhost)" }}>–</span>}
+                                </td>
+                                <td style={{ padding: "10px 12px", color: "var(--textFaint)", whiteSpace: "nowrap", fontSize: 10 }}>{p.location || "–"}</td>
+                                <td style={{ padding: "10px 12px", color: "var(--textSub)", fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.producers?.length ? p.producers.join(", ") : "–"}</td>
+                                <td style={{ padding: "10px 12px", color: "var(--textSub)", fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.managers?.length ? p.managers.join(", ") : "–"}</td>
+                                <td style={{ padding: "10px 12px" }}>
+                                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                                    {(p.services || []).map((s, i) => (
+                                      <span key={i} style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: "#3da5db15", color: "#3da5db", fontWeight: 600, whiteSpace: "nowrap", border: "1px solid #3da5db20" }}>{s}</span>
+                                    ))}
+                                    {(!p.services || p.services.length === 0) && <span style={{ color: "var(--textGhost)" }}>–</span>}
+                                  </div>
+                                </td>
+                                <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.why || "–"}</td>
+                                <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{p.code || "–"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Master Work Back ── */}
+                {glanceTab === "masterWB" && (() => {
+                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => items.map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
+                  const sorted = [...allWB].sort((a, b) => {
+                    if (!a.date && !b.date) return 0;
+                    if (!a.date) return 1;
+                    if (!b.date) return -1;
+                    return a.date.localeCompare(b.date);
+                  });
+                  const today = new Date(); today.setHours(0, 0, 0, 0);
+                  const overdue = sorted.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today).length;
+                  const inProgress = sorted.filter(w => w.status === "In Progress").length;
+                  const done = sorted.filter(w => w.status === "Done").length;
+                  const total = sorted.length;
+
+                  return (
+                    <div>
+                      {/* Summary bar */}
+                      <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, fontSize: 11 }}>
+                          <span style={{ color: "var(--textFaint)", fontWeight: 600 }}>Total:</span>
+                          <span style={{ fontWeight: 700, color: "var(--text)" }}>{total}</span>
+                        </div>
+                        {overdue > 0 && <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "#e854540a", border: "1px solid #e8545425", borderRadius: 8, fontSize: 11 }}>
+                          <span style={{ color: "#e85454", fontWeight: 600 }}>Overdue:</span>
+                          <span style={{ fontWeight: 700, color: "#e85454" }}>{overdue}</span>
+                        </div>}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "#3da5db0a", border: "1px solid #3da5db25", borderRadius: 8, fontSize: 11 }}>
+                          <span style={{ color: "#3da5db", fontWeight: 600 }}>In Progress:</span>
+                          <span style={{ fontWeight: 700, color: "#3da5db" }}>{inProgress}</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "#4ecb710a", border: "1px solid #4ecb7125", borderRadius: 8, fontSize: 11 }}>
+                          <span style={{ color: "#4ecb71", fontWeight: 600 }}>Done:</span>
+                          <span style={{ fontWeight: 700, color: "#4ecb71" }}>{done}</span>
+                        </div>
+                      </div>
+                      {/* Table */}
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "100px 1.5fr 2fr 1.2fr 1fr 1fr", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                          <span>DATE</span><span>PROJECT</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span>
+                        </div>
+                        {sorted.length === 0 && <div style={{ padding: 30, textAlign: "center", color: "var(--textGhost)", fontSize: 12 }}>No work back items across any projects yet.</div>}
+                        {sorted.map((wb) => {
+                          const wbDeadlineStyle = (() => {
+                            if (!wb.date || wb.status === "Done") return { borderLeft: "3px solid transparent", bg: wb.status === "Done" ? "var(--bgCard)" : "transparent" };
+                            const dueDate = new Date(wb.date + "T23:59:59");
+                            const daysUntil = Math.ceil((dueDate - today) / 86400000);
+                            if (daysUntil < 0) return { borderLeft: "3px solid #e85454", bg: "#e854540a" };
+                            if (daysUntil <= 7) return { borderLeft: "3px solid #f5a623", bg: "#f5a6230a" };
+                            return { borderLeft: "3px solid #4ecb7130", bg: "transparent" };
+                          })();
+                          const overdueLabel = (() => {
+                            if (!wb.date || wb.status === "Done") return null;
+                            const dueDate = new Date(wb.date + "T23:59:59");
+                            const daysUntil = Math.ceil((dueDate - today) / 86400000);
+                            if (daysUntil < 0) return { text: `${Math.abs(daysUntil)}d overdue`, color: "#e85454" };
+                            if (daysUntil === 0) return { text: "due today", color: "#f5a623" };
+                            if (daysUntil <= 7) return { text: `${daysUntil}d left`, color: "#f5a623" };
+                            return null;
+                          })();
+                          const wbSC = WB_STATUS_STYLES[wb.status] || { bg: "var(--bgCard)", text: "var(--textFaint)" };
+                          return (
+                            <div key={wb._pid + wb.id} style={{ display: "grid", gridTemplateColumns: "100px 1.5fr 2fr 1.2fr 1fr 1fr", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wbDeadlineStyle.bg, borderLeft: wbDeadlineStyle.borderLeft, cursor: "pointer", transition: "background 0.1s" }} onClick={() => { setActiveProjectId(wb._pid); setActiveTab("workback"); }} onMouseEnter={e => { if (!wbDeadlineStyle.bg || wbDeadlineStyle.bg === "transparent") e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => { e.currentTarget.style.background = wbDeadlineStyle.bg || "transparent"; }}>
+                              <div>
+                                <div style={{ fontSize: 11, color: "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{wb.date ? (() => { const d = new Date(wb.date + "T12:00:00"); return `${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getDate().toString().padStart(2,"0")}`; })() : "–"}</div>
+                                {overdueLabel && <div style={{ fontSize: 8, fontWeight: 700, color: overdueLabel.color, marginTop: 2 }}>{overdueLabel.text}</div>}
+                              </div>
+                              <div style={{ fontSize: 11, fontWeight: 600, color: "#ff6b4a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{wb._pName}</div>
+                              <div style={{ fontSize: 11, color: wb.status === "Done" ? "var(--textGhost)" : "var(--text)", fontWeight: 500, textDecoration: wb.status === "Done" ? "line-through" : "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{wb.task || "–"}</div>
+                              <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                                {(wb.depts || []).map((d, i) => (
+                                  <span key={i} style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: (DEPT_COLORS[d] || "var(--textMuted)") + "18", color: DEPT_COLORS[d] || "var(--textMuted)", fontWeight: 600, whiteSpace: "nowrap" }}>{d}</span>
+                                ))}
+                              </div>
+                              <div style={{ fontSize: 10, color: "var(--textSub)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{wb.owner || "–"}</div>
+                              <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: wbSC.bg, color: wbSC.text, whiteSpace: "nowrap", display: "inline-block" }}>{wb.status || "Not Started"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -3001,150 +3215,6 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             )}
 
-            {/* ═══ MACRO PROJECT VIEW ═══ */}
-            {activeTab === "macro" && (
-              <div style={{ animation: "fadeUp 0.3s ease" }}>
-                {/* ── DASHBOARD STATS ── */}
-                {(() => {
-                  const activeProjects = projects.filter(p => !p.archived && p.status !== "Complete");
-                  const today = new Date(); today.setHours(0, 0, 0, 0);
-                  const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
-                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => items.map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
-                  const overdueWB = allWB.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today);
-                  const dueThisWeek = allWB.filter(w => {
-                    if (!w.date || w.status === "Done") return false;
-                    const d = new Date(w.date + "T12:00:00");
-                    return d >= today && d <= weekFromNow;
-                  });
-                  const allVendors = Object.values(projectVendors).flat();
-                  const totalCompItems = allVendors.length * 5;
-                  const doneCompItems = allVendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
-                  const compPct = totalCompItems > 0 ? Math.round((doneCompItems / totalCompItems) * 100) : 0;
-                  const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
-                  const totalSpent = projects.reduce((s, p) => s + (p.spent || 0), 0);
-                  const upcoming = projects.filter(p => {
-                    if (p.archived || p.status === "Complete") return false;
-                    const d = p.eventDates?.start;
-                    if (!d) return false;
-                    const evtDate = new Date(d + "T12:00:00");
-                    return evtDate >= today && evtDate <= new Date(today.getTime() + 30 * 86400000);
-                  });
-
-                  return (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 22 }}>
-                      {/* Active Projects */}
-                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
-                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>ACTIVE PROJECTS</div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>{activeProjects.length}</div>
-                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{upcoming.length} event{upcoming.length !== 1 ? "s" : ""} in next 30 days</div>
-                      </div>
-                      {/* Overdue Items */}
-                      <div style={{ background: overdueWB.length > 0 ? "#e854540a" : "var(--bgInput)", border: `1px solid ${overdueWB.length > 0 ? "#e8545430" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
-                        <div style={{ fontSize: 9, color: overdueWB.length > 0 ? "#e85454" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>OVERDUE TASKS</div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: overdueWB.length > 0 ? "#e85454" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{overdueWB.length}</div>
-                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{overdueWB.length > 0 ? `across ${new Set(overdueWB.map(w => w._pid)).size} project${new Set(overdueWB.map(w => w._pid)).size !== 1 ? "s" : ""}` : "all on track ✓"}</div>
-                      </div>
-                      {/* Due This Week */}
-                      <div style={{ background: dueThisWeek.length > 0 ? "#f5a6230a" : "var(--bgInput)", border: `1px solid ${dueThisWeek.length > 0 ? "#f5a62330" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
-                        <div style={{ fontSize: 9, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>DUE THIS WEEK</div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{dueThisWeek.length}</div>
-                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{dueThisWeek.length > 0 ? dueThisWeek.slice(0, 2).map(w => w.task || "untitled").join(", ") : "clear week"}</div>
-                      </div>
-                      {/* Vendor Compliance */}
-                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
-                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>VENDOR COMPLIANCE</div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", fontFamily: "'Instrument Sans'" }}>{compPct}%</div>
-                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{doneCompItems}/{totalCompItems} docs collected</div>
-                        <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${compPct}%`, background: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", borderRadius: 2, transition: "width 0.5s" }} />
-                        </div>
-                      </div>
-                      {/* Total Budget */}
-                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
-                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>TOTAL BUDGET</div>
-                        <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>${totalBudget > 999999 ? `${(totalBudget / 1000000).toFixed(1)}M` : totalBudget > 999 ? `${(totalBudget / 1000).toFixed(0)}K` : totalBudget.toLocaleString()}</div>
-                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>${totalSpent.toLocaleString()} spent ({totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0}%)</div>
-                        {totalBudget > 0 && <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${Math.min(100, (totalSpent / totalBudget) * 100)}%`, background: (totalSpent / totalBudget) > 0.9 ? "#e85454" : (totalSpent / totalBudget) > 0.7 ? "#f5a623" : "#4ecb71", borderRadius: 2, transition: "width 0.5s" }} />
-                        </div>}
-                      </div>
-                    </div>
-                  );
-                })()}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <div>
-                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL PROJECTS</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Macro Project View</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: "var(--textGhost)" }}>{projects.length} projects</span>
-                  </div>
-                </div>
-                <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
-                  <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
-                    <thead>
-                      <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
-                        {["Project", "Status", "Date(s)", "Client", "Project Type", "Location", "Producer(s)", "Manager(s)", "Services Needed", "Brief", "Project Code"].map(h => (
-                          <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", position: "sticky", top: 0, background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...projects].sort((a, b) => {
-                        const da = a.eventDates?.start || a.engagementDates?.start || "9999";
-                        const db = b.eventDates?.start || b.engagementDates?.start || "9999";
-                        return da.localeCompare(db);
-                      }).map(p => {
-                        const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
-                        const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
-                        const dateStr = (() => {
-                          const s = p.eventDates?.start; const e = p.eventDates?.end;
-                          if (!s) return "–";
-                          const fmt2 = d => { const dt = new Date(d + "T12:00:00"); return `${dt.toLocaleDateString("en-US", { month: "short" })} ${dt.getDate()} '${dt.getFullYear().toString().slice(2)}`; };
-                          return e && e !== s ? `${fmt2(s)} - ${fmt2(e)}` : fmt2(s);
-                        })();
-                        const projRef = (() => {
-                          if (!p.code) return "–";
-                          const parts = p.code.split("-");
-                          return parts.length >= 4 ? parts.slice(3, -1).join("-") : "–";
-                        })();
-                        const locRef = (() => {
-                          if (!p.code) return "–";
-                          const parts = p.code.split("-");
-                          return parts[parts.length - 1] || "–";
-                        })();
-                        return (
-                          <tr key={p.id} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ borderBottom: "1px solid var(--calLine)", cursor: "pointer", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                            <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</td>
-                            <td style={{ padding: "10px 12px" }}>
-                              <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: sc.bg, color: sc.text, whiteSpace: "nowrap" }}>{p.status}</span>
-                            </td>
-                            <td style={{ padding: "10px 12px", color: "var(--textSub)", whiteSpace: "nowrap", fontSize: 10 }}>{dateStr}</td>
-                            <td style={{ padding: "10px 12px", color: "var(--textSub)", whiteSpace: "nowrap" }}>{p.client || "–"}</td>
-                            <td style={{ padding: "10px 12px" }}>
-                              {p.projectType ? <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: ptc + "18", color: ptc, border: `1px solid ${ptc}30`, whiteSpace: "nowrap" }}>{p.projectType}</span> : <span style={{ color: "var(--textGhost)" }}>–</span>}
-                            </td>
-                            <td style={{ padding: "10px 12px", color: "var(--textFaint)", whiteSpace: "nowrap", fontSize: 10 }}>{p.location || "–"}</td>
-                            <td style={{ padding: "10px 12px", color: "var(--textSub)", fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.producers?.length ? p.producers.join(", ") : "–"}</td>
-                            <td style={{ padding: "10px 12px", color: "var(--textSub)", fontSize: 10, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.managers?.length ? p.managers.join(", ") : "–"}</td>
-                            <td style={{ padding: "10px 12px" }}>
-                              <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                                {(p.services || []).map((s, i) => (
-                                  <span key={i} style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: "#3da5db15", color: "#3da5db", fontWeight: 600, whiteSpace: "nowrap", border: "1px solid #3da5db20" }}>{s}</span>
-                                ))}
-                                {(!p.services || p.services.length === 0) && <span style={{ color: "var(--textGhost)" }}>–</span>}
-                              </div>
-                            </td>
-                            <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.why || "–"}</td>
-                            <td style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{p.code || "–"}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
 
             {/* ═══ OVERVIEW ═══ */}
             {activeTab === "overview" && (
