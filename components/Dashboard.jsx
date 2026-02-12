@@ -794,7 +794,7 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
               </select>
               <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
                 <input type="checkbox" id="atpSaveGlobal" defaultChecked style={{ accentColor: "#ff6b4a" }} />
-                <label htmlFor="atpSaveGlobal" style={{ fontSize: 10, color: "var(--textFaint)" }}>Also save to Global Contacts</label>
+                <label htmlFor="atpSaveGlobal" style={{ fontSize: 10, color: "var(--textFaint)" }}>Also save to Global Partners</label>
               </div>
               <button onClick={() => {
                 const saveGlobal = document.getElementById("atpSaveGlobal")?.checked;
@@ -813,30 +813,43 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
   );
 }
 
-function ClientSearchInput({ value, onChange, projects }) {
+function ClientSearchInput({ value, onChange, projects, clients, onAddNew }) {
   const [clientOpen, setClientOpen] = useState(false);
   const clientRef = useRef(null);
   useEffect(() => { const h = (e) => { if (clientRef.current && !clientRef.current.contains(e.target)) setClientOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
-  const existingClients = [...new Set(projects.map(p => p.client).filter(Boolean))].sort();
+  // Merge: clients from Clients tab + any project-level client names not in Clients tab
+  const clientNames = [...new Set([...(clients || []).map(c => c.name), ...projects.map(p => p.client).filter(Boolean)])].sort();
   const q = value.toLowerCase();
-  const filteredClients = existingClients.filter(c => c.toLowerCase().includes(q));
-  const exactMatch = existingClients.some(c => c.toLowerCase() === q);
+  const filteredClients = clientNames.filter(c => c.toLowerCase().includes(q));
+  const exactMatch = clientNames.some(c => c.toLowerCase() === q);
   return (
     <div ref={clientRef} style={{ position: "relative" }}>
       <input value={value} onChange={e => { onChange(e.target.value); setClientOpen(true); }} onFocus={() => setClientOpen(true)} placeholder="Search or add new client..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} />
-      {clientOpen && (filteredClients.length > 0 || (q && !exactMatch)) && (
-        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 2, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 70, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
+      {clientOpen && (filteredClients.length > 0 || (q && !exactMatch) || onAddNew) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 2, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 70, overflow: "hidden", maxHeight: 240, overflowY: "auto" }}>
+          {onAddNew && (
+            <div onClick={() => { onAddNew(); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 11, color: "#3da5db", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ fontSize: 13, fontWeight: 700 }}>+</span> New Client
+            </div>
+          )}
           {q && !exactMatch && (
             <div onClick={() => { setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 11, color: "#ff6b4a", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>+</span> Add "{value}" as new client
             </div>
           )}
-          {filteredClients.map(c => (
-            <div key={c} onClick={() => { onChange(c); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              <span style={{ fontWeight: 600, color: "var(--text)" }}>{c}</span>
-              <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{projects.filter(p => p.client === c).length} project{projects.filter(p => p.client === c).length !== 1 ? "s" : ""}</span>
-            </div>
-          ))}
+          {filteredClients.map(c => {
+            const clientObj = (clients || []).find(cl => cl.name === c);
+            const projectCount = projects.filter(p => p.client === c).length;
+            return (
+              <div key={c} onClick={() => { onChange(c); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <div>
+                  <span style={{ fontWeight: 600, color: "var(--text)" }}>{c}</span>
+                  {clientObj?.code && <span style={{ marginLeft: 6, fontSize: 9, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{clientObj.code}</span>}
+                </div>
+                <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{projectCount > 0 ? `${projectCount} project${projectCount !== 1 ? "s" : ""}` : "client"}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -1472,6 +1485,15 @@ export default function Dashboard({ user, onLogout }) {
   };
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   const [selectedContacts, setSelectedContacts] = useState(new Set());
+  // ─── CLIENTS (COMPANY-LEVEL) ────────────────────────────────────
+  const [clients, setClients] = useState([]);
+  const [selectedClientIds, setSelectedClientIds] = useState(new Set());
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
+  const emptyClient = { name: "", code: "", attributes: [], address: "", city: "", state: "", zip: "", country: "", website: "", email: "", phone: "", billingContact: "", billingEmail: "", billingEmailSame: false, billingAddress: "", billingAddressSame: false, contactNames: [], projects: [], notes: "" };
+  const [clientForm, setClientForm] = useState({ ...emptyClient });
+  const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
+  const CLIENT_ATTRIBUTES = [...new Set(["Agency", "Artist", "Audio", "Backline", "Brand", "CAD", "Candles", "Corporate", "Creative Director", "Drawings", "Experiential", "Fabrication & Scenic", "Furniture Rentals", "Individual", "LD", "Lighting", "Management", "PR", "Photo Booth", "Producer", "Production General", "Production Manager", "Promoter", "Record Label", "Site Operations", "Sponsorship", "Video", "AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Floral", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"])].sort();
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
   const [projectWorkback, setProjectWorkback] = useState({});
   const workback = projectWorkback[activeProjectId] || [];
@@ -1555,7 +1577,7 @@ export default function Dashboard({ user, onLogout }) {
     { key: "drive", label: "Drive" },
     { key: "vendors", label: "Contractors/Vendors" },
     { key: "eventContacts", label: "Event Contacts" },
-    { key: "globalContacts", label: "Global Contacts" },
+    { key: "globalContacts", label: "Global Partners" },
     { key: "todoist", label: "Todoist" },
     { key: "macroView", label: "Macro View" },
     { key: "settings", label: "Settings" },
@@ -1756,7 +1778,168 @@ export default function Dashboard({ user, onLogout }) {
     e.target.value = "";
   };
 
-  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual" };
+  // ─── CLIENTS CSV IMPORT (ALL_COMPANIES format) ─────────────────
+  const handleClientsCSVUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target.result.replace(/^\uFEFF/, "");
+      const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return;
+      const parseCSVRow = (row) => {
+        const result = []; let current = ""; let inQuotes = false;
+        for (let i = 0; i < row.length; i++) {
+          if (row[i] === '"') { inQuotes = !inQuotes; }
+          else if (row[i] === ',' && !inQuotes) { result.push(current.trim()); current = ""; }
+          else { current += row[i]; }
+        }
+        result.push(current.trim());
+        return result;
+      };
+      const headers = parseCSVRow(lines[0]).map(h => h.toLowerCase().replace(/['"]/g, ""));
+      const idx = (patterns) => headers.findIndex(h => patterns.some(p => h.includes(p)));
+      const nameI = idx(["company name"]);
+      const codeI = idx(["company code"]);
+      const typeI = idx(["company type"]);
+      const relI = idx(["relationship"]);
+      const attrI = idx(["attributes"]);
+      const locI = idx(["location"]);
+      const contactsI = idx(["company contact"]);
+      const webI = idx(["website"]);
+      const billContactI = idx(["billing contact"]);
+      const billPhoneI = idx(["phone (from billing"]);
+      const billEmailI = idx(["email (from billing"]);
+      const addrI = idx(["company address combined"]);
+      const streetI = idx(["company address"]);
+      const cityI = idx(["company city"]);
+      const stateI = idx(["company state"]);
+      const zipI = idx(["company zip"]);
+      const countryI = idx(["company country"]);
+      const clientProjI = idx(["client of project"]);
+      const vendorProjI = idx(["vendor of project"]);
+      const newClients = [];
+      const newContacts = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = parseCSVRow(lines[i]);
+        const name = nameI >= 0 ? (cols[nameI] || "").trim() : "";
+        if (!name) continue;
+        // Filter: only clients (Customers / Clients or Customer relationship)
+        const compType = typeI >= 0 ? (cols[typeI] || "") : "";
+        const rel = relI >= 0 ? (cols[relI] || "") : "";
+        const isClient = compType.toLowerCase().includes("client") || compType.toLowerCase().includes("customer") || rel.toLowerCase().includes("customer");
+        if (!isClient) continue;
+        const phone = (billPhoneI >= 0 ? (cols[billPhoneI] || "") : "").replace(/^'+/, "");
+        const email = billEmailI >= 0 ? (cols[billEmailI] || "") : "";
+        const billingContact = billContactI >= 0 ? (cols[billContactI] || "") : "";
+        const website = webI >= 0 ? (cols[webI] || "") : "";
+        const address = addrI >= 0 ? (cols[addrI] || "") : "";
+        const street = streetI >= 0 ? (cols[streetI] || "") : "";
+        const city = cityI >= 0 ? (cols[cityI] || "") : "";
+        const state = stateI >= 0 ? (cols[stateI] || "") : "";
+        const zip = zipI >= 0 ? (cols[zipI] || "") : "";
+        const country = countryI >= 0 ? (cols[countryI] || "") : "";
+        const code = codeI >= 0 ? (cols[codeI] || "") : "";
+        const attrs = attrI >= 0 ? (cols[attrI] || "").split(",").map(a => a.trim()).filter(Boolean) : [];
+        const location = locI >= 0 ? (cols[locI] || "") : "";
+        const contactNames = contactsI >= 0 ? (cols[contactsI] || "").split(",").map(n => n.trim()).filter(Boolean) : [];
+        const clientProjects = clientProjI >= 0 ? (cols[clientProjI] || "").split(",").map(p => p.trim()).filter(Boolean) : [];
+        newClients.push({
+          id: `cl_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+          name, code, attributes: attrs,
+          address: address || [street, city, state, zip, country].filter(Boolean).join(", "),
+          city, state, zip, country,
+          website, email, phone,
+          billingContact, billingEmail: email, billingEmailSame: true,
+          billingAddress: address || [street, city, state, zip, country].filter(Boolean).join(", "),
+          billingAddressSame: true,
+          contactNames, projects: clientProjects,
+          location, notes: "", source: "csv"
+        });
+        // Mirror billing contact to Global Partners
+        if (billingContact) {
+          newContacts.push({
+            id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_b`,
+            name: billingContact, firstName: billingContact.split(" ")[0] || "", lastName: billingContact.split(" ").slice(1).join(" ") || "",
+            email, phone, company: name, position: "Billing Contact", contactType: "Client",
+            department: "", address: "", resourceType: "", vendorName: name, notes: `Billing contact for ${name}`, source: "csv"
+          });
+        }
+        // Mirror other company contacts
+        contactNames.forEach((cn, ci) => {
+          if (cn && cn !== billingContact) {
+            newContacts.push({
+              id: `ct_${Date.now()}_${Math.random().toString(36).substr(2, 6)}_c${ci}`,
+              name: cn, firstName: cn.split(" ")[0] || "", lastName: cn.split(" ").slice(1).join(" ") || "",
+              email: "", phone: "", company: name, position: "Contact", contactType: "Client",
+              department: "", address: "", resourceType: "", vendorName: name, notes: `Contact for ${name}`, source: "csv"
+            });
+          }
+        });
+      }
+      setClients(prev => {
+        const existing = new Set(prev.map(c => c.name.toLowerCase()));
+        const unique = newClients.filter(c => !existing.has(c.name.toLowerCase()));
+        if (unique.length > 0) {
+          setClipboardToast({ text: `Imported ${unique.length} client${unique.length > 1 ? "s" : ""} from CSV`, x: window.innerWidth / 2, y: 60 });
+          setTimeout(() => setClipboardToast(null), 3000);
+        } else if (newClients.length > 0) {
+          setClipboardToast({ text: `All ${newClients.length} clients already exist`, x: window.innerWidth / 2, y: 60 });
+          setTimeout(() => setClipboardToast(null), 3000);
+        }
+        return [...prev, ...unique];
+      });
+      // Also add contacts to Global Partners (deduplicated)
+      if (newContacts.length > 0) {
+        setContacts(prev => {
+          const existing = new Set(prev.map(c => c.name.toLowerCase()));
+          return [...prev, ...newContacts.filter(c => !existing.has(c.name.toLowerCase()))];
+        });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  };
+
+  // ─── SAVE / EDIT CLIENT ────────────────────────────────────────
+  const submitClient = () => {
+    if (!clientForm.name) return;
+    if (clientForm.billingEmailSame) clientForm.billingEmail = clientForm.email;
+    if (clientForm.billingAddressSame) clientForm.billingAddress = clientForm.address;
+    if (clientForm.id) {
+      // Edit existing
+      setClients(prev => prev.map(c => c.id === clientForm.id ? { ...clientForm } : c));
+      // Mirror: update matching Global Partners contact
+      setContacts(prev => prev.map(c => {
+        if (c.company === clientForm.name && c.position === "Billing Contact") {
+          return { ...c, email: clientForm.billingEmail, phone: clientForm.phone, address: clientForm.billingAddress };
+        }
+        return c;
+      }));
+    } else {
+      const newClient = { ...clientForm, id: `cl_${Date.now()}` };
+      setClients(prev => [...prev, newClient]);
+      // Auto-create billing contact in Global Partners
+      if (clientForm.billingContact) {
+        const bc = {
+          id: `ct_${Date.now()}_b`, name: clientForm.billingContact,
+          firstName: clientForm.billingContact.split(" ")[0] || "", lastName: clientForm.billingContact.split(" ").slice(1).join(" ") || "",
+          email: clientForm.billingEmail || clientForm.email || "", phone: clientForm.phone || "",
+          company: clientForm.name, position: "Billing Contact", contactType: "Client",
+          department: "", address: clientForm.billingAddress || "", resourceType: "", vendorName: clientForm.name,
+          notes: `Billing contact for ${clientForm.name}`, source: "client"
+        };
+        setContacts(prev => {
+          if (prev.some(c => c.name.toLowerCase() === bc.name.toLowerCase() && c.company === clientForm.name)) return prev;
+          return [...prev, bc];
+        });
+      }
+    }
+    setClientForm({ ...emptyClient });
+    setShowAddClient(false);
+  };
+
+  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", contactType: "", notes: "", source: "manual" };
   const [contactForm, setContactForm] = useState({ ...emptyContact });
   const updateCF = (k, v) => setContactForm(p => ({ ...p, [k]: v }));
   const submitContact = () => {
@@ -1944,7 +2127,7 @@ export default function Dashboard({ user, onLogout }) {
         phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
         deptId: vendorForm.dept, address: finalAddress,
       }));
-      // Sync changes to matching Global Contacts
+      // Sync changes to matching Global Partners
       if (oldVendor) {
         setContacts(prev => prev.map(c => {
           // Match by old vendor name, old contact name, or company
@@ -2142,6 +2325,7 @@ export default function Dashboard({ user, onLogout }) {
           if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
+          if (s.clients && Array.isArray(s.clients)) setClients(s.clients);
         }
         setDataLoaded(true);
         // Sync compliance with Drive
@@ -2217,10 +2401,10 @@ export default function Dashboard({ user, onLogout }) {
     if (!dataLoaded) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog });
+      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients });
     }, 1500);
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, dataLoaded]);
+  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients, dataLoaded]);
 
   const _rawProject = projects.find(p => p.id === activeProjectId) || projects[0];
   const project = _rawProject ? {
@@ -2527,7 +2711,12 @@ export default function Dashboard({ user, onLogout }) {
           </button>
           {canSeeSection("globalContacts") && (
             <button onClick={() => setActiveTab("globalContacts")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "globalContacts" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
-              👤 Global Contacts {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
+              👤 Global Partners {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
+            </button>
+          )}
+          {canSeeSection("globalContacts") && (
+            <button onClick={() => setActiveTab("clients")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "clients" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+              🏢 Clients {clients.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{clients.length}</span>}
             </button>
           )}
           {canSeeSection("todoist") && (
@@ -2666,7 +2855,7 @@ export default function Dashboard({ user, onLogout }) {
                       const sw = swipeState[p.id];
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
-                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "todoist" ) setActiveTab("overview");
+                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" || activeTab === "todoist" ) setActiveTab("overview");
                     }}
                     style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
@@ -2709,7 +2898,7 @@ export default function Dashboard({ user, onLogout }) {
         {/* MAIN */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "16px 28px 0" }}>
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -2727,7 +2916,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
               </div>
             )}
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
@@ -2977,7 +3166,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL CONTACTS</div>
-                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Global Contacts</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Global Partners</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
@@ -3168,6 +3357,84 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                           );
                         })()}
+                      </div>
+                    ))}
+                    </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ═══ CLIENTS ═══ */}
+            {activeTab === "clients" && (
+              <div style={{ animation: "fadeUp 0.3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>COMPANY DIRECTORY</div>
+                    <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Clients</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <input value={clientSearch} onChange={e => setClientSearch(e.target.value)} placeholder="Search clients..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
+                    <label style={{ padding: "7px 16px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 7, color: "#4ecb71", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 13 }}>📊</span> Import CSV
+                      <input type="file" accept=".csv" onChange={handleClientsCSVUpload} style={{ display: "none" }} />
+                    </label>
+                    <button onClick={() => { setClientForm({ ...emptyClient }); setShowAddClient(true); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 14 }}>+</span> Add Client
+                    </button>
+                  </div>
+                </div>
+
+                {clients.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--textGhost)" }}>
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>🏢</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--textFaint)" }}>No clients yet</div>
+                    <div style={{ fontSize: 13, marginBottom: 20 }}>Add clients manually or import from your Companies CSV</div>
+                    <div style={{ display: "flex", justifyContent: "center", gap: 12 }}>
+                      <label style={{ padding: "10px 20px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 8, color: "#4ecb71", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+                        📊 Import CSV
+                        <input type="file" accept=".csv" onChange={handleClientsCSVUpload} style={{ display: "none" }} />
+                      </label>
+                      <button onClick={() => { setClientForm({ ...emptyClient }); setShowAddClient(true); }} style={{ padding: "10px 20px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 8, color: "#ff6b4a", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>+ Add Manually</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                    {selectedClientIds.size > 0 && (
+                      <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#ff6b4a" }}>{selectedClientIds.size} selected</span>
+                        <button onClick={() => { if (confirm(`Delete ${selectedClientIds.size} selected client(s)?`)) { setClients(prev => prev.filter(c => !selectedClientIds.has(c.id))); setSelectedClientIds(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
+                        <button onClick={() => setSelectedClientIds(new Set())} style={{ padding: "4px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕ Clear</button>
+                      </div>
+                    )}
+                    <div style={{ overflowX: "auto" }}>
+                    <div style={{ minWidth: 1400 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 180px 130px 160px 110px 130px 130px auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                      <span><input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /></span>
+                      <span>COMPANY NAME</span><span>CODE</span><span>ATTRIBUTES</span><span>ADDRESS</span><span>WEBSITE</span><span>EMAIL</span><span>PHONE</span><span>BILLING CONTACT</span><span>BILLING EMAIL</span><span>ACTIONS</span>
+                    </div>
+                    {clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())).map(c => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 180px 130px 160px 110px 130px 130px auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent" }}>
+                        <span><input type="checkbox" checked={selectedClientIds.has(c.id)} onChange={(e) => { const next = new Set(selectedClientIds); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedClientIds(next); }} style={{ cursor: "pointer" }} /></span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #3da5db20, #3da5db10)", border: "1px solid #3da5db30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#3da5db", flexShrink: 0 }}>
+                            {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                          </div>
+                          <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={c.name}>{c.name}</div>
+                        </div>
+                        <span style={{ color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600 }}>{c.code || "—"}</span>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>{(c.attributes || []).slice(0, 2).map(a => <span key={a} style={{ padding: "1px 5px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 600, color: "#9b6dff", whiteSpace: "nowrap" }}>{a}</span>)}{(c.attributes || []).length > 2 && <span style={{ fontSize: 8, color: "var(--textFaint)" }}>+{c.attributes.length - 2}</span>}</div>
+                        <span onClick={(e) => c.address && copyToClipboard(c.address, "Address", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.address ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.address}>{c.address || "—"}</span>
+                        <span style={{ fontSize: 10 }}>{c.website ? <a href={c.website.startsWith("http") ? c.website : `https://${c.website}`} target="_blank" rel="noopener noreferrer" style={{ color: "#3da5db", textDecoration: "none" }} title={c.website}>{c.website.replace(/^https?:\/\/(www\.)?/, "").slice(0, 18)}</a> : "—"}</span>
+                        <span onClick={(e) => c.email && copyToClipboard(c.email, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.email}>{c.email || "—"}</span>
+                        <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.phone || "—"}</span>
+                        <span style={{ color: "var(--textMuted)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingContact}>{c.billingContact || "—"}</span>
+                        <span onClick={(e) => c.billingEmail && copyToClipboard(c.billingEmail, "Billing Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.billingEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingEmail}>{c.billingEmail || "—"}</span>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button onClick={() => { setClientForm({ ...c }); setShowAddClient(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
+                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setClients(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕</button>
+                        </div>
                       </div>
                     ))}
                     </div>
@@ -4764,6 +5031,85 @@ export default function Dashboard({ user, onLogout }) {
       })()}
 
       {/* ═══ ADD / EDIT CONTACT MODAL ═══ */}
+      {/* ═══ ADD/EDIT CLIENT MODAL ═══ */}
+      {showAddClient && (
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.2s ease" }} onClick={e => { if (e.target === e.currentTarget) setShowAddClient(false); }}>
+          <div style={{ background: "var(--bgHover)", borderRadius: 14, width: 600, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid var(--borderActive)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ padding: "20px 28px 14px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{clientForm.id ? "Edit Client" : "Add Client"}</div>
+              <button onClick={() => setShowAddClient(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18 }}>✕</button>
+            </div>
+            <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY NAME *</label><input value={clientForm.name} onChange={e => updateCLF("name", e.target.value)} placeholder="e.g. Guess, GT's Living Foods..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY CODE</label><input value={clientForm.code} onChange={e => updateCLF("code", e.target.value.toUpperCase())} placeholder="e.g. GUESS" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", fontFamily: "'JetBrains Mono', monospace" }} /></div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ATTRIBUTES</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "8px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, minHeight: 36 }}>
+                  {(clientForm.attributes || []).map(a => (
+                    <span key={a} style={{ padding: "2px 8px", background: "#9b6dff15", border: "1px solid #9b6dff30", borderRadius: 4, fontSize: 10, fontWeight: 600, color: "#9b6dff", display: "flex", alignItems: "center", gap: 4 }}>
+                      {a} <span onClick={() => updateCLF("attributes", clientForm.attributes.filter(x => x !== a))} style={{ cursor: "pointer", fontSize: 8, opacity: 0.7 }}>✕</span>
+                    </span>
+                  ))}
+                  <select value="" onChange={e => { if (e.target.value && !(clientForm.attributes || []).includes(e.target.value)) updateCLF("attributes", [...(clientForm.attributes || []), e.target.value]); e.target.value = ""; }} style={{ background: "transparent", border: "none", color: "var(--textFaint)", fontSize: 10, outline: "none", cursor: "pointer" }}>
+                    <option value="">+ Add...</option>
+                    {CLIENT_ATTRIBUTES.filter(a => !(clientForm.attributes || []).includes(a)).map(a => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
+                <input value={clientForm.address} onChange={e => updateCLF("address", e.target.value)} placeholder="Full address..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>WEBSITE</label><input value={clientForm.website} onChange={e => updateCLF("website", e.target.value)} placeholder="https://..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={clientForm.email} onChange={e => updateCLF("email", e.target.value)} placeholder="info@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label>
+                <input value={clientForm.phone} onChange={e => updateCLF("phone", e.target.value)} placeholder="+1 (555) 123-4567" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+              </div>
+              <div style={{ borderTop: "1px solid var(--borderSub)", paddingTop: 14, marginBottom: 14 }}>
+                <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>BILLING INFORMATION</div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>BILLING CONTACT NAME</label>
+                  <input value={clientForm.billingContact} onChange={e => updateCLF("billingContact", e.target.value)} placeholder="Jane Smith" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING EMAIL</label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={clientForm.billingEmailSame} onChange={e => updateCLF("billingEmailSame", e.target.checked)} /> Same as client email
+                    </label>
+                  </div>
+                  {!clientForm.billingEmailSame && <input value={clientForm.billingEmail} onChange={e => updateCLF("billingEmail", e.target.value)} placeholder="billing@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />}
+                  {clientForm.billingEmailSame && <div style={{ padding: "9px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.email || "—"}</div>}
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING ADDRESS</label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer" }}>
+                      <input type="checkbox" checked={clientForm.billingAddressSame} onChange={e => updateCLF("billingAddressSame", e.target.checked)} /> Same as client address
+                    </label>
+                  </div>
+                  {!clientForm.billingAddressSame && <input value={clientForm.billingAddress} onChange={e => updateCLF("billingAddress", e.target.value)} placeholder="Billing address..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />}
+                  {clientForm.billingAddressSame && <div style={{ padding: "9px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.address || "—"}</div>}
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>NOTES</label>
+                <textarea value={clientForm.notes} onChange={e => updateCLF("notes", e.target.value)} placeholder="Any notes..." rows={3} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+              </div>
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button onClick={() => setShowAddClient(false)} style={{ padding: "10px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                <button onClick={submitClient} disabled={!clientForm.name} style={{ padding: "10px 24px", background: clientForm.name ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: clientForm.name ? "#fff" : "var(--textGhost)", cursor: clientForm.name ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700 }}>{clientForm.id ? "Save Changes" : "Add Client"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showAddContact && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddContact(false); }}>
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 520, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.25s ease" }}>
@@ -4875,7 +5221,7 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 14, marginBottom: 14 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>CLIENT *</label>
-                  <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} />
+                  <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} clients={clients} onAddNew={() => { setClientForm({ ...emptyClient }); setShowAddClient(true); }} />
                 </div>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT NAME *</label>
