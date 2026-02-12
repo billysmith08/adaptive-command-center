@@ -1471,6 +1471,7 @@ export default function Dashboard({ user, onLogout }) {
     }));
   };
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
   const [projectWorkback, setProjectWorkback] = useState({});
   const workback = projectWorkback[activeProjectId] || [];
@@ -1700,6 +1701,8 @@ export default function Dashboard({ user, onLogout }) {
       const notesIdx = headers.findIndex(h => h === "notes" || h === "note" || h === "comments");
       const projectIdx = headers.findIndex(h => h.includes("project") || h.includes("client of"));
       const contactLinkIdx = headers.findIndex(h => h.includes("contact") && h.includes("link"));
+      // Auto-detect CSV type: if "company name" is the name column, this is a client/company CSV
+      const isClientCSV = headers.some(h => h === "company name" || h.includes("client of"));
       // Parse each row (handle quoted fields with commas)
       const parseCSVRow = (row) => {
         const result = []; let current = ""; let inQuotes = false;
@@ -1725,10 +1728,11 @@ export default function Dashboard({ user, onLogout }) {
           lastName: lastName || fullName.split(" ").slice(1).join(" ") || "",
           email: emailIdx >= 0 ? (cols[emailIdx] || "") : "",
           phone: phoneIdx >= 0 ? (cols[phoneIdx] || "") : "",
-          company: companyIdx >= 0 ? (cols[companyIdx] || "") : "",
+          company: companyIdx >= 0 ? (cols[companyIdx] || "") : (isClientCSV ? fullName : ""),
           position: positionIdx >= 0 ? (cols[positionIdx] || "") : "",
           department: deptIdx >= 0 ? (cols[deptIdx] || "") : "",
           address: addressIdx >= 0 ? (cols[addressIdx] || "") : "",
+          contactType: isClientCSV ? "Client" : "",
           notes: [
             notesIdx >= 0 ? (cols[notesIdx] || "") : "",
             projectIdx >= 0 && cols[projectIdx] ? `Projects: ${cols[projectIdx]}` : "",
@@ -1741,7 +1745,8 @@ export default function Dashboard({ user, onLogout }) {
         const existing = new Set(prev.map(c => c.name.toLowerCase()));
         const unique = newContacts.filter(c => !existing.has(c.name.toLowerCase()));
         if (unique.length > 0) {
-          setClipboardToast({ text: `Imported ${unique.length} contact${unique.length > 1 ? "s" : ""} from CSV`, x: window.innerWidth / 2, y: 60 });
+          const label = isClientCSV ? "client" : "contact";
+          setClipboardToast({ text: `Imported ${unique.length} ${label}${unique.length > 1 ? "s" : ""} from CSV`, x: window.innerWidth / 2, y: 60 });
           setTimeout(() => setClipboardToast(null), 3000);
         }
         return [...prev, ...unique];
@@ -3005,13 +3010,23 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 ) : (
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                    {/* Bulk action bar */}
+                    {selectedContacts.size > 0 && (
+                      <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 12 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: "#ff6b4a" }}>{selectedContacts.size} selected</span>
+                        <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
+                        <button onClick={() => setSelectedContacts(new Set())} style={{ padding: "4px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕ Clear</button>
+                      </div>
+                    )}
                     <div style={{ overflowX: "auto" }}>
-                    <div style={{ minWidth: 1320 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                      <span>NAME</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
+                    <div style={{ minWidth: 1420 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "36px 180px 70px 110px 110px 130px 180px 140px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                      <span><input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /></span>
+                      <span>NAME</span><span>TYPE</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
                     </div>
-                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "36px 180px 70px 110px 110px 130px 180px 140px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
+                        <span><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={(e) => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
@@ -3021,6 +3036,7 @@ export default function Dashboard({ user, onLogout }) {
                             {c.department && <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{c.department}</div>}
                           </div>
                         </div>
+                        <span style={{ fontSize: 9 }}>{c.contactType ? <span style={{ padding: "2px 7px", background: c.contactType === "Client" ? "#3da5db10" : c.contactType === "Vendor" ? "#4ecb7110" : "#9b6dff10", border: `1px solid ${c.contactType === "Client" ? "#3da5db20" : c.contactType === "Vendor" ? "#4ecb7120" : "#9b6dff20"}`, borderRadius: 3, fontSize: 9, fontWeight: 600, color: c.contactType === "Client" ? "#3da5db" : c.contactType === "Vendor" ? "#4ecb71" : "#9b6dff", whiteSpace: "nowrap" }}>{c.contactType}</span> : "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 10 }}>{c.resourceType ? <span style={{ padding: "2px 7px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 3, fontSize: 9, fontWeight: 600, color: "#3da5db", whiteSpace: "nowrap" }}>{c.resourceType}</span> : "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.position || "—"}</span>
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
@@ -4779,12 +4795,25 @@ export default function Dashboard({ user, onLogout }) {
                   </select>
                 </div>
               </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
-                <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
-                  <option value="">Select...</option>
-                  {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map(rt => <option key={rt} value={rt}>{rt}</option>)}
-                </select>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
+                  <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                    <option value="">Select...</option>
+                    {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map(rt => <option key={rt} value={rt}>{rt}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>CONTACT TYPE</label>
+                  <select value={contactForm.contactType || ""} onChange={e => updateCF("contactType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                    <option value="">Select...</option>
+                    <option value="Client">Client</option>
+                    <option value="Vendor">Vendor</option>
+                    <option value="Venue">Venue</option>
+                    <option value="Talent">Talent</option>
+                    <option value="Internal">Internal</option>
+                  </select>
+                </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><PhoneWithCode value={contactForm.phone} onChange={v => updateCF("phone", v)} /></div>
@@ -4795,7 +4824,7 @@ export default function Dashboard({ user, onLogout }) {
                 <AddressAutocomplete value={contactForm.address} onChange={v => updateCF("address", v)} showIcon={false} placeholder="123 Main St, City, State ZIP" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
               <div style={{ marginBottom: 14 }}>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>NOTES</label><input value={contactForm.notes} onChange={e => updateCF("notes", e.target.value)} placeholder="Any notes..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>NOTES</label><textarea value={contactForm.notes} onChange={e => updateCF("notes", e.target.value)} placeholder="Any notes..." rows={3} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} /></div>
               </div>
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 6 }}>
                 <button onClick={() => setShowAddContact(false)} style={{ padding: "9px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
