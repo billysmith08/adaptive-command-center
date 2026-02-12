@@ -1765,6 +1765,8 @@ export default function Dashboard({ user, onLogout }) {
     });
     setDriveResults(null);
     setVendorSearch("");
+    // Sync compliance from Drive to ensure global consistency
+    setTimeout(syncDriveCompliance, 2000);
   };
   const CONTACT_TYPES = ["Agency", "Freelancer", "Subcontractor", "Supplier", "Vendor", "Venue"];
   const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0], address: "" };
@@ -1844,6 +1846,8 @@ export default function Dashboard({ user, onLogout }) {
     try {
       fetch('/api/drive/create-folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vendorName: name }) });
     } catch (e) { console.error('Drive folder pre-creation failed:', e); }
+    // Sync compliance from Drive — picks up any existing COI/W9 files for this vendor
+    setTimeout(syncDriveCompliance, 2000);
   };
 
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
@@ -2045,6 +2049,8 @@ export default function Dashboard({ user, onLogout }) {
           setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], link: data.file?.link, uploading: false } } }));
           setUploadLog(prev => [{ id: Date.now(), vendorName: vendor?.name, compKey, fileName, drivePath, time: new Date().toLocaleTimeString(), folderCreated: data.folder?.created, vendorFolder: vendor?.name }, ...prev].slice(0, 20));
           logActivity("vendor", `✅ uploaded ${compKey} for "${vendor?.name}" to Drive`, project?.name);
+          // Re-sync from Drive to ensure global consistency
+          setTimeout(syncDriveCompliance, 3000);
           return;
         } else {
           // API returned error — REVERT the checkmark and show error
@@ -2071,6 +2077,8 @@ export default function Dashboard({ user, onLogout }) {
 
   const handleClearCompliance = (vendorId, compKey) => {
     setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: false, file: null, date: null, link: null } } }));
+    // Re-sync from Drive to confirm state
+    setTimeout(syncDriveCompliance, 2000);
   };
 
   const peopleOptions = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];

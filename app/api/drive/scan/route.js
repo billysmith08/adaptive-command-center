@@ -72,8 +72,11 @@ async function listVendorDocs(drive, driveId, folderId) {
   return results;
 }
 
-export async function GET() {
+export async function GET(request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const searchQuery = searchParams.get('search');
+    
     const drive = getDriveClient();
 
     const drivesRes = await drive.drives.list({ pageSize: 50 });
@@ -96,6 +99,62 @@ export async function GET() {
       w9: '2026 W9s',
     };
 
+    // ─── SEARCH MODE: find vendor folders matching query ───
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const vendors = [];
+      const seen = new Set();
+
+      for (const [docKey, folderName] of Object.entries(docFolders)) {
+        const folderId = await navigatePath(drive, driveId, baseId, [folderName]);
+        if (!folderId) continue;
+
+        // List all vendor subfolders
+        const foldersRes = await drive.files.list({
+          q: `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+          fields: 'files(id, name)',
+          ...SD,
+          corpora: 'drive',
+          driveId,
+          pageSize: 200,
+        });
+
+        for (const folder of (foldersRes.data.files || [])) {
+          if (!folder.name.toLowerCase().includes(q)) continue;
+          
+          // Get files inside vendor folder
+          const filesRes = await drive.files.list({
+            q: `'${folder.id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
+            fields: 'files(id, name, webViewLink)',
+            ...SD,
+            corpora: 'drive',
+            driveId,
+            pageSize: 10,
+          });
+          const files = filesRes.data.files || [];
+
+          if (!seen.has(folder.name)) {
+            seen.add(folder.name);
+            vendors.push({
+              name: folder.name,
+              type: 'Vendor',
+              email: '',
+              contact: '',
+              dept: '',
+              drive: {},
+            });
+          }
+          const vendor = vendors.find(v => v.name === folder.name);
+          if (files.length > 0) {
+            vendor.drive[docKey] = { found: true, file: files[0].name, link: files[0].webViewLink };
+          }
+        }
+      }
+
+      return NextResponse.json({ success: true, vendors });
+    }
+
+    // ─── SYNC MODE: full compliance scan ───
     const compliance = {};
 
     for (const [docKey, folderName] of Object.entries(docFolders)) {
