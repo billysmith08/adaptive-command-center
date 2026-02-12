@@ -1854,28 +1854,51 @@ export default function Dashboard({ user, onLogout }) {
       body: JSON.stringify({ endpoint, apiKey: k, method: opts.method || "GET", headers: opts.headers, body: opts.body })
     }).then(r => r.json());
     try {
-      const [tasks, projs] = await Promise.all([
-        tp("/rest/v2/tasks"),
-        tp("/rest/v2/projects"),
-      ]);
-      // Sync API call separately so it doesn't break tasks/projects if it fails
-      let syncData = {};
-      try {
-        syncData = await tp("/sync/v9/sync", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" });
-      } catch (syncErr) { console.warn("Todoist sync API failed (non-fatal):", syncErr); }
-      if (tasks.error) throw new Error(tasks.error);
-      setTodoistTasks(Array.isArray(tasks) ? tasks : []);
-      // Extract workspace_id from Sync API response and enrich REST projects
-      const syncProjects = syncData.projects || [];
-      const syncMap = {};
-      syncProjects.forEach(sp => { if (sp.id) syncMap[sp.id] = sp; });
-      // Merge workspace_id from Sync into REST projects
-      const enrichedProjs = (Array.isArray(projs) ? projs : []).map(p => {
-        const sp = syncMap[p.id];
-        return sp ? { ...p, workspace_id: sp.workspace_id, shared: sp.shared } : p;
+      // Use Sync API for everything — REST endpoints return 410
+      const syncData = await tp("/api/v1/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: "sync_token=*&resource_types=[\"items\",\"projects\",\"sections\",\"collaborators\"]"
       });
-      setTodoistProjects(enrichedProjs);
-      console.log("Todoist loaded:", enrichedProjs.length, "projects,", (Array.isArray(tasks) ? tasks : []).length, "tasks, sync projects:", syncProjects.length);
+      const syncProjects = syncData.projects || [];
+      const syncItems = (syncData.items || []).filter(i => !i.checked && !i.is_deleted);
+      // Map Sync items to REST-like task format for UI compatibility
+      const mappedTasks = syncItems.map(i => ({
+        id: i.id,
+        content: i.content,
+        description: i.description || "",
+        project_id: i.project_id,
+        section_id: i.section_id,
+        priority: i.priority || 1,
+        due: i.due,
+        order: i.child_order || i.item_order || 0,
+        assignee_id: i.responsible_uid,
+        labels: i.labels || [],
+      }));
+      // Map Sync projects to REST-like format
+      const mappedProjects = syncProjects.filter(p => !p.is_deleted && !p.is_archived).map(p => ({
+        id: p.id,
+        name: p.name,
+        color: p.color,
+        order: p.child_order || p.item_order || 0,
+        workspace_id: p.workspace_id,
+        shared: p.shared || false,
+        inbox_project: p.inbox_project || false,
+      }));
+      setTodoistTasks(mappedTasks);
+      setTodoistProjects(mappedProjects);
+      // Store sections from Sync API
+      const syncSections = (syncData.sections || []).filter(s => !s.is_deleted && !s.is_archived);
+      if (syncSections.length > 0) {
+        setTodoistSections(syncSections.map(s => ({ id: s.id, name: s.name, project_id: s.project_id, order: s.section_order || 0 })));
+      }
+      // Store collaborators from Sync API
+      const syncCollabs = syncData.collaborators || [];
+      if (syncCollabs.length > 0) {
+        setTodoistCollaborators(syncCollabs.map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
+      }
+      console.log("Todoist loaded:", mappedProjects.length, "projects,", mappedTasks.length, "tasks,", syncSections.length, "sections,", syncCollabs.length, "collaborators");
+      // Extract workspace
       const adptvProj = syncProjects.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV" || p.name === "Team Inbox");
       if (adptvProj?.workspace_id) {
         setAdptvWorkspaceId(adptvProj.workspace_id);
@@ -1903,17 +1926,36 @@ export default function Dashboard({ user, onLogout }) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ endpoint, apiKey: todoistKey, method: opts.method || "GET", headers: opts.headers, body: opts.body })
   }).then(r => r.json()), [todoistKey]);
+
+  // Sync API command helper — all writes go through here
+  const todoistSyncCmd = useCallback(async (commands) => {
+    const data = await todoistProxy("/api/v1/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `commands=${encodeURIComponent(JSON.stringify(commands))}`
+    });
+    if (data.sync_status) {
+      const errors = Object.values(data.sync_status).filter(s => s?.error);
+      if (errors.length > 0) console.error("Todoist sync errors:", errors);
+    }
+    return data;
+  }, [todoistProxy]);
+
   const todoistAdd = async () => {
     if (!todoistNewTask.trim() || !todoistKey) return;
-    const res = await todoistProxy("/rest/v2/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: { content: todoistNewTask.trim() } });
-    if (!res.error) { setTodoistNewTask(""); todoistFetch(); }
+    const tempId = "task_" + Date.now();
+    await todoistSyncCmd([{ type: "item_add", temp_id: tempId, uuid: tempId, args: { content: todoistNewTask.trim() } }]);
+    setTodoistNewTask("");
+    await todoistFetch();
   };
   const todoistClose = async (id) => {
-    await todoistProxy(`/rest/v2/tasks/${id}/close`, { method: "POST" });
+    const uuid = "close_" + Date.now();
+    await todoistSyncCmd([{ type: "item_complete", uuid, args: { id } }]);
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistDelete = async (id) => {
-    await todoistProxy(`/rest/v2/tasks/${id}`, { method: "DELETE" });
+    const uuid = "del_" + Date.now();
+    await todoistSyncCmd([{ type: "item_delete", uuid, args: { id } }]);
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistCreateProject = async (projectCode) => {
@@ -1923,48 +1965,19 @@ export default function Dashboard({ user, onLogout }) {
       return null; 
     }
     try {
-      // Try Sync API first to create in ADPTV workspace
-      if (adptvWorkspaceId) {
-        const tempId = "proj_" + Date.now();
-        const commands = JSON.stringify([{
-          type: "project_add",
-          temp_id: tempId,
-          uuid: crypto.randomUUID ? crypto.randomUUID() : tempId,
-          args: { name: projectCode, workspace_id: adptvWorkspaceId }
-        }]);
-        try {
-          const data = await todoistProxy("/sync/v9/sync", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: `commands=${encodeURIComponent(commands)}`
-          });
-          const newId = data.temp_id_mapping?.[tempId];
-          if (newId) {
-            await todoistFetch();
-            return newId;
-          }
-          const syncStatus = data.sync_status || {};
-          const cmdUuid = Object.keys(syncStatus)[0];
-          if (cmdUuid && syncStatus[cmdUuid]?.error) {
-            console.error("Todoist sync error:", syncStatus[cmdUuid].error);
-          }
-        } catch (syncErr) {
-          console.error("Todoist sync exception:", syncErr);
-        }
-      }
-      // Fallback: REST API (creates in personal/default workspace)
-      const proj = await todoistProxy("/rest/v2/projects", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: { name: projectCode }
-      });
-      if (proj && !proj.error) {
+      const tempId = "proj_" + Date.now();
+      const args = { name: projectCode };
+      if (adptvWorkspaceId) args.workspace_id = adptvWorkspaceId;
+      const data = await todoistSyncCmd([{ type: "project_add", temp_id: tempId, uuid: tempId, args }]);
+      const newId = data.temp_id_mapping?.[tempId];
+      if (newId) {
+        console.log("Created Todoist project:", projectCode, "id:", newId, "workspace:", adptvWorkspaceId || "default");
         await todoistFetch();
-        return proj.id;
-      } else {
-        console.error("Todoist REST create error:", proj);
-        setClipboardToast({ text: `Todoist error: ${(proj?.error || "unknown").toString().slice(0, 60)}`, x: window.innerWidth / 2, y: 60 });
-        setTimeout(() => setClipboardToast(null), 4000);
+        return newId;
       }
+      console.error("Todoist project create failed:", data);
+      setClipboardToast({ text: "Failed to create Todoist project — check console", x: window.innerWidth / 2, y: 60 });
+      setTimeout(() => setClipboardToast(null), 4000);
     } catch (e) { 
       console.error("Todoist create:", e);
       setClipboardToast({ text: `Todoist error: ${e.message}`, x: window.innerWidth / 2, y: 60 });
@@ -1974,72 +1987,42 @@ export default function Dashboard({ user, onLogout }) {
   };
   const todoistAddTaskToProject = async (content, projectId, sectionId) => {
     if (!todoistKey || !content || !projectId) return;
-    await todoistProxy("/rest/v2/tasks", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: { content, project_id: projectId, ...(sectionId ? { section_id: sectionId } : {}) }
-    });
+    const tempId = "task_" + Date.now();
+    const args = { content, project_id: projectId };
+    if (sectionId) args.section_id = sectionId;
+    await todoistSyncCmd([{ type: "item_add", temp_id: tempId, uuid: tempId, args }]);
     await todoistFetch();
   };
 
-  // Fetch sections and collaborators for a specific project
+  // Sections and collaborators are now loaded by todoistFetch via Sync API
+  // This is kept as a lightweight refresh for a single project
   const todoistFetchProjectDetails = async (projectId) => {
-    if (!todoistKey || !projectId) return;
-    try {
-      const tp = (endpoint) => fetch("/api/todoist", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint, apiKey: todoistKey, method: "GET" })
-      }).then(r => r.json());
-      const [sections, collabs] = await Promise.all([
-        tp(`/rest/v2/sections?project_id=${projectId}`),
-        tp(`/rest/v2/projects/${projectId}/collaborators`).catch(() => []),
-      ]);
-      if (Array.isArray(sections)) setTodoistSections(prev => {
-        const filtered = prev.filter(s => s.project_id !== projectId);
-        return [...filtered, ...sections];
-      });
-      if (Array.isArray(collabs)) setTodoistCollaborators(prev => {
-        const existingIds = new Set(prev.map(c => c.id));
-        const newOnes = collabs.filter(c => !existingIds.has(c.id));
-        return [...prev, ...newOnes];
-      });
-    } catch (e) { console.error("Todoist project details:", e); }
+    // Sync already loads sections + collaborators, just re-fetch all data
+    await todoistFetch();
   };
 
-  // Fetch sections for all ADPTV workspace projects (for master tab)
+  // All sections already loaded by todoistFetch
   const todoistFetchAllSections = async () => {
-    if (!todoistKey || todoistProjects.length === 0) return;
-    const adptvProjs = todoistProjects.filter(p => !p.inbox_project && (adptvWorkspaceId ? p.workspace_id === adptvWorkspaceId : true));
-    try {
-      const tp = (endpoint) => fetch("/api/todoist", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint, apiKey: todoistKey, method: "GET" })
-      }).then(r => r.json());
-      const allSections = await Promise.all(adptvProjs.map(p => tp(`/rest/v2/sections?project_id=${p.id}`).catch(() => [])));
-      const flatSections = allSections.flat().filter(s => s && s.id);
-      if (flatSections.length > 0) setTodoistSections(flatSections);
-      for (const p of adptvProjs) {
-        try {
-          const collabs = await tp(`/rest/v2/projects/${p.id}/collaborators`);
-          if (Array.isArray(collabs) && collabs.length > 0) { setTodoistCollaborators(collabs); break; }
-        } catch {} // eslint-disable-line no-empty
-      }
-    } catch (e) { console.error("Todoist fetch all sections:", e); }
+    await todoistFetch();
   };
 
-  // Section and task CRUD
+  // Section and task CRUD via Sync API
   const todoistCreateSection = async (name, projectId) => {
     if (!todoistKey || !name || !projectId) return;
-    await todoistProxy("/rest/v2/sections", { method: "POST", headers: { "Content-Type": "application/json" }, body: { name, project_id: projectId } });
-    await todoistFetchProjectDetails(projectId);
+    const tempId = "sec_" + Date.now();
+    await todoistSyncCmd([{ type: "section_add", temp_id: tempId, uuid: tempId, args: { name, project_id: projectId } }]);
+    await todoistFetch();
   };
   const todoistDeleteSection = async (sectionId, projectId) => {
     if (!todoistKey || !sectionId) return;
-    await todoistProxy(`/rest/v2/sections/${sectionId}`, { method: "DELETE" });
-    await todoistFetchProjectDetails(projectId);
+    const uuid = "secdel_" + Date.now();
+    await todoistSyncCmd([{ type: "section_delete", uuid, args: { id: sectionId } }]);
+    await todoistFetch();
   };
   const todoistUpdateTask = async (taskId, updates) => {
     if (!todoistKey || !taskId) return;
-    await todoistProxy(`/rest/v2/tasks/${taskId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: updates });
+    const uuid = "upd_" + Date.now();
+    await todoistSyncCmd([{ type: "item_update", uuid, args: { id: taskId, ...updates } }]);
     await todoistFetch();
   };
   const searchTimerRef = useRef(null);
