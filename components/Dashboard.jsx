@@ -2890,91 +2890,6 @@ export default function Dashboard({ user, onLogout }) {
     return () => clearInterval(interval);
   }, [user, dataLoaded]);
 
-  // ─── PROJECT VENDOR SCAN — syncs project ADMIN/VENDORS folder into vendor tab ───
-  const [projVendorScanDone, setProjVendorScanDone] = useState({});
-  const syncProjectVendors = async (proj) => {
-    if (!proj?.driveFolderId) return;
-    // Skip if already scanned this project this session
-    if (projVendorScanDone[proj.id]) return;
-    try {
-      const res = await fetch("/api/drive/project", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scan-vendors", projectFolderId: proj.driveFolderId }),
-      });
-      const data = await res.json();
-      if (!data.success || !data.vendors) return;
-      
-      console.log("Project vendor scan:", Object.keys(data.vendors).length, "vendors found in Drive");
-      
-      const projectDriveVendors = data.vendors; // { "Ticket Fairy": { docs: { invoice: {done,file,link}, w9: {...} }, fileCount, folderId } }
-      
-      setVendors(prev => {
-        let updated = [...prev];
-        
-        for (const [vendorName, vendorData] of Object.entries(projectDriveVendors)) {
-          const existingIdx = updated.findIndex(v => v.name?.toLowerCase() === vendorName.toLowerCase());
-          
-          if (existingIdx >= 0) {
-            // Vendor already exists — merge project-specific docs (invoice, contract, banking)
-            const v = updated[existingIdx];
-            const comp = { ...v.compliance };
-            
-            // Project-specific docs: invoice, contract, banking
-            ['invoice', 'contract', 'banking'].forEach(key => {
-              if (vendorData.docs[key]?.done) {
-                comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
-              }
-            });
-            // Global docs: w9, coi — only set if not already set from global scan
-            ['w9', 'coi'].forEach(key => {
-              if (vendorData.docs[key]?.done && !comp[key]?.done) {
-                comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
-              }
-            });
-            
-            updated[existingIdx] = { ...v, compliance: comp, driveFolderId: vendorData.folderId };
-          } else {
-            // Vendor NOT on tab yet — auto-add from Drive
-            const comp = { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } };
-            ['invoice', 'contract', 'banking', 'w9', 'coi'].forEach(key => {
-              if (vendorData.docs[key]?.done) {
-                comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
-              }
-            });
-            updated.push({
-              id: `v_drv_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
-              name: vendorName,
-              type: "Vendor",
-              email: "",
-              contact: "",
-              phone: "",
-              title: "",
-              contactType: "Vendor",
-              deptId: "",
-              source: "drive",
-              address: "",
-              compliance: comp,
-              driveFolderId: vendorData.folderId,
-            });
-            console.log("Auto-added vendor from Drive:", vendorName);
-          }
-        }
-        return updated;
-      });
-      
-      setProjVendorScanDone(prev => ({ ...prev, [proj.id]: true }));
-    } catch (e) {
-      console.error("Project vendor scan error:", e);
-    }
-  };
-
-  // Auto-scan project vendors when Vendors tab is opened
-  useEffect(() => {
-    if (activeTab !== "vendors" || !project?.driveFolderId) return;
-    syncProjectVendors(project);
-  }, [activeTab, project?.id, project?.driveFolderId]);
-
   const saveToSupabase = useCallback(async (state) => {
     if (!user) return;
     setSaveStatus("saving");
@@ -3065,6 +2980,91 @@ export default function Dashboard({ user, onLogout }) {
     eventDates: _rawProject.eventDates || { start: "", end: "" },
     engagementDates: _rawProject.engagementDates || { start: "", end: "" },
   } : { id: "p1", name: "Loading...", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], services: [], subEvents: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" } };
+  // ─── PROJECT VENDOR SCAN — syncs project ADMIN/VENDORS folder into vendor tab ───
+  const [projVendorScanDone, setProjVendorScanDone] = useState({});
+  const syncProjectVendors = async (proj) => {
+    if (!proj?.driveFolderId) return;
+    // Skip if already scanned this project this session
+    if (projVendorScanDone[proj.id]) return;
+    try {
+      const res = await fetch("/api/drive/project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "scan-vendors", projectFolderId: proj.driveFolderId }),
+      });
+      const data = await res.json();
+      if (!data.success || !data.vendors) return;
+      
+      console.log("Project vendor scan:", Object.keys(data.vendors).length, "vendors found in Drive");
+      
+      const projectDriveVendors = data.vendors; // { "Ticket Fairy": { docs: { invoice: {done,file,link}, w9: {...} }, fileCount, folderId } }
+      
+      setVendors(prev => {
+        let updated = [...prev];
+        
+        for (const [vendorName, vendorData] of Object.entries(projectDriveVendors)) {
+          const existingIdx = updated.findIndex(v => v.name?.toLowerCase() === vendorName.toLowerCase());
+          
+          if (existingIdx >= 0) {
+            // Vendor already exists — merge project-specific docs (invoice, contract, banking)
+            const v = updated[existingIdx];
+            const comp = { ...v.compliance };
+            
+            // Project-specific docs: invoice, contract, banking
+            ['invoice', 'contract', 'banking'].forEach(key => {
+              if (vendorData.docs[key]?.done) {
+                comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
+              }
+            });
+            // Global docs: w9, coi — only set if not already set from global scan
+            ['w9', 'coi'].forEach(key => {
+              if (vendorData.docs[key]?.done && !comp[key]?.done) {
+                comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
+              }
+            });
+            
+            updated[existingIdx] = { ...v, compliance: comp, driveFolderId: vendorData.folderId };
+          } else {
+            // Vendor NOT on tab yet — auto-add from Drive
+            const comp = { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } };
+            ['invoice', 'contract', 'banking', 'w9', 'coi'].forEach(key => {
+              if (vendorData.docs[key]?.done) {
+                comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
+              }
+            });
+            updated.push({
+              id: `v_drv_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+              name: vendorName,
+              type: "Vendor",
+              email: "",
+              contact: "",
+              phone: "",
+              title: "",
+              contactType: "Vendor",
+              deptId: "",
+              source: "drive",
+              address: "",
+              compliance: comp,
+              driveFolderId: vendorData.folderId,
+            });
+            console.log("Auto-added vendor from Drive:", vendorName);
+          }
+        }
+        return updated;
+      });
+      
+      setProjVendorScanDone(prev => ({ ...prev, [proj.id]: true }));
+    } catch (e) {
+      console.error("Project vendor scan error:", e);
+    }
+  };
+
+  // Auto-scan project vendors when Vendors tab is opened
+  useEffect(() => {
+    if (activeTab !== "vendors" || !project?.driveFolderId) return;
+    syncProjectVendors(project);
+  }, [activeTab, project?.id, project?.driveFolderId]);
+
   const updateProject = (key, val) => {
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
     if (["status", "location", "client", "name"].includes(key)) {
