@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
 
+// Health check — verifies route is deployed
+export async function GET() {
+  return NextResponse.json({ status: 'ok', route: '/api/todoist', method: 'GET', timestamp: new Date().toISOString() });
+}
+
 // Server-side proxy for Todoist API calls
 // Todoist doesn't allow browser CORS, so we proxy through our Next.js server
 export async function POST(request) {
   try {
-    const { endpoint, method, headers: clientHeaders, body, apiKey } = await request.json();
+    const body = await request.json();
+    const { endpoint, method, headers: clientHeaders, body: reqBody, apiKey } = body;
     
     if (!endpoint || !apiKey) {
       return NextResponse.json({ error: 'Missing endpoint or apiKey' }, { status: 400 });
@@ -27,11 +33,11 @@ export async function POST(request) {
     };
 
     // Add body for non-GET requests
-    if (body && method !== 'GET') {
-      if (typeof body === 'string') {
-        fetchOptions.body = body;
+    if (reqBody && method !== 'GET') {
+      if (typeof reqBody === 'string') {
+        fetchOptions.body = reqBody;
       } else {
-        fetchOptions.body = JSON.stringify(body);
+        fetchOptions.body = JSON.stringify(reqBody);
         if (!fetchOptions.headers['Content-Type']) {
           fetchOptions.headers['Content-Type'] = 'application/json';
         }
