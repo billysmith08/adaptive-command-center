@@ -1917,9 +1917,58 @@ export default function Dashboard({ user, onLogout }) {
           if (s.activityLog) setActivityLog(s.activityLog);
         }
         setDataLoaded(true);
+        // Sync compliance with Drive
+        syncDriveCompliance();
       } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
     })();
   }, [user]);
+
+  // Drive compliance sync — checks actual Drive folders and updates vendor compliance
+  const syncDriveCompliance = async () => {
+    try {
+      const res = await fetch('/api/drive/scan');
+      const data = await res.json();
+      if (!data.success || !data.compliance) return;
+      
+      const driveCompliance = data.compliance; // { vendorName: { coi: {done, file, link}, w9: {done, file, link} } }
+      
+      setVendors(prev => prev.map(v => {
+        const driveMatch = driveCompliance[v.name];
+        if (!driveMatch) {
+          // No folder in Drive for this vendor — clear any compliance that claims Drive docs
+          const updated = { ...v.compliance };
+          ['coi', 'w9'].forEach(key => {
+            if (updated[key]?.done && updated[key]?.link) {
+              updated[key] = { done: false };
+            }
+          });
+          return { ...v, compliance: updated };
+        }
+        // Vendor has Drive folder — sync each doc type
+        const updated = { ...v.compliance };
+        ['coi', 'w9'].forEach(key => {
+          if (driveMatch[key]?.done) {
+            updated[key] = { done: true, file: driveMatch[key].file, link: driveMatch[key].link };
+          } else {
+            // Drive folder exists but empty — clear compliance
+            if (updated[key]?.done && updated[key]?.link) {
+              updated[key] = { done: false };
+            }
+          }
+        });
+        return { ...v, compliance: updated };
+      }));
+    } catch (e) {
+      console.log('Drive sync skipped:', e.message);
+    }
+  };
+
+  // Auto-sync Drive compliance every 60 seconds
+  useEffect(() => {
+    if (!user || !dataLoaded) return;
+    const interval = setInterval(syncDriveCompliance, 60000);
+    return () => clearInterval(interval);
+  }, [user, dataLoaded]);
 
   const saveToSupabase = useCallback(async (state) => {
     if (!user) return;
