@@ -2186,14 +2186,39 @@ export default function Dashboard({ user, onLogout }) {
         });
       }
       setContacts(prev => {
-        const existing = new Set(prev.map(c => c.name.toLowerCase()));
-        const unique = newContacts.filter(c => !existing.has(c.name.toLowerCase()));
-        if (unique.length > 0) {
-          const label = isClientCSV ? "client" : "contact";
-          setClipboardToast({ text: `Imported ${unique.length} ${label}${unique.length > 1 ? "s" : ""} from CSV`, x: window.innerWidth / 2, y: 60 });
+        const existingMap = new Map(prev.map(c => [c.name.toLowerCase(), c]));
+        const unique = [];
+        let mergedCount = 0;
+        const updated = prev.map(c => {
+          const incoming = newContacts.find(nc => nc.name.toLowerCase() === c.name.toLowerCase());
+          if (!incoming) return c;
+          // Merge: only fill in fields that are currently empty
+          let didMerge = false;
+          const merged = { ...c };
+          ['email', 'phone', 'company', 'position', 'department', 'address', 'notes'].forEach(field => {
+            if ((!merged[field] || merged[field] === "—") && incoming[field]) {
+              merged[field] = incoming[field];
+              didMerge = true;
+            }
+          });
+          if (!merged.firstName && incoming.firstName) { merged.firstName = incoming.firstName; didMerge = true; }
+          if (!merged.lastName && incoming.lastName) { merged.lastName = incoming.lastName; didMerge = true; }
+          if (didMerge) mergedCount++;
+          return merged;
+        });
+        // Add truly new contacts
+        newContacts.forEach(nc => {
+          if (!existingMap.has(nc.name.toLowerCase())) unique.push(nc);
+        });
+        const label = isClientCSV ? "client" : "contact";
+        const msgs = [];
+        if (unique.length > 0) msgs.push(`${unique.length} new ${label}${unique.length > 1 ? "s" : ""}`);
+        if (mergedCount > 0) msgs.push(`${mergedCount} updated`);
+        if (msgs.length > 0) {
+          setClipboardToast({ text: `CSV: ${msgs.join(", ")}`, x: window.innerWidth / 2, y: 60 });
           setTimeout(() => setClipboardToast(null), 3000);
         }
-        return [...prev, ...unique];
+        return [...updated, ...unique];
       });
     };
     reader.readAsText(file);
@@ -6762,6 +6787,14 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
             <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
+              {/* CLIENT / PARTNER TOGGLE */}
+              <div style={{ display: "flex", marginBottom: 20, background: "var(--bgCard)", borderRadius: 8, border: "1px solid var(--borderSub)", overflow: "hidden" }}>
+                {["Client", "Partner"].map(opt => {
+                  const isActive = opt === "Client" ? (contactForm.contactType === "Client") : (contactForm.contactType !== "Client");
+                  const color = opt === "Client" ? "#3da5db" : "#ff6b4a";
+                  return <button key={opt} onClick={() => updateCF("contactType", opt === "Client" ? "Client" : "Vendor")} style={{ flex: 1, padding: "10px 0", background: isActive ? `${color}15` : "transparent", border: "none", borderBottom: isActive ? `2px solid ${color}` : "2px solid transparent", color: isActive ? color : "var(--textFaint)", fontSize: 12, fontWeight: 700, cursor: "pointer", letterSpacing: 0.5, transition: "all 0.15s" }}>{opt === "Client" ? "👤 Client Contact" : "🤝 Partner / Vendor"}</button>;
+                })}
+              </div>
               <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>VENDOR / COMPANY NAME</label>
                 <input value={contactForm.vendorName || contactForm.company || ""} onChange={e => { updateCF("vendorName", e.target.value); updateCF("company", e.target.value); }} placeholder="e.g. GDRB, Collins Visual Media..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
@@ -6770,16 +6803,16 @@ export default function Dashboard({ user, onLogout }) {
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME</label><input value={contactForm.firstName} onChange={e => updateCF("firstName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME</label><input value={contactForm.lastName} onChange={e => updateCF("lastName", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: contactForm.contactType === "Client" ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 20 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>POSITION / TITLE</label><input value={contactForm.position} onChange={e => updateCF("position", e.target.value)} placeholder="Executive Producer, DP, PM..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
+                {contactForm.contactType !== "Client" && <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
                   <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                     <option value="">Select...</option>
                     {[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort().map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
-                </div>
+                </div>}
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+              {contactForm.contactType !== "Client" && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>RESOURCE TYPE</label>
                   <select value={contactForm.resourceType || ""} onChange={e => updateCF("resourceType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
@@ -6792,13 +6825,13 @@ export default function Dashboard({ user, onLogout }) {
                   <select value={contactForm.contactType || ""} onChange={e => updateCF("contactType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                     <option value="">Select...</option>
                     <option value="Client">Client</option>
-                    <option value="Vendor">Vendor</option>
+                    <option value="Vendor">Partner / Vendor</option>
                     <option value="Venue">Venue</option>
                     <option value="Talent">Talent</option>
                     <option value="Internal">Internal</option>
                   </select>
                 </div>
-              </div>
+              </div>}
               <div style={{ marginBottom: 20 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>CLIENT ASSOCIATION</label>
                 {(() => {
