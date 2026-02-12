@@ -1612,6 +1612,17 @@ export default function Dashboard({ user, onLogout }) {
     departments: [...DEPT_OPTIONS],
     resourceTypes: ["AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"],
     projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
+    folderTemplate: [
+      { name: "ADMIN", children: [
+        { name: "BUDGET", children: [] },
+        { name: "CREW", children: [] },
+        { name: "From Client", children: [] },
+        { name: "VENDORS", children: [] },
+      ]},
+      { name: "VENUE", children: [
+        { name: "Floorplans", children: [] },
+      ]},
+    ],
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
@@ -1621,6 +1632,13 @@ export default function Dashboard({ user, onLogout }) {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [driveDiag, setDriveDiag] = useState(null); // diagnostics result
   const [driveDiagLoading, setDriveDiagLoading] = useState(false);
+  // ─── DRIVE FILE BROWSER ──────────────────────────────────────────
+  const [driveFiles, setDriveFiles] = useState([]); // items in current folder
+  const [drivePath, setDrivePath] = useState([]); // breadcrumb: [{id, name}, ...]
+  const [driveLoading, setDriveLoading] = useState(false);
+  const [driveUploading, setDriveUploading] = useState(false);
+  const [driveEnsuring, setDriveEnsuring] = useState(false);
+  const driveFileInputRef = useRef(null);
   // ─── ACTIVITY FEED ──────────────────────────────────────────────
   const [activityLog, setActivityLog] = useState([]);
   const [showActivityFeed, setShowActivityFeed] = useState(false);
@@ -2423,6 +2441,10 @@ export default function Dashboard({ user, onLogout }) {
     logActivity("updated", `created project "${newP.name}"`, newP.name);
     setShowAddProject(false);
     setNewProjectForm({ ...emptyProject });
+    // Auto-create Drive folder if client + code are set
+    if (newP.client && code) {
+      setTimeout(() => ensureProjectDrive(newP), 500);
+    }
   };
 
   const copyToClipboard = (text, label, e) => {
@@ -2963,10 +2985,115 @@ export default function Dashboard({ user, onLogout }) {
     if (["status", "location", "client", "name"].includes(key)) {
       logActivity("updated", `${key} → "${val}"`, project?.name);
     }
+    // Auto-ensure Drive folder when client is assigned/changed
+    if (key === "client" && val && project?.code && !project?.driveFolderId) {
+      setTimeout(() => ensureProjectDrive({ ...project, client: val }), 500);
+    }
   };
   const updateProject2 = (projId, key, val) => setProjects(prev => prev.map(p => p.id === projId ? { ...p, [key]: val } : p));
 
-  // Auto-link Todoist project for an event (match only, never auto-create)
+  // ─── DRIVE PROJECT FOLDER ────────────────────────────────────────
+  const ensureProjectDrive = async (proj) => {
+    if (!proj || !proj.client || !proj.code) return null;
+    setDriveEnsuring(true);
+    try {
+      const res = await fetch("/api/drive/project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "ensure",
+          clientName: proj.client,
+          projectCode: proj.code,
+          template: appSettings.folderTemplate,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.folderId) {
+        // Store the Drive folder ID on the project
+        setProjects(prev => prev.map(p => p.id === proj.id ? { ...p, driveFolderId: data.folderId, driveFolderLink: data.folderLink, drivePath: data.path } : p));
+        console.log("Drive folder", data.created ? "CREATED" : "linked", data.path, data.folderId);
+        return data;
+      } else {
+        console.error("Drive ensure failed:", data.error);
+        return null;
+      }
+    } catch (e) {
+      console.error("Drive ensure error:", e);
+      return null;
+    } finally {
+      setDriveEnsuring(false);
+    }
+  };
+
+  const driveBrowse = async (folderId, folderName, isRoot = false) => {
+    setDriveLoading(true);
+    try {
+      const res = await fetch(`/api/drive/project?folderId=${folderId}`);
+      const data = await res.json();
+      if (data.success) {
+        setDriveFiles(data.items || []);
+        if (isRoot) {
+          setDrivePath([{ id: folderId, name: folderName || project?.code || "Project" }]);
+        } else {
+          setDrivePath(prev => [...prev, { id: folderId, name: folderName }]);
+        }
+      }
+    } catch (e) { console.error("Drive browse error:", e); }
+    setDriveLoading(false);
+  };
+
+  const driveBrowseBreadcrumb = async (index) => {
+    const target = drivePath[index];
+    if (!target) return;
+    setDriveLoading(true);
+    try {
+      const res = await fetch(`/api/drive/project?folderId=${target.id}`);
+      const data = await res.json();
+      if (data.success) {
+        setDriveFiles(data.items || []);
+        setDrivePath(prev => prev.slice(0, index + 1));
+      }
+    } catch (e) { console.error("Drive breadcrumb error:", e); }
+    setDriveLoading(false);
+  };
+
+  const driveUploadFile = async (file) => {
+    const currentFolder = drivePath[drivePath.length - 1];
+    if (!currentFolder || !file) return;
+    setDriveUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("folderId", currentFolder.id);
+      const res = await fetch("/api/drive/project", { method: "POST", body: formData });
+      const data = await res.json();
+      if (data.success) {
+        // Refresh current folder
+        await driveBrowseBreadcrumb(drivePath.length - 1);
+        setClipboardToast({ text: `Uploaded: ${data.file.name}`, x: window.innerWidth / 2, y: 60 });
+        setTimeout(() => setClipboardToast(null), 3000);
+      } else {
+        alert("Upload failed: " + data.error);
+      }
+    } catch (e) { alert("Upload error: " + e.message); }
+    setDriveUploading(false);
+  };
+
+  const driveFormatSize = (bytes) => {
+    if (!bytes) return "";
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / 1048576).toFixed(1) + " MB";
+  };
+
+  const driveGetIcon = (item) => {
+    if (item.isFolder) return "📁";
+    const ext = item.name.split(".").pop()?.toLowerCase();
+    const icons = { pdf: "📄", doc: "📝", docx: "📝", xls: "📊", xlsx: "📊", csv: "📊", ppt: "📎", pptx: "📎", jpg: "🖼️", jpeg: "🖼️", png: "🖼️", gif: "🖼️", mp4: "🎬", mov: "🎬", mp3: "🎵", wav: "🎵", zip: "🗜️", rar: "🗜️", txt: "📃" };
+    return icons[ext] || "📄";
+  };
+
+
   const todoistAutoLink = async (proj) => {
     if (!todoistKey || !proj) return;
     const projCode = proj.code || generateProjectCode(proj);
@@ -3016,6 +3143,24 @@ export default function Dashboard({ user, onLogout }) {
       todoistFetchAllSections();
     }
   }, [glanceTab, todoistKey, todoistProjects.length]);
+
+  // Auto-browse Drive when Drive tab is opened
+  useEffect(() => {
+    if (activeTab !== "drive" || !project) return;
+    if (project.driveFolderId) {
+      // Already linked — browse it
+      if (drivePath.length === 0 || drivePath[0]?.id !== project.driveFolderId) {
+        driveBrowse(project.driveFolderId, project.code || project.name, true);
+      }
+    } else if (project.client && project.code && !driveEnsuring) {
+      // Has client + code but no folder ID — try to ensure
+      ensureProjectDrive(project).then(data => {
+        if (data?.folderId) {
+          driveBrowse(data.folderId, project.code || project.name, true);
+        }
+      });
+    }
+  }, [activeTab, project?.id, project?.driveFolderId]);
 
   const updateGlobalContact = (contactId, field, val) => setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
   const updateWB = (id, key, val) => {
@@ -4853,7 +4998,131 @@ export default function Dashboard({ user, onLogout }) {
             )}
 
             {/* ═══ DRIVE ═══ */}
-            {activeTab === "drive" && <div style={{ animation: "fadeUp 0.3s ease", textAlign: "center", padding: 60 }}><div style={{ fontSize: 40, marginBottom: 16 }}>📁</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Google Drive Integration</div><div style={{ fontSize: 13, color: "var(--textFaint)" }}>Will connect to your Drive once API is set up.</div></div>}
+            {activeTab === "drive" && (
+              <div style={{ animation: "fadeUp 0.3s ease" }}>
+                {/* No client/code — show setup message */}
+                {(!project.client || !project.code) ? (
+                  <div style={{ textAlign: "center", padding: 60 }}>
+                    <div style={{ fontSize: 40, marginBottom: 16 }}>📁</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Set Up Project Drive</div>
+                    <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 16 }}>
+                      {!project.client && "Assign a client"}{!project.client && !project.code && " and "}{!project.code && "set a project code"} to auto-create the Drive folder.
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>
+                      Path: ADPTV LLC → CLIENTS → [Client] → [Year] → [Project Code]
+                    </div>
+                  </div>
+                ) : !project.driveFolderId && !driveEnsuring ? (
+                  /* Has client + code but no folder yet */
+                  <div style={{ textAlign: "center", padding: 60 }}>
+                    <div style={{ fontSize: 40, marginBottom: 16 }}>📁</div>
+                    <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8, color: "var(--text)" }}>Create Drive Folder</div>
+                    <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 16 }}>
+                      Ready to create the project folder structure in Google Drive.
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 20 }}>
+                      CLIENTS / {project.client} / 20{project.code?.slice(0, 2)} / {project.code}
+                    </div>
+                    <button onClick={() => ensureProjectDrive(project).then(data => { if (data?.folderId) driveBrowse(data.folderId, project.code, true); })} style={{ padding: "10px 24px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      📁 Create Folder Structure
+                    </button>
+                  </div>
+                ) : driveEnsuring ? (
+                  <div style={{ textAlign: "center", padding: 60, color: "var(--textFaint)" }}>
+                    <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+                    Creating folder structure...
+                  </div>
+                ) : (
+                  /* File Browser */
+                  <div>
+                    {/* Header bar */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 16 }}>📁</span>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>Project Files</span>
+                        {project.driveFolderLink && (
+                          <a href={project.driveFolderLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10, color: "#3da5db", textDecoration: "none", fontWeight: 600, padding: "2px 8px", background: "#3da5db10", borderRadius: 4 }}>
+                            Open in Drive →
+                          </a>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <input type="file" ref={driveFileInputRef} onChange={e => { if (e.target.files[0]) driveUploadFile(e.target.files[0]); e.target.value = ""; }} style={{ display: "none" }} />
+                        <button onClick={() => driveFileInputRef.current?.click()} disabled={driveUploading} style={{ padding: "6px 14px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          {driveUploading ? "⏳ Uploading..." : "⬆ Upload"}
+                        </button>
+                        <button onClick={() => driveBrowseBreadcrumb(drivePath.length - 1)} disabled={driveLoading} style={{ padding: "6px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          🔄 Refresh
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Breadcrumb */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 12, padding: "8px 12px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)", flexWrap: "wrap" }}>
+                      {drivePath.map((crumb, i) => (
+                        <React.Fragment key={i}>
+                          {i > 0 && <span style={{ color: "var(--textGhost)", fontSize: 10 }}>›</span>}
+                          <button onClick={() => driveBrowseBreadcrumb(i)} style={{ background: "none", border: "none", color: i === drivePath.length - 1 ? "var(--text)" : "#3da5db", fontSize: 11, fontWeight: i === drivePath.length - 1 ? 700 : 500, cursor: "pointer", padding: "2px 4px", borderRadius: 3 }}>
+                            {crumb.name}
+                          </button>
+                        </React.Fragment>
+                      ))}
+                    </div>
+
+                    {/* File/folder list */}
+                    {driveLoading ? (
+                      <div style={{ textAlign: "center", padding: 40, color: "var(--textFaint)" }}>Loading...</div>
+                    ) : driveFiles.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: 40 }}>
+                        <div style={{ fontSize: 24, marginBottom: 8 }}>📂</div>
+                        <div style={{ fontSize: 13, color: "var(--textFaint)" }}>Empty folder</div>
+                        <button onClick={() => driveFileInputRef.current?.click()} style={{ marginTop: 12, padding: "8px 20px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 8, color: "#4ecb71", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          ⬆ Upload First File
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                        {/* Table header */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 140px 60px", padding: "8px 14px", background: "var(--bgSub)", borderBottom: "1px solid var(--borderSub)" }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5 }}>NAME</span>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5 }}>SIZE</span>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5 }}>MODIFIED</span>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, textAlign: "right" }}>OPEN</span>
+                        </div>
+                        {driveFiles.map(item => (
+                          <div key={item.id} onClick={() => { if (item.isFolder) driveBrowse(item.id, item.name); }} style={{ display: "grid", gridTemplateColumns: "1fr 100px 140px 60px", padding: "10px 14px", borderBottom: "1px solid var(--borderSub)", cursor: item.isFolder ? "pointer" : "default", transition: "background 0.15s" }}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--bgInput)"}
+                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          >
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                              <span style={{ fontSize: 16, flexShrink: 0 }}>{driveGetIcon(item)}</span>
+                              <span style={{ fontSize: 12, color: item.isFolder ? "var(--text)" : "var(--textSub)", fontWeight: item.isFolder ? 600 : 400, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                            </div>
+                            <div style={{ fontSize: 10, color: "var(--textGhost)", display: "flex", alignItems: "center" }}>{item.isFolder ? "–" : driveFormatSize(item.size)}</div>
+                            <div style={{ fontSize: 10, color: "var(--textGhost)", display: "flex", alignItems: "center" }}>{item.modified ? new Date(item.modified).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "–"}</div>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                              {item.link && !item.isFolder && (
+                                <a href={item.link} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 10, color: "#3da5db", textDecoration: "none", fontWeight: 600, padding: "2px 8px", background: "#3da5db10", borderRadius: 4 }}>
+                                  Open ↗
+                                </a>
+                              )}
+                              {item.isFolder && <span style={{ fontSize: 10, color: "var(--textGhost)" }}>→</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Drive path info */}
+                    {project.drivePath && (
+                      <div style={{ marginTop: 12, fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>
+                        📂 {project.drivePath}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ═══ VENDORS (v3 style with drop zones) ═══ */}
             {activeTab === "vendors" && (
@@ -5676,6 +5945,63 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     ))}
                     <button onClick={() => { setAppSettings(prev => ({ ...prev, driveConnections: [...prev.driveConnections, { name: "", folderId: "" }] })); setSettingsDirty(true); }} style={{ marginTop: 6, padding: "7px 14px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 6, color: "#ff6b4a", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Folder</button>
+                  </div>
+
+                  {/* ── PROJECT FOLDER TEMPLATE ── */}
+                  <div style={{ marginTop: 28, borderTop: "2px solid var(--borderSub)", paddingTop: 20 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>📂 Project Folder Template</div>
+                    <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>
+                      This structure is created inside each new project folder: CLIENTS → [Client] → [Year] → [Project Code] → <em>template below</em>
+                    </div>
+
+                    {/* Render template tree */}
+                    {(() => {
+                      const tmpl = appSettings.folderTemplate || [];
+
+                      const renderTreeFixed = (items, depth, getTarget) => items.map((item, idx) => (
+                        <div key={`${depth}-${idx}`} style={{ marginLeft: depth * 20 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0" }}>
+                            <span style={{ fontSize: 14 }}>📁</span>
+                            <input value={item.name} onChange={e => {
+                              const update = JSON.parse(JSON.stringify(appSettings.folderTemplate));
+                              const arr = getTarget(update);
+                              arr[idx].name = e.target.value;
+                              setAppSettings(prev => ({ ...prev, folderTemplate: update }));
+                              setSettingsDirty(true);
+                            }} style={{ flex: 1, padding: "4px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--text)", fontSize: 12, fontWeight: 600, outline: "none", fontFamily: "'DM Sans', sans-serif" }} />
+                            <button onClick={() => {
+                              const update = JSON.parse(JSON.stringify(appSettings.folderTemplate));
+                              const arr = getTarget(update);
+                              arr[idx].children = arr[idx].children || [];
+                              arr[idx].children.push({ name: "New Folder", children: [] });
+                              setAppSettings(prev => ({ ...prev, folderTemplate: update }));
+                              setSettingsDirty(true);
+                            }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "var(--textMuted)", cursor: "pointer" }} title="Add subfolder">+ Sub</button>
+                            <button onClick={() => {
+                              if (!confirm(`Remove "${item.name}" and all its subfolders?`)) return;
+                              const update = JSON.parse(JSON.stringify(appSettings.folderTemplate));
+                              const arr = getTarget(update);
+                              arr.splice(idx, 1);
+                              setAppSettings(prev => ({ ...prev, folderTemplate: update }));
+                              setSettingsDirty(true);
+                            }} style={{ background: "none", border: "1px solid #e8545430", borderRadius: 4, padding: "2px 6px", fontSize: 9, color: "#e85454", cursor: "pointer" }} title="Remove folder">✕</button>
+                          </div>
+                          {item.children && item.children.length > 0 && renderTreeFixed(item.children, depth + 1, (root) => getTarget(root)[idx].children)}
+                        </div>
+                      ));
+
+                      return (
+                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: 14 }}>
+                          {tmpl.length === 0 ? (
+                            <div style={{ fontSize: 12, color: "var(--textFaint)", textAlign: "center", padding: 16 }}>No folders in template</div>
+                          ) : renderTreeFixed(tmpl, 0, (root) => root)}
+                          <button onClick={() => {
+                            setAppSettings(prev => ({ ...prev, folderTemplate: [...(prev.folderTemplate || []), { name: "New Folder", children: [] }] }));
+                            setSettingsDirty(true);
+                          }} style={{ marginTop: 8, padding: "6px 14px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Top-Level Folder</button>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* ── DATA PROTECTION ── */}
