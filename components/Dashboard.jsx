@@ -1886,55 +1886,6 @@ export default function Dashboard({ user, onLogout }) {
     } catch (e) { console.error("Todoist:", e); }
     setTodoistLoading(false);
   }, [todoistKey]);
-
-  // Fetch sections and collaborators for a specific project
-  const todoistFetchProjectDetails = useCallback(async (projectId) => {
-    if (!todoistKey || !projectId) return;
-    try {
-      const tp = (endpoint, opts = {}) => fetch("/api/todoist", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint, apiKey: todoistKey, method: opts.method || "GET", headers: opts.headers, body: opts.body })
-      }).then(r => r.json());
-      const [sections, collabs] = await Promise.all([
-        tp(`/rest/v2/sections?project_id=${projectId}`),
-        tp(`/rest/v2/projects/${projectId}/collaborators`).catch(() => []),
-      ]);
-      if (Array.isArray(sections)) setTodoistSections(prev => {
-        const filtered = prev.filter(s => s.project_id !== projectId);
-        return [...filtered, ...sections];
-      });
-      if (Array.isArray(collabs)) setTodoistCollaborators(prev => {
-        const existingIds = new Set(prev.map(c => c.id));
-        const newOnes = collabs.filter(c => !existingIds.has(c.id));
-        return [...prev, ...newOnes];
-      });
-    } catch (e) { console.error("Todoist project details:", e); }
-  }, [todoistKey]);
-
-  // Fetch sections for all ADPTV workspace projects
-  const todoistFetchAllSections = useCallback(async () => {
-    if (!todoistKey || todoistProjects.length === 0) return;
-    const adptvProjects = todoistProjects.filter(p => !p.inbox_project && (adptvWorkspaceId ? p.workspace_id === adptvWorkspaceId : true));
-    try {
-      const tp = (endpoint) => fetch("/api/todoist", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ endpoint, apiKey: todoistKey, method: "GET" })
-      }).then(r => r.json());
-      const allSections = await Promise.all(adptvProjects.map(p => tp(`/rest/v2/sections?project_id=${p.id}`).catch(() => [])));
-      const flatSections = allSections.flat().filter(s => s && s.id);
-      if (flatSections.length > 0) setTodoistSections(flatSections);
-      // Also fetch collaborators from first project that has them
-      for (const p of adptvProjects) {
-        try {
-          const collabs = await tp(`/rest/v2/projects/${p.id}/collaborators`);
-          if (Array.isArray(collabs) && collabs.length > 0) {
-            setTodoistCollaborators(collabs);
-            break;
-          }
-        } catch {} // eslint-disable-line no-empty
-      }
-    } catch (e) { console.error("Todoist fetch all sections:", e); }
-  }, [todoistKey, todoistProjects, adptvWorkspaceId]);
   const todoistProxy = useCallback((endpoint, opts = {}) => fetch("/api/todoist", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2018,41 +1969,55 @@ export default function Dashboard({ user, onLogout }) {
     await todoistFetch();
   };
 
-  // Auto-link Todoist project for an event (match only, never create)
-  const todoistAutoLink = async (proj) => {
-    if (!todoistKey || !proj) return;
-    const projCode = proj.code || generateProjectCode(proj);
-    if (!projCode) return;
-    // Prevent duplicate auto-link attempts for same project
-    if (todoistAutoLinkRef.current[proj.id]) return;
-    todoistAutoLinkRef.current[proj.id] = true;
-    setTodoistAutoLinking(true);
+  // Fetch sections and collaborators for a specific project
+  const todoistFetchProjectDetails = async (projectId) => {
+    if (!todoistKey || !projectId) return;
     try {
-      // Search existing Todoist projects for a name match
-      const match = todoistProjects.find(p => p.name === projCode);
-      if (match) {
-        // Found it — auto-link
-        updateProject("todoistProjectId", match.id);
-        setClipboardToast({ text: `Linked to existing Todoist project: ${projCode}`, x: window.innerWidth / 2, y: 60 });
-        setTimeout(() => setClipboardToast(null), 3000);
-        await todoistFetchProjectDetails(match.id);
-      }
-      // If no match found, do nothing — user can create manually via button
-    } catch (e) {
-      console.error("Todoist auto-link:", e);
-    }
-    setTodoistAutoLinking(false);
-    // Allow retry after 10s if it failed
-    setTimeout(() => { delete todoistAutoLinkRef.current[proj.id]; }, 10000);
+      const tp = (endpoint) => fetch("/api/todoist", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint, apiKey: todoistKey, method: "GET" })
+      }).then(r => r.json());
+      const [sections, collabs] = await Promise.all([
+        tp(`/rest/v2/sections?project_id=${projectId}`),
+        tp(`/rest/v2/projects/${projectId}/collaborators`).catch(() => []),
+      ]);
+      if (Array.isArray(sections)) setTodoistSections(prev => {
+        const filtered = prev.filter(s => s.project_id !== projectId);
+        return [...filtered, ...sections];
+      });
+      if (Array.isArray(collabs)) setTodoistCollaborators(prev => {
+        const existingIds = new Set(prev.map(c => c.id));
+        const newOnes = collabs.filter(c => !existingIds.has(c.id));
+        return [...prev, ...newOnes];
+      });
+    } catch (e) { console.error("Todoist project details:", e); }
   };
 
-  // Section CRUD
+  // Fetch sections for all ADPTV workspace projects (for master tab)
+  const todoistFetchAllSections = async () => {
+    if (!todoistKey || todoistProjects.length === 0) return;
+    const adptvProjs = todoistProjects.filter(p => !p.inbox_project && (adptvWorkspaceId ? p.workspace_id === adptvWorkspaceId : true));
+    try {
+      const tp = (endpoint) => fetch("/api/todoist", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint, apiKey: todoistKey, method: "GET" })
+      }).then(r => r.json());
+      const allSections = await Promise.all(adptvProjs.map(p => tp(`/rest/v2/sections?project_id=${p.id}`).catch(() => [])));
+      const flatSections = allSections.flat().filter(s => s && s.id);
+      if (flatSections.length > 0) setTodoistSections(flatSections);
+      for (const p of adptvProjs) {
+        try {
+          const collabs = await tp(`/rest/v2/projects/${p.id}/collaborators`);
+          if (Array.isArray(collabs) && collabs.length > 0) { setTodoistCollaborators(collabs); break; }
+        } catch {} // eslint-disable-line no-empty
+      }
+    } catch (e) { console.error("Todoist fetch all sections:", e); }
+  };
+
+  // Section and task CRUD
   const todoistCreateSection = async (name, projectId) => {
     if (!todoistKey || !name || !projectId) return;
-    await todoistProxy("/rest/v2/sections", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: { name, project_id: projectId }
-    });
+    await todoistProxy("/rest/v2/sections", { method: "POST", headers: { "Content-Type": "application/json" }, body: { name, project_id: projectId } });
     await todoistFetchProjectDetails(projectId);
   };
   const todoistDeleteSection = async (sectionId, projectId) => {
@@ -2060,24 +2025,10 @@ export default function Dashboard({ user, onLogout }) {
     await todoistProxy(`/rest/v2/sections/${sectionId}`, { method: "DELETE" });
     await todoistFetchProjectDetails(projectId);
   };
-
-  // Update task (partial)
   const todoistUpdateTask = async (taskId, updates) => {
     if (!todoistKey || !taskId) return;
-    await todoistProxy(`/api/v1/tasks/${taskId}`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: updates
-    });
+    await todoistProxy(`/api/v1/tasks/${taskId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: updates });
     await todoistFetch();
-  };
-
-  // Add comment to task
-  const todoistAddComment = async (taskId, content) => {
-    if (!todoistKey || !taskId || !content) return;
-    await todoistProxy("/rest/v2/comments", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: { task_id: taskId, content }
-    });
   };
   const searchTimerRef = useRef(null);
   const contactPopoverRef = useRef(null);
@@ -2687,25 +2638,6 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
   useEffect(() => { if (todoistKey) todoistFetch(todoistKey); }, []);
 
-  // Auto-link: when Todoist tab is opened for a project without a linked Todoist project
-  useEffect(() => {
-    if (activeTab !== "todoist" || !project || !todoistKey || todoistProjects.length === 0) return;
-    if (project.todoistProjectId) {
-      // Already linked — just fetch sections/collaborators
-      todoistFetchProjectDetails(project.todoistProjectId);
-      return;
-    }
-    // Not linked — try to auto-link (match only, no create)
-    todoistAutoLink(project);
-  }, [activeTab, project?.id, project?.todoistProjectId, todoistProjects.length, todoistKey]);
-
-  // Load sections for all projects when master todoist tab opens
-  useEffect(() => {
-    if (glanceTab === "masterTodoist" && todoistKey && todoistProjects.length > 0 && todoistSections.length === 0) {
-      todoistFetchAllSections();
-    }
-  }, [glanceTab, todoistKey, todoistProjects.length]);
-
   // ─── SUPABASE AUTO-SAVE ────────────────────────────────────────
   // Load app settings (global)
   useEffect(() => {
@@ -3010,6 +2942,45 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
   const updateProject2 = (projId, key, val) => setProjects(prev => prev.map(p => p.id === projId ? { ...p, [key]: val } : p));
+
+  // Auto-link Todoist project for an event (match only, never auto-create)
+  const todoistAutoLink = async (proj) => {
+    if (!todoistKey || !proj) return;
+    const projCode = proj.code || generateProjectCode(proj);
+    if (!projCode) return;
+    if (todoistAutoLinkRef.current[proj.id]) return;
+    todoistAutoLinkRef.current[proj.id] = true;
+    setTodoistAutoLinking(true);
+    try {
+      const match = todoistProjects.find(p => p.name === projCode);
+      if (match) {
+        updateProject("todoistProjectId", match.id);
+        setClipboardToast({ text: `Linked to existing Todoist project: ${projCode}`, x: window.innerWidth / 2, y: 60 });
+        setTimeout(() => setClipboardToast(null), 3000);
+        await todoistFetchProjectDetails(match.id);
+      }
+    } catch (e) { console.error("Todoist auto-link:", e); }
+    setTodoistAutoLinking(false);
+    setTimeout(() => { delete todoistAutoLinkRef.current[proj.id]; }, 10000);
+  };
+
+  // Auto-link: when Todoist tab is opened for a project without a linked Todoist project
+  useEffect(() => {
+    if (activeTab !== "todoist" || !project || !todoistKey || todoistProjects.length === 0) return;
+    if (project.todoistProjectId) {
+      todoistFetchProjectDetails(project.todoistProjectId);
+      return;
+    }
+    todoistAutoLink(project);
+  }, [activeTab, project?.id, project?.todoistProjectId, todoistProjects.length, todoistKey]);
+
+  // Load sections for all projects when master todoist tab opens
+  useEffect(() => {
+    if (glanceTab === "masterTodoist" && todoistKey && todoistProjects.length > 0 && todoistSections.length === 0) {
+      todoistFetchAllSections();
+    }
+  }, [glanceTab, todoistKey, todoistProjects.length]);
+
   const updateGlobalContact = (contactId, field, val) => setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
   const updateWB = (id, key, val) => {
     setWorkback(prev => prev.map(w => w.id === id ? { ...w, [key]: val } : w));
@@ -3792,14 +3763,11 @@ export default function Dashboard({ user, onLogout }) {
                         <div>
                           {adptvProjects.map(proj => {
                             let tasks = todoistTasks.filter(t => t.project_id === proj.id);
-                            // Apply filter
                             if (todoistFilter === "today") tasks = tasks.filter(t => t.due?.date === today);
                             else if (todoistFilter === "overdue") tasks = tasks.filter(t => t.due?.date && t.due.date < today);
                             const allProjectTasks = todoistTasks.filter(t => t.project_id === proj.id);
                             const projOverdue = allProjectTasks.filter(t => t.due?.date && t.due.date < today).length;
-                            // Don't show empty projects when filtering
                             if ((todoistFilter === "today" || todoistFilter === "overdue") && tasks.length === 0) return null;
-                            // Group by section
                             const projSections = todoistSections.filter(s => s.project_id === proj.id).sort((a, b) => (a.order || 0) - (b.order || 0));
                             const unsectioned = tasks.filter(t => !t.section_id);
                             const tasksBySection = {};
@@ -3807,7 +3775,7 @@ export default function Dashboard({ user, onLogout }) {
 
                             return (
                               <div key={proj.id} style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, marginBottom: 12, overflow: "hidden" }}>
-                                <div style={{ padding: "10px 16px", borderBottom: tasks.length > 0 ? "1px solid var(--borderSub)" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bgCard)" }}>
+                                <div style={{ padding: "10px 16px", borderBottom: tasks.length > 0 || todoistFilter === "all" ? "1px solid var(--borderSub)" : "none", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bgCard)" }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                     <span style={{ fontSize: 12 }}>📁</span>
                                     <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{proj.name}</span>
@@ -3819,12 +3787,10 @@ export default function Dashboard({ user, onLogout }) {
                                     {(() => { const linked = projects.find(p => p.todoistProjectId === proj.id); return linked ? <button onClick={() => { setActiveProjectId(linked.id); setActiveTab("todoist"); }} style={{ fontSize: 9, padding: "2px 7px", background: "#3da5db15", border: "1px solid #3da5db20", borderRadius: 10, color: "#3da5db", fontWeight: 600, cursor: "pointer" }}>→ Open Project</button> : null; })()}
                                   </div>
                                 </div>
-
-                                {/* Inline add task for this project */}
+                                {/* Inline add task */}
                                 <div style={{ display: "flex", gap: 6, padding: "6px 16px", borderBottom: "1px solid var(--calLine)" }}>
                                   <input placeholder={`Add task to ${proj.name}...`} onKeyDown={e => { if (e.key === "Enter" && e.target.value.trim()) { todoistAddTaskToProject(e.target.value.trim(), proj.id); e.target.value = ""; } }} style={{ flex: 1, padding: "6px 10px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 11, outline: "none" }} />
                                 </div>
-
                                 {/* Unsectioned tasks */}
                                 {unsectioned.sort((a, b) => (a.order || 0) - (b.order || 0)).map(task => {
                                   const isOverdue = task.due?.date && task.due.date < today;
@@ -3842,7 +3808,6 @@ export default function Dashboard({ user, onLogout }) {
                                     </div>
                                   );
                                 })}
-
                                 {/* Sectioned tasks */}
                                 {projSections.map(section => {
                                   const sectionTasks = (tasksBySection[section.id] || []).sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -3871,12 +3836,10 @@ export default function Dashboard({ user, onLogout }) {
                                     </div>
                                   );
                                 })}
-
                                 {tasks.length === 0 && todoistFilter === "all" && <div style={{ padding: "12px 16px", fontSize: 11, color: "var(--textGhost)", textAlign: "center" }}>No tasks yet</div>}
                               </div>
                             );
                           })}
-
                           {/* Summary stats */}
                           <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
                             <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
@@ -3901,6 +3864,7 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                   );
                 })()}
+
               </div>
             )}
 
@@ -4576,76 +4540,7 @@ export default function Dashboard({ user, onLogout }) {
               const linkedTodoistId = project.todoistProjectId;
               const linkedProject = linkedTodoistId ? todoistProjects.find(p => p.id === linkedTodoistId) : null;
               const projectTasks = linkedTodoistId ? todoistTasks.filter(t => t.project_id === linkedTodoistId) : [];
-              const projectSections = linkedTodoistId ? todoistSections.filter(s => s.project_id === linkedTodoistId) : [];
               const today = new Date().toISOString().split("T")[0];
-              const priColors = { 1: "var(--textGhost)", 2: "#3da5db", 3: "#dba94e", 4: "#ff6b4a" };
-              const priLabels = { 1: "", 2: "Low", 3: "Med", 4: "High" };
-              const getCollabName = (id) => { const c = todoistCollaborators.find(x => x.id === id); return c ? c.name?.split(" ")[0] : ""; };
-
-              // Group tasks by section
-              const unsectioned = projectTasks.filter(t => !t.section_id);
-              const tasksBySection = {};
-              projectSections.forEach(s => { tasksBySection[s.id] = projectTasks.filter(t => t.section_id === s.id); });
-
-              const renderTask = (task) => {
-                const isOverdue = task.due && task.due.date < today;
-                const isToday = task.due && task.due.date === today;
-                const assignee = task.assignee_id ? getCollabName(task.assignee_id) : "";
-                const isEditing = todoistEditingTask === task.id;
-                return (
-                  <div key={task.id}>
-                    <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 80px 70px 50px", padding: "9px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", cursor: "pointer", background: isEditing ? "var(--bgInput)" : "transparent" }} onClick={() => setTodoistEditingTask(isEditing ? null : task.id)}>
-                      <div onClick={(e) => { e.stopPropagation(); todoistClose(task.id); }} style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                        <span style={{ fontSize: 10, opacity: 0.4 }}>✓</span>
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{task.content}</div>
-                        {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 2 }}>{task.description.slice(0, 80)}</div>}
-                      </div>
-                      <div style={{ fontSize: 10, color: isOverdue ? "#ff4a6b" : isToday ? "#ff6b4a" : "var(--textMuted)", fontWeight: isOverdue || isToday ? 600 : 400 }}>
-                        {task.due ? (isToday ? "Today" : task.due.string || task.due.date) : ""}
-                      </div>
-                      <div style={{ fontSize: 10, color: "var(--textMuted)" }}>{assignee ? `@${assignee}` : ""}</div>
-                      <button onClick={(e) => { e.stopPropagation(); todoistDelete(task.id); }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13 }} title="Delete">×</button>
-                    </div>
-                    {/* Inline edit panel */}
-                    {isEditing && (
-                      <div style={{ padding: "12px 16px 12px 44px", background: "var(--bgInput)", borderBottom: "1px solid var(--borderSub)", display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                        <input defaultValue={task.due?.date || ""} type="date" onChange={e => todoistUpdateTask(task.id, { due_date: e.target.value || null })} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--text)", fontSize: 11, outline: "none" }} />
-                        <select defaultValue={task.priority} onChange={e => todoistUpdateTask(task.id, { priority: parseInt(e.target.value) })} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--text)", fontSize: 11, outline: "none" }}>
-                          <option value={1}>No priority</option>
-                          <option value={2}>Low</option>
-                          <option value={3}>Medium</option>
-                          <option value={4}>High</option>
-                        </select>
-                        {todoistCollaborators.length > 0 && (
-                          <select defaultValue={task.assignee_id || ""} onChange={e => todoistUpdateTask(task.id, { assignee_id: e.target.value || null })} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--text)", fontSize: 11, outline: "none" }}>
-                            <option value="">Unassigned</option>
-                            {todoistCollaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                        )}
-                        <select defaultValue={task.section_id || ""} onChange={e => todoistUpdateTask(task.id, { section_id: e.target.value || null })} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--text)", fontSize: 11, outline: "none" }}>
-                          <option value="">No section</option>
-                          {projectSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                );
-              };
-
-              const renderSectionTasks = (tasks, sectionId) => (
-                <>
-                  {tasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(renderTask)}
-                  {todoistNewTaskSection === sectionId && (
-                    <div style={{ display: "flex", gap: 6, padding: "8px 12px 8px 44px", borderBottom: "1px solid var(--calLine)" }}>
-                      <input autoFocus placeholder="Task name..." onKeyDown={e => { if (e.key === "Enter" && e.target.value.trim()) { todoistAddTaskToProject(e.target.value.trim(), linkedTodoistId, sectionId); setTodoistNewTaskSection(null); } if (e.key === "Escape") setTodoistNewTaskSection(null); }} style={{ flex: 1, padding: "6px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
-                      <button onClick={() => setTodoistNewTaskSection(null)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 11 }}>Cancel</button>
-                    </div>
-                  )}
-                </>
-              );
-
               return (
                 <div style={{ animation: "fadeUp 0.3s ease", maxWidth: 900 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
@@ -4653,9 +4548,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>TASK MANAGEMENT</div>
                       <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Todoist — {project.name}</div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      {linkedProject && <button onClick={async () => { await todoistFetch(); await todoistFetchProjectDetails(linkedTodoistId); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>}
-                    </div>
+                    {linkedProject && <button onClick={() => todoistFetch()} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>}
                   </div>
 
                   {!todoistKey ? (
@@ -4663,12 +4556,6 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
                       <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Connect Todoist First</div>
                       <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>Your Todoist API key is configured in Settings.</div>
-                    </div>
-                  ) : todoistAutoLinking ? (
-                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 50, textAlign: "center" }}>
-                      <div style={{ fontSize: 48, marginBottom: 16, animation: "pulse 1.5s ease-in-out infinite" }}>⏳</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: "'Instrument Sans'" }}>Linking Todoist project...</div>
-                      <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6 }}>Looking for <span style={{ fontWeight: 700, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{projCode}</span> in your workspace</div>
                     </div>
                   ) : !linkedProject ? (
                     <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 50, textAlign: "center" }}>
@@ -4688,8 +4575,12 @@ export default function Dashboard({ user, onLogout }) {
                         } else {
                           btn.disabled = false;
                           btn.textContent = "🚀 Start Todoist Project";
+                          if (!document.querySelector("[data-toast]")) {
+                            setClipboardToast({ text: "Failed to create project — check console for details", x: window.innerWidth / 2, y: 60 });
+                            setTimeout(() => setClipboardToast(null), 4000);
+                          }
                         }
-                      }} style={{ padding: "14px 32px", background: "#ff6b4a", border: "none", borderRadius: 10, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 14px rgba(255,107,74,0.3)" }}>
+                      }} style={{ padding: "14px 32px", background: "#ff6b4a", border: "none", borderRadius: 10, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 14px rgba(255,107,74,0.3)", transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
                         🚀 Start Todoist Project
                       </button>
                       {todoistProjects.filter(p => !p.inbox_project).length > 0 && (
@@ -4705,76 +4596,72 @@ export default function Dashboard({ user, onLogout }) {
                   ) : (
                     <div>
                       {/* Project info bar */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, padding: "10px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, padding: "10px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8 }}>
                         <span style={{ fontSize: 14 }}>✅</span>
                         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{linkedProject.name}</span>
                         <span style={{ fontSize: 10, color: "var(--textFaint)" }}>{projectTasks.length} task{projectTasks.length !== 1 ? "s" : ""}</span>
-                        {projectSections.length > 0 && <span style={{ fontSize: 10, color: "var(--textFaint)" }}>• {projectSections.length} section{projectSections.length !== 1 ? "s" : ""}</span>}
-                        {todoistCollaborators.length > 0 && <span style={{ fontSize: 10, color: "var(--textFaint)" }}>• {todoistCollaborators.length} member{todoistCollaborators.length !== 1 ? "s" : ""}</span>}
                         <div style={{ flex: 1 }} />
-                        <button onClick={() => { updateProject("todoistProjectId", null); setTodoistSections([]); setTodoistCollaborators([]); }} style={{ padding: "4px 10px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>Unlink</button>
+                        <button onClick={() => { updateProject("todoistProjectId", null); }} style={{ padding: "4px 10px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>Unlink</button>
                       </div>
 
-                      {/* Add task + section controls */}
-                      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                      {/* Add task */}
+                      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                         <input placeholder={`Add task to ${linkedProject.name}...`} value={todoistNewTask} onChange={e => setTodoistNewTask(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && todoistNewTask.trim()) { todoistAddTaskToProject(todoistNewTask.trim(), linkedTodoistId); setTodoistNewTask(""); } }} style={{ flex: 1, padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />
                         <button onClick={() => { if (todoistNewTask.trim()) { todoistAddTaskToProject(todoistNewTask.trim(), linkedTodoistId); setTodoistNewTask(""); } }} disabled={!todoistNewTask.trim()} style={{ padding: "10px 20px", background: todoistNewTask.trim() ? "#ff6b4a" : "var(--bgInput)", border: "none", borderRadius: 8, color: todoistNewTask.trim() ? "#fff" : "var(--textGhost)", cursor: todoistNewTask.trim() ? "pointer" : "default", fontSize: 13, fontWeight: 700 }}>+ Add</button>
-                        <button onClick={() => setTodoistAddingSection(prev => !prev)} style={{ padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Section</button>
                       </div>
-
-                      {/* Add section input */}
-                      {todoistAddingSection && (
-                        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                          <input autoFocus placeholder="Section name..." value={todoistNewSection} onChange={e => setTodoistNewSection(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && todoistNewSection.trim()) { todoistCreateSection(todoistNewSection.trim(), linkedTodoistId); setTodoistNewSection(""); setTodoistAddingSection(false); } if (e.key === "Escape") { setTodoistAddingSection(false); setTodoistNewSection(""); } }} style={{ flex: 1, padding: "10px 14px", background: "var(--bgCard)", border: "1px solid #ff6b4a30", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />
-                          <button onClick={() => { if (todoistNewSection.trim()) { todoistCreateSection(todoistNewSection.trim(), linkedTodoistId); setTodoistNewSection(""); setTodoistAddingSection(false); } }} disabled={!todoistNewSection.trim()} style={{ padding: "10px 16px", background: todoistNewSection.trim() ? "#ff6b4a" : "var(--bgInput)", border: "none", borderRadius: 8, color: todoistNewSection.trim() ? "#fff" : "var(--textGhost)", cursor: todoistNewSection.trim() ? "pointer" : "default", fontSize: 12, fontWeight: 700 }}>Create</button>
-                          <button onClick={() => { setTodoistAddingSection(false); setTodoistNewSection(""); }} style={{ padding: "10px 12px", background: "none", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
-                        </div>
-                      )}
 
                       {/* Task list */}
                       {todoistLoading ? (
                         <div style={{ textAlign: "center", padding: 40, color: "var(--textFaint)" }}>Loading tasks...</div>
                       ) : projectTasks.length === 0 ? (
-                        <div style={{ textAlign: "center", padding: 40, color: "var(--textFaint)", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>No tasks yet — add one above</div>
-                      ) : (
-                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
-                          {/* Column headers */}
-                          <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 80px 70px 50px", padding: "8px 12px", borderBottom: "1px solid var(--borderSub)", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                            <span></span><span>TASK</span><span>DUE</span><span>ASSIGN</span><span></span>
-                          </div>
-
-                          {/* Unsectioned tasks first */}
-                          {unsectioned.length > 0 && projectSections.length > 0 && (
-                            <div style={{ padding: "8px 12px 4px", fontSize: 10, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, borderBottom: "1px solid var(--calLine)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                              <span>UNSECTIONED</span>
-                              <button onClick={() => setTodoistNewTaskSection(todoistNewTaskSection === "unsectioned" ? null : "unsectioned")} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 10 }}>+ task</button>
-                            </div>
-                          )}
-                          {unsectioned.length > 0 && renderSectionTasks(unsectioned, null)}
-
-                          {/* Sectioned tasks */}
-                          {projectSections.sort((a, b) => (a.order || 0) - (b.order || 0)).map(section => {
-                            const sectionTasks = tasksBySection[section.id] || [];
-                            return (
-                              <div key={section.id}>
-                                <div style={{ padding: "10px 12px 6px", fontSize: 10, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5, borderBottom: "1px solid var(--calLine)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#ff6b4a06" }}>
-                                  <span>{String.fromCharCode(9656)} {section.name.toUpperCase()} <span style={{ color: "var(--textFaint)", fontWeight: 400 }}>({sectionTasks.length})</span></span>
-                                  <div style={{ display: "flex", gap: 8 }}>
-                                    <button onClick={() => setTodoistNewTaskSection(todoistNewTaskSection === section.id ? null : section.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 10 }}>+ task</button>
-                                    <button onClick={() => { if (confirm("Delete section \"" + section.name + "\"? Tasks will become unsectioned.")) todoistDeleteSection(section.id, linkedTodoistId); }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 10 }}>×</button>
-                                  </div>
-                                </div>
-                                {sectionTasks.length === 0 && todoistNewTaskSection !== section.id ? (
-                                  <div style={{ padding: "8px 12px 8px 44px", fontSize: 11, color: "var(--textGhost)", borderBottom: "1px solid var(--calLine)" }}>No tasks in this section</div>
-                                ) : null}
-                                {renderSectionTasks(sectionTasks, section.id)}
-                              </div>
-                            );
-                          })}
+                        <div style={{ textAlign: "center", padding: 40, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, color: "var(--textGhost)" }}>
+                          No tasks yet — add one above!
                         </div>
-                      )}
+                      ) : (() => {
+                        const projSections = todoistSections.filter(s => s.project_id === linkedTodoistId).sort((a, b) => (a.order || 0) - (b.order || 0));
+                        const unsectioned = projectTasks.filter(t => !t.section_id).sort((a, b) => (a.order || 0) - (b.order || 0));
+                        const priColors = { 1: "var(--textMuted)", 2: "#3da5db", 3: "#dba94e", 4: "#ff6b4a" };
+                        const renderTask = (task) => {
+                          const isOverdue = task.due && task.due.date < today;
+                          const isToday = task.due && task.due.date === today;
+                          const assignee = task.assignee_id ? (() => { const c = todoistCollaborators.find(x => x.id === task.assignee_id); return c ? c.name?.split(" ")[0] : ""; })() : "";
+                          return (
+                            <div key={task.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr auto 100px 50px", padding: "10px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center" }}>
+                              <div onClick={() => todoistClose(task.id)} style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                <span style={{ fontSize: 10, opacity: 0.4 }}>✓</span>
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{task.content}</div>
+                                {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 2 }}>{task.description.slice(0, 80)}</div>}
+                              </div>
+                              <div>{assignee && <span style={{ fontSize: 9, color: "var(--textFaint)", padding: "2px 6px", background: "var(--bgInput)", borderRadius: 4 }}>@{assignee}</span>}</div>
+                              <div style={{ fontSize: 10, color: isOverdue ? "#ff4a6b" : isToday ? "#ff6b4a" : "var(--textMuted)", fontWeight: isOverdue || isToday ? 600 : 400 }}>
+                                {task.due ? (isToday ? "Today" : task.due.string || task.due.date) : ""}
+                              </div>
+                              <button onClick={() => todoistDelete(task.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13 }} title="Delete">×</button>
+                            </div>
+                          );
+                        };
+                        return (
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "32px 1fr auto 100px 50px", padding: "8px 12px", borderBottom: "1px solid var(--borderSub)", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span></span><span>TASK</span><span>ASSIGN</span><span>DUE</span><span></span></div>
+                            {unsectioned.map(renderTask)}
+                            {projSections.map(section => {
+                              const sectionTasks = projectTasks.filter(t => t.section_id === section.id).sort((a, b) => (a.order || 0) - (b.order || 0));
+                              return (
+                                <div key={section.id}>
+                                  <div style={{ padding: "6px 12px", fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5, borderBottom: "1px solid var(--calLine)", background: "#ff6b4a06" }}>
+                                    {String.fromCharCode(9656)} {section.name.toUpperCase()} <span style={{ color: "var(--textFaint)", fontWeight: 400 }}>({sectionTasks.length})</span>
+                                  </div>
+                                  {sectionTasks.map(renderTask)}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
 
-                      {/* Summary stats */}
+                      {/* Summary */}
                       <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
                         <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TASKS</div>
@@ -4784,17 +4671,12 @@ export default function Dashboard({ user, onLogout }) {
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
                           <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: projectTasks.filter(t => t.due && t.due.date < today).length > 0 ? "#ff4a6b" : "var(--text)" }}>{projectTasks.filter(t => t.due && t.due.date < today).length}</div>
                         </div>
-                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>SECTIONS</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{projectSections.length}</div>
-                        </div>
                       </div>
                     </div>
                   )}
                 </div>
               );
             })()}
-
 
             {/* ═══ WORK BACK ═══ */}
             {activeTab === "workback" && (
