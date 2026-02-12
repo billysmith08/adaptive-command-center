@@ -8,6 +8,58 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import TextAlign from "@tiptap/extension-text-align";
 import Highlight from "@tiptap/extension-highlight";
+
+// Universal array safety helper - ensures value is always an array
+const safeArr = (v) => Array.isArray(v) ? v : [];
+
+// Deep sanitizer for all state loaded from Supabase - ensures no null arrays crash the app
+const sanitizeProject = (p) => ({
+  ...p,
+  producers: safeArr(p.producers),
+  managers: safeArr(p.managers),
+  staff: safeArr(p.staff),
+  pocs: safeArr(p.pocs),
+  clientContacts: safeArr(p.clientContacts),
+  billingContacts: safeArr(p.billingContacts),
+  services: safeArr(p.services),
+  subEvents: safeArr(p.subEvents),
+  name: p.name || "",
+  client: p.client || "",
+  code: p.code || "",
+  status: p.status || "",
+  location: p.location || "",
+  why: p.why || "",
+  eventDates: p.eventDates || { start: "", end: "" },
+  engagementDates: p.engagementDates || { start: "", end: "" },
+});
+const sanitizeVendor = (v) => ({
+  ...v,
+  compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } },
+});
+const sanitizeState = (s) => {
+  const safe = { ...s };
+  if (safe.projects) safe.projects = safeArr(safe.projects).map(sanitizeProject);
+  if (safe.projectVendors && typeof safe.projectVendors === 'object') {
+    const sv = {};
+    Object.keys(safe.projectVendors).forEach(k => { sv[k] = safeArr(safe.projectVendors[k]).map(sanitizeVendor); });
+    safe.projectVendors = sv;
+  }
+  if (safe.projectWorkback && typeof safe.projectWorkback === 'object') {
+    const sw = {};
+    Object.keys(safe.projectWorkback).forEach(k => { sw[k] = safeArr(safe.projectWorkback[k]); });
+    safe.projectWorkback = sw;
+  }
+  if (safe.projectROS && typeof safe.projectROS === 'object') {
+    const sr = {};
+    Object.keys(safe.projectROS).forEach(k => {
+      sr[k] = safeArr(safe.projectROS[k]).map(r => ({ ...r, vendors: safeArr(r.vendors) }));
+    });
+    safe.projectROS = sr;
+  }
+  if (safe.contacts) safe.contacts = safeArr(safe.contacts);
+  if (safe.activityLog) safe.activityLog = safeArr(safe.activityLog);
+  return safe;
+};
 import Color from "@tiptap/extension-color";
 import TextStyle from "@tiptap/extension-text-style";
 
@@ -563,7 +615,8 @@ function Dropdown({ value, options, onChange, colors, width, allowBlank, blankLa
   );
 }
 
-function MultiDropdown({ values, options, onChange, colorMap, renderLabel }) {
+function MultiDropdown({ values: rawValues, options, onChange, colorMap, renderLabel }) {
+  const values = safeArr(rawValues);
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
   useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
@@ -582,7 +635,8 @@ function MultiDropdown({ values, options, onChange, colorMap, renderLabel }) {
   );
 }
 
-function TagInput({ values, options, onChange, contacts, onViewContact }) {
+function TagInput({ values: rawValues, options, onChange, contacts, onViewContact }) {
+  const values = safeArr(rawValues);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const ref = useRef(null);
@@ -1560,7 +1614,7 @@ function DashboardInner({ user, onLogout }) {
   const [glanceTab, setGlanceTab] = useState(() => loadLS('glanceTab', "cal"));
   const [projectVendors, setProjectVendors] = useState(() => loadLS('projectVendors', {}));
   // Derive vendors for active project — all existing code keeps working
-  const vendors = projectVendors[activeProjectId] || [];
+  const vendors = safeArr(projectVendors[activeProjectId]).map(sanitizeVendor);
   const setVendors = (updater) => {
     setProjectVendors(prev => ({
       ...prev,
@@ -1570,7 +1624,7 @@ function DashboardInner({ user, onLogout }) {
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
   const [projectWorkback, setProjectWorkback] = useState(() => loadLS('projectWorkback', {}));
-  const workback = projectWorkback[activeProjectId] || [];
+  const workback = safeArr(projectWorkback[activeProjectId]);
   const setWorkback = (updater) => {
     setProjectWorkback(prev => ({
       ...prev,
@@ -1579,7 +1633,7 @@ function DashboardInner({ user, onLogout }) {
   };
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
   const [projectROS, setProjectROS] = useState(() => loadLS('projectROS', {}));
-  const ros = projectROS[activeProjectId] || [];
+  const ros = safeArr(projectROS[activeProjectId]).map(r => ({ ...r, vendors: safeArr(r.vendors) }));
   const setROS = (updater) => {
     setProjectROS(prev => ({
       ...prev,
@@ -2282,35 +2336,12 @@ function DashboardInner({ user, onLogout }) {
           .single();
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
         if (data?.state) {
-          const s = data.state;
-          // Validate data types before setting state to prevent runtime errors
-          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects.map(p => ({
-            ...p,
-            producers: Array.isArray(p.producers) ? p.producers : [],
-            managers: Array.isArray(p.managers) ? p.managers : [],
-            staff: Array.isArray(p.staff) ? p.staff : [],
-            pocs: Array.isArray(p.pocs) ? p.pocs : [],
-            clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [],
-            billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [],
-            services: Array.isArray(p.services) ? p.services : [],
-            subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
-          })));
-          if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) {
-            // Ensure every project's vendor list is an array
-            const safeVendors = {};
-            Object.keys(s.projectVendors).forEach(k => { safeVendors[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k] : []; });
-            setProjectVendors(safeVendors);
-          }
-          if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) {
-            const safeWB = {};
-            Object.keys(s.projectWorkback).forEach(k => { safeWB[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; });
-            setProjectWorkback(safeWB);
-          }
-          if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) {
-            const safeROS = {};
-            Object.keys(s.projectROS).forEach(k => { safeROS[k] = Array.isArray(s.projectROS[k]) ? s.projectROS[k] : []; });
-            setProjectROS(safeROS);
-          }
+          const s = sanitizeState(data.state);
+          // Apply sanitized data to state
+          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects);
+          if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) setProjectVendors(s.projectVendors);
+          if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) setProjectWorkback(s.projectWorkback);
+          if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) setProjectROS(s.projectROS);
           if (s.rosDayDates && typeof s.rosDayDates === 'object' && !Array.isArray(s.rosDayDates)) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
@@ -2939,14 +2970,14 @@ function DashboardInner({ user, onLogout }) {
                       const activeProjects = projects.filter(p => !p.archived && p.status !== "Complete");
                       const today = new Date(); today.setHours(0, 0, 0, 0);
                       const weekFromNow = new Date(today); weekFromNow.setDate(weekFromNow.getDate() + 7);
-                      const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => items.map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
+                      const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => safeArr(items).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
                       const overdueWB = allWB.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today);
                       const dueThisWeek = allWB.filter(w => {
                         if (!w.date || w.status === "Done") return false;
                         const d = new Date(w.date + "T12:00:00");
                         return d >= today && d <= weekFromNow;
                       });
-                      const allVendors = Object.values(projectVendors).flat();
+                      const allVendors = Object.values(projectVendors).flatMap(v => safeArr(v));
                       const totalCompItems = allVendors.length * 5;
                       const doneCompItems = allVendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
                       const compPct = totalCompItems > 0 ? Math.round((doneCompItems / totalCompItems) * 100) : 0;
@@ -3055,7 +3086,7 @@ function DashboardInner({ user, onLogout }) {
 
                 {/* ── Master Work Back ── */}
                 {glanceTab === "masterWB" && (() => {
-                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => items.map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
+                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => safeArr(items).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
                   const sorted = [...allWB].sort((a, b) => {
                     if (!a.date && !b.date) return 0;
                     if (!a.date) return 1;
@@ -3567,12 +3598,12 @@ function DashboardInner({ user, onLogout }) {
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>TOUR SCHEDULE</div>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{project.subEvents.length} DATES</span>
+                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{(project.subEvents || []).length} DATES</span>
                           {(() => {
-                            const confirmed = project.subEvents.filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
-                            const complete = project.subEvents.filter(s => s.status === "Complete").length;
-                            const holds = project.subEvents.filter(s => s.status === "Hold").length;
-                            const advancing = project.subEvents.filter(s => s.status === "Advancing").length;
+                            const confirmed = (project.subEvents || []).filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
+                            const complete = (project.subEvents || []).filter(s => s.status === "Complete").length;
+                            const holds = (project.subEvents || []).filter(s => s.status === "Hold").length;
+                            const advancing = (project.subEvents || []).filter(s => s.status === "Advancing").length;
                             return (
                               <div style={{ display: "flex", gap: 8, fontSize: 9, color: "var(--textFaint)" }}>
                                 <span><span style={{ color: "#4ecb71" }}>●</span> {confirmed} confirmed</span>
@@ -3603,24 +3634,24 @@ function DashboardInner({ user, onLogout }) {
                           return (
                             <div key={se.id} style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "7px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isUpcoming ? "#ff6b4a08" : isPast ? "var(--bgInput)" : "transparent", opacity: se.status === "Cancelled" ? 0.4 : isPast && se.status !== "Complete" ? 0.65 : 1 }}>
                               <input type="date" value={se.date || ""} onChange={e => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, date: e.target.value } : s));
+                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, date: e.target.value } : s));
                               }} style={{ padding: "4px 6px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: isUpcoming ? "#ff6b4a" : "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none", colorScheme: "var(--filterScheme)" }} />
                               <EditableText value={se.city} onChange={v => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, city: v } : s));
+                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, city: v } : s));
                               }} fontSize={11} color="var(--textSub)" placeholder="City, ST" />
                               <EditableText value={se.venue} onChange={v => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, venue: v } : s));
+                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, venue: v } : s));
                               }} fontSize={12} color="var(--text)" fontWeight={600} placeholder="Venue name" />
                               <select value={se.status} onChange={e => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, status: e.target.value } : s));
+                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, status: e.target.value } : s));
                               }} style={{ padding: "4px 6px", background: sec.bg, border: `1px solid ${sec.dot}30`, borderRadius: 5, color: sec.text, fontSize: 10, fontWeight: 600, outline: "none", cursor: "pointer", width: "100%" }}>
                                 {SUB_EVENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <EditableText value={se.notes} onChange={v => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, notes: v } : s));
+                                updateProject("subEvents", (project.subEvents || []).map(s => s.id === se.id ? { ...s, notes: v } : s));
                               }} fontSize={10} color="var(--textMuted)" placeholder="Notes..." />
                               <button onClick={() => {
-                                updateProject("subEvents", project.subEvents.filter(s => s.id !== se.id));
+                                updateProject("subEvents", (project.subEvents || []).filter(s => s.id !== se.id));
                               }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
                             </div>
                           );
@@ -4366,7 +4397,7 @@ function DashboardInner({ user, onLogout }) {
                 <div style={{ textAlign: "right", fontSize: 11, color: "#666", lineHeight: 1.8 }}>
                   {project.eventDates.start && <div>Event: {new Date(project.eventDates.start + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} — {new Date(project.eventDates.end + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>}
                   <div>Producers: {(project.producers || []).join(", ")}</div>
-                  <div>Managers: {project.managers.join(", ")}</div>
+                  <div>Managers: {(project.managers || []).join(", ")}</div>
                   <div style={{ marginTop: 6, fontStyle: "italic" }}>Generated {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
                 </div>
               </div>
@@ -4394,7 +4425,7 @@ function DashboardInner({ user, onLogout }) {
                               <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" }}>{r.time}</td>
                               <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}>{r.item}</td>
                               <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}><span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, background: "#f0f0f0", display: "inline-block" }}>{r.dept}</span></td>
-                              <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}>{r.vendors.map(vid => vMap[vid] || vid).join(", ")}</td>
+                              <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}>{(r.vendors || []).map(vid => vMap[vid] || vid).join(", ")}</td>
                               <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}>{r.location}</td>
                               <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}>{r.contact}</td>
                               <td style={{ padding: "5px 8px", borderBottom: "1px solid #eee" }}>{r.owner}</td>
