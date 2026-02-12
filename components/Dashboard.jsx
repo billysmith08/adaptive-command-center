@@ -996,12 +996,13 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
     if (!isDone) handleUploadClick({ stopPropagation: () => {} });
   };
 
-  // Smart position: if box is in top 200px of viewport, show tooltip below
+  // Smart position: use fixed positioning to escape overflow containers
   const getTooltipPosition = () => {
-    if (!boxRef.current) return { bottom: "calc(100% + 8px)" };
+    if (!boxRef.current) return { top: 0, left: 0, arrowTop: false };
     const rect = boxRef.current.getBoundingClientRect();
-    if (rect.top < 200) return { top: "calc(100% + 8px)", arrowTop: true };
-    return { bottom: "calc(100% + 8px)", arrowTop: false };
+    const centerX = rect.left + rect.width / 2;
+    if (rect.top < 200) return { top: rect.bottom + 8, left: centerX, arrowTop: true };
+    return { bottom: window.innerHeight - rect.top + 8, left: centerX, arrowTop: false };
   };
   const tp = showTooltip ? getTooltipPosition() : {};
 
@@ -1009,7 +1010,7 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
     <div ref={boxRef} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop} onClick={handleClick} onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}
       style={{ position: "relative", width: 52, height: 52, borderRadius: 8, background: justUploaded ? "#4ecb7110" : dragOver ? "#4ecb7108" : isDone ? "#4ecb7108" : "var(--bgCard)", border: `1.5px dashed ${justUploaded ? "#4ecb7180" : dragOver ? "#4ecb7160" : isDone ? "#4ecb7140" : "var(--borderSub)"}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.25s", transform: dragOver ? "scale(1.08)" : "scale(1)" }}>
       {justUploaded ? <><span style={{ fontSize: 16 }}>✓</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>SAVED</span></> : isDone ? <><span style={{ fontSize: 13, lineHeight: 1 }}>📄</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>✓</span></> : <><span style={{ fontSize: 14, opacity: dragOver ? 1 : 0.5 }}>{dragOver ? "📥" : "+"}</span><span style={{ fontSize: 7, color: dragOver ? "#4ecb71" : "var(--textGhost)", fontWeight: 600, marginTop: 1 }}>{compKey.label}</span></>}
-      {showTooltip && <div onClick={e => e.stopPropagation()} style={{ position: "absolute", ...(tp.arrowTop ? { top: "calc(100% + 8px)" } : { bottom: "calc(100% + 8px)" }), left: "50%", transform: "translateX(-50%)", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 10, padding: "12px 14px", minWidth: 230, maxWidth: 280, zIndex: 200, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+      {showTooltip && <div onClick={e => e.stopPropagation()} style={{ position: "fixed", ...(tp.arrowTop ? { top: tp.top } : { bottom: tp.bottom }), left: tp.left, transform: "translateX(-50%)", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 10, padding: "12px 14px", minWidth: 230, maxWidth: 280, zIndex: 10000, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{compKey.fullLabel}</div>
         <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 8 }}>{vendor.name}</div>
         
@@ -2858,32 +2859,32 @@ export default function Dashboard({ user, onLogout }) {
       // Store raw map so DOCS column can reference it directly for any contact
       setDriveComplianceMap(driveCompliance);
       
-      setVendors(prev => prev.map(v => {
-        const driveMatch = driveCompliance[v.name];
-        if (!driveMatch) {
-          // No folder in Drive for this vendor — clear any compliance that claims Drive docs
-          const updated = { ...v.compliance };
-          ['coi', 'w9'].forEach(key => {
-            if (updated[key]?.done && updated[key]?.link) {
-              updated[key] = { done: false };
+      // Update vendors across ALL projects, not just active
+      setProjectVendors(prevAll => {
+        const updated = { ...prevAll };
+        for (const projId of Object.keys(updated)) {
+          updated[projId] = (updated[projId] || []).map(v => {
+            const driveMatch = driveCompliance[v.name];
+            if (!driveMatch) {
+              const u = { ...v.compliance };
+              ['coi', 'w9'].forEach(key => {
+                if (u[key]?.done && u[key]?.link) u[key] = { done: false };
+              });
+              return { ...v, compliance: u };
             }
+            const u = { ...v.compliance };
+            ['coi', 'w9'].forEach(key => {
+              if (driveMatch[key]?.done) {
+                u[key] = { done: true, file: driveMatch[key].file, link: driveMatch[key].link };
+              } else if (u[key]?.done && u[key]?.link) {
+                u[key] = { done: false };
+              }
+            });
+            return { ...v, compliance: u };
           });
-          return { ...v, compliance: updated };
         }
-        // Vendor has Drive folder — sync each doc type
-        const updated = { ...v.compliance };
-        ['coi', 'w9'].forEach(key => {
-          if (driveMatch[key]?.done) {
-            updated[key] = { done: true, file: driveMatch[key].file, link: driveMatch[key].link };
-          } else {
-            // Drive folder exists but empty — clear compliance
-            if (updated[key]?.done && updated[key]?.link) {
-              updated[key] = { done: false };
-            }
-          }
-        });
-        return { ...v, compliance: updated };
-      }));
+        return updated;
+      });
     } catch (e) {
       console.log('Drive sync skipped:', e.message);
     }
@@ -5413,7 +5414,7 @@ export default function Dashboard({ user, onLogout }) {
                     const isExp = expandedVendor === v.id;
                     const isSelected = selectedVendorIds.has(v.id);
                     return (
-                      <div key={v.id} style={{ background: "var(--bgInput)", border: isSelected ? "1px solid #3da5db40" : "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden", animation: `fadeUp 0.25s ease ${vi * 0.04}s both`, transition: "border-color 0.15s" }}>
+                      <div key={v.id} style={{ background: "var(--bgInput)", border: isSelected ? "1px solid #3da5db40" : "1px solid var(--borderSub)", borderRadius: 12, animation: `fadeUp 0.25s ease ${vi * 0.04}s both`, transition: "border-color 0.15s", position: "relative" }}>
                         <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", gap: 12 }}>
                           {/* Checkbox */}
                           <div onClick={(e) => { e.stopPropagation(); setSelectedVendorIds(prev => { const next = new Set(prev); if (next.has(v.id)) next.delete(v.id); else next.add(v.id); return next; }); }}
@@ -5565,7 +5566,7 @@ export default function Dashboard({ user, onLogout }) {
                         <div style={{ fontSize: 13 }}>Or add team members in the Overview tab fields</div>
                       </div>
                     ) : (
-                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
                           <span>NAME</span><span>ROLE</span><span>DEPARTMENT</span><span>PHONE</span><span>EMAIL</span><span>ACTIONS</span>
                         </div>

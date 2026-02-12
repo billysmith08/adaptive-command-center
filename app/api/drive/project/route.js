@@ -292,122 +292,198 @@ async function handleScanVendors(body) {
     return NextResponse.json({ error: 'Missing projectFolderId' }, { status: 400 });
   }
 
-  const drive = getDriveClient(true);
+  // Use write-capable client for cross-copy
+  const drive = getDriveClient(false);
   const sharedDrive = await findSharedDrive(drive);
   if (!sharedDrive) {
     return NextResponse.json({ error: `Shared drive "${SHARED_DRIVE_NAME}" not found` }, { status: 404 });
   }
   const driveId = sharedDrive.id;
 
-  // Navigate to ADMIN/VENDORS inside the project folder
-  const adminFolder = await findFolderInParent(drive, driveId, projectFolderId, 'ADMIN');
-  if (!adminFolder) {
-    return NextResponse.json({ success: true, vendors: {}, message: 'No ADMIN folder found' });
-  }
-  const vendorsFolder = await findFolderInParent(drive, driveId, adminFolder.id, 'VENDORS');
-  if (!vendorsFolder) {
-    return NextResponse.json({ success: true, vendors: {}, message: 'No VENDORS folder found' });
-  }
-
-  // Scan VENDORS folder — could be flat (VENDORS/VendorName/files) or nested (VENDORS/Category/VendorName/files)
   const vendors = {};
 
-  async function scanFolder(parentId, depth) {
-    const res = await drive.files.list({
-      q: `'${parentId}' in parents and trashed=false`,
-      fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
-      orderBy: 'name',
-      pageSize: 200,
-      ...SD,
-      corpora: 'drive',
-      driveId,
-    });
-    const items = res.data.files || [];
-    const subfolders = items.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
-    const files = items.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
-
-    if (files.length > 0) {
-      // This folder contains files — it's a vendor folder
-      const vendorName = items.length > 0 ? null : null; // We use the folder name from the caller
-      return { hasFiles: true, files };
-    }
-
-    // Only subfolders — recurse into them (category or vendor folders)
-    if (subfolders.length > 0 && depth < 3) {
-      for (const sub of subfolders) {
-        // Check if this subfolder has files (= vendor) or more folders (= category)
-        const innerRes = await drive.files.list({
-          q: `'${sub.id}' in parents and trashed=false`,
-          fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
-          orderBy: 'name',
-          pageSize: 100,
-          ...SD,
-          corpora: 'drive',
-          driveId,
-        });
-        const innerItems = innerRes.data.files || [];
-        const innerFiles = innerItems.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
-        const innerFolders = innerItems.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
-
-        if (innerFiles.length > 0) {
-          // This subfolder has files — it's a vendor folder
-          const vendorDocs = {};
-          for (const file of innerFiles) {
-            const docType = classifyFile(file.name);
-            if (docType) {
-              if (!vendorDocs[docType]) {
-                vendorDocs[docType] = { done: true, file: file.name, link: file.webViewLink, modified: file.modifiedTime };
-              }
-            } else {
-              // Unclassified files — store as "other"
-              if (!vendorDocs.other) vendorDocs.other = [];
-              vendorDocs.other.push({ name: file.name, link: file.webViewLink });
-            }
-          }
-          vendors[sub.name] = { docs: vendorDocs, fileCount: innerFiles.length, folderId: sub.id };
+  // ─── Helper: classify files in a vendor folder ───
+  function classifyFiles(files) {
+    const docs = {};
+    for (const file of files) {
+      const docType = classifyFile(file.name);
+      if (docType) {
+        if (!docs[docType]) {
+          docs[docType] = { done: true, file: file.name, link: file.webViewLink, modified: file.modifiedTime, fileId: file.id };
         }
+      } else {
+        if (!docs.other) docs.other = [];
+        docs.other.push({ name: file.name, link: file.webViewLink, fileId: file.id });
+      }
+    }
+    return docs;
+  }
 
-        // If it has more folders, recurse (category folder like "Operations")
-        if (innerFolders.length > 0 && depth < 2) {
-          for (const innerSub of innerFolders) {
-            const deepRes = await drive.files.list({
-              q: `'${innerSub.id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
-              fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
-              orderBy: 'name',
-              pageSize: 50,
-              ...SD,
-              corpora: 'drive',
-              driveId,
-            });
-            const deepFiles = deepRes.data.files || [];
-            if (deepFiles.length > 0) {
-              const vendorDocs = {};
-              for (const file of deepFiles) {
-                const docType = classifyFile(file.name);
-                if (docType) {
-                  if (!vendorDocs[docType]) {
-                    vendorDocs[docType] = { done: true, file: file.name, link: file.webViewLink, modified: file.modifiedTime };
-                  }
-                } else {
-                  if (!vendorDocs.other) vendorDocs.other = [];
-                  vendorDocs.other.push({ name: file.name, link: file.webViewLink });
-                }
-              }
-              vendors[innerSub.name] = { docs: vendorDocs, fileCount: deepFiles.length, folderId: innerSub.id };
-            }
+  // ─── Helper: list files in a folder ───
+  async function listFiles(parentId) {
+    const res = await drive.files.list({
+      q: `'${parentId}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
+      fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
+      orderBy: 'name', pageSize: 100, ...SD, corpora: 'drive', driveId,
+    });
+    return res.data.files || [];
+  }
+
+  // ─── Helper: list subfolders ───
+  async function listSubfolders(parentId) {
+    const res = await drive.files.list({
+      q: `'${parentId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder'`,
+      fields: 'files(id, name, webViewLink)',
+      orderBy: 'name', pageSize: 200, ...SD, corpora: 'drive', driveId,
+    });
+    return res.data.files || [];
+  }
+
+  // ─── Helper: copy a file into a target folder ───
+  async function copyFileTo(fileId, targetFolderId, fileName) {
+    try {
+      const copied = await drive.files.copy({
+        fileId,
+        requestBody: { name: fileName, parents: [targetFolderId] },
+        ...SD,
+      });
+      console.log(`Copied "${fileName}" → folder ${targetFolderId}`);
+      return copied.data;
+    } catch (e) {
+      console.error(`Failed to copy "${fileName}":`, e.message);
+      return null;
+    }
+  }
+
+  // ─── Helper: ensure a subfolder exists inside a parent ───
+  async function ensureFolder(parentId, name) {
+    const existing = await findFolderInParent(drive, driveId, parentId, name);
+    if (existing) return existing;
+    const created = await drive.files.create({
+      requestBody: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+      fields: 'id, name, webViewLink', ...SD,
+    });
+    return created.data;
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PASS 1: Scan project ADMIN/VENDORS (category/vendor structure)
+  // ═══════════════════════════════════════════════════════
+  const projAdmin = await findFolderInParent(drive, driveId, projectFolderId, 'ADMIN');
+  const projVendorsFolder = projAdmin ? await findFolderInParent(drive, driveId, projAdmin.id, 'VENDORS') : null;
+
+  if (projVendorsFolder) {
+    const categories = await listSubfolders(projVendorsFolder.id);
+    for (const cat of categories) {
+      // Each category folder (Experience, Operations, etc.) contains vendor folders
+      const vendorFolders = await listSubfolders(cat.id);
+      // Check if category folder itself has files (flat structure)
+      const catFiles = await listFiles(cat.id);
+      if (catFiles.length > 0 && vendorFolders.length === 0) {
+        // Category IS the vendor folder (flat: VENDORS/VendorName/files)
+        vendors[cat.name] = { docs: classifyFiles(catFiles), fileCount: catFiles.length, folderId: cat.id, projectFolderId: cat.id };
+      } else {
+        for (const vf of vendorFolders) {
+          const files = await listFiles(vf.id);
+          if (files.length > 0) {
+            vendors[vf.name] = { docs: classifyFiles(files), fileCount: files.length, folderId: vf.id, projectFolderId: vf.id };
           }
         }
       }
     }
-    return { hasFiles: false };
   }
 
-  await scanFolder(vendorsFolder.id, 0);
+  // ═══════════════════════════════════════════════════════
+  // PASS 2: Scan global ADMIN → External Vendors (W9 & Work Comp) → latest period
+  // ═══════════════════════════════════════════════════════
+  let globalComplianceFolder = null;
+  try {
+    const rootAdmin = await findFolderInParent(drive, driveId, driveId, 'ADMIN');
+    if (rootAdmin) {
+      // Find "External Vendors (W9 & Work Comp)" or similar
+      const adminSubs = await listSubfolders(rootAdmin.id);
+      const extVendors = adminSubs.find(f => /external.*vendor/i.test(f.name) || /w9.*work.*comp/i.test(f.name));
+      if (extVendors) {
+        // Find the most recent period folder (e.g. "Dec 2025 - Dec 2026")
+        const periods = await listSubfolders(extVendors.id);
+        // Sort by name descending to get latest period first
+        periods.sort((a, b) => b.name.localeCompare(a.name));
+        globalComplianceFolder = periods[0] || null;
+        console.log('Global compliance folder:', globalComplianceFolder?.name || 'not found');
+      }
+    }
+  } catch (e) {
+    console.error('Error finding global compliance folder:', e.message);
+  }
+
+  if (globalComplianceFolder) {
+    const globalVendorFolders = await listSubfolders(globalComplianceFolder.id);
+    for (const gvf of globalVendorFolders) {
+      const files = await listFiles(gvf.id);
+      if (files.length === 0) continue;
+      const globalDocs = classifyFiles(files);
+
+      if (vendors[gvf.name]) {
+        // Vendor already found in project — merge global W9/COI if project doesn't have them
+        ['w9', 'coi'].forEach(key => {
+          if (globalDocs[key]?.done && !vendors[gvf.name].docs[key]?.done) {
+            vendors[gvf.name].docs[key] = { ...globalDocs[key], source: 'global' };
+          }
+        });
+        vendors[gvf.name].globalFolderId = gvf.id;
+      } else {
+        // Vendor only in global — add with W9/COI status
+        vendors[gvf.name] = {
+          docs: { w9: globalDocs.w9 || null, coi: globalDocs.coi || null },
+          fileCount: files.length, folderId: gvf.id, globalFolderId: gvf.id,
+        };
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // PASS 3: Cross-copy W9 and COI between project ↔ global
+  // ═══════════════════════════════════════════════════════
+  const copyResults = [];
+  for (const [vendorName, vdata] of Object.entries(vendors)) {
+    for (const docType of ['w9', 'coi']) {
+      const doc = vdata.docs[docType];
+      if (!doc?.done || !doc.fileId) continue;
+
+      const inProject = vdata.projectFolderId && doc.source !== 'global';
+      const inGlobal = vdata.globalFolderId && doc.source === 'global';
+
+      // If doc is in project but NOT in global → copy to global
+      if (inProject && globalComplianceFolder && !inGlobal) {
+        const targetFolder = await ensureFolder(globalComplianceFolder.id, vendorName);
+        // Check if already exists in target
+        const existingFiles = await listFiles(targetFolder.id);
+        const alreadyThere = existingFiles.some(f => classifyFile(f.name) === docType);
+        if (!alreadyThere) {
+          const copied = await copyFileTo(doc.fileId, targetFolder.id, doc.file);
+          if (copied) copyResults.push({ vendor: vendorName, doc: docType, direction: 'project→global' });
+        }
+        if (!vdata.globalFolderId) vendors[vendorName].globalFolderId = targetFolder.id;
+      }
+
+      // If doc is in global but NOT in project → copy to project vendor folder
+      if (inGlobal && vdata.projectFolderId) {
+        const existingFiles = await listFiles(vdata.projectFolderId);
+        const alreadyThere = existingFiles.some(f => classifyFile(f.name) === docType);
+        if (!alreadyThere) {
+          const copied = await copyFileTo(doc.fileId, vdata.projectFolderId, doc.file);
+          if (copied) copyResults.push({ vendor: vendorName, doc: docType, direction: 'global→project' });
+        }
+      }
+    }
+  }
 
   return NextResponse.json({
     success: true,
     vendors,
     vendorCount: Object.keys(vendors).length,
+    copyResults,
+    globalComplianceFolder: globalComplianceFolder?.name || null,
     scannedAt: new Date().toISOString(),
   });
 }
