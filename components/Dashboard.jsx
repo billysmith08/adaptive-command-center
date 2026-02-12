@@ -2278,7 +2278,17 @@ function DashboardInner({ user, onLogout }) {
         if (data?.state) {
           const s = data.state;
           // Validate data types before setting state to prevent runtime errors
-          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects);
+          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects.map(p => ({
+            ...p,
+            producers: Array.isArray(p.producers) ? p.producers : [],
+            managers: Array.isArray(p.managers) ? p.managers : [],
+            staff: Array.isArray(p.staff) ? p.staff : [],
+            pocs: Array.isArray(p.pocs) ? p.pocs : [],
+            clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [],
+            billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [],
+            services: Array.isArray(p.services) ? p.services : [],
+            subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
+          })));
           if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) setProjectVendors(s.projectVendors);
           if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) setProjectWorkback(s.projectWorkback);
           if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) setProjectROS(s.projectROS);
@@ -2367,7 +2377,10 @@ function DashboardInner({ user, onLogout }) {
 
   // Defensive guard: ensure projects is always an array to prevent crashes
   const safeProjects = Array.isArray(projects) ? projects : [];
-  const project = safeProjects.find(p => p.id === activeProjectId) || safeProjects[0] || { id: "p1", name: "Loading...", code: "", date: "", status: "", type: "", notes: "", driveFolder: "", driveFolderId: "", color: "#ff6b4a" };
+  const project = (() => {
+    const raw = safeProjects.find(p => p.id === activeProjectId) || safeProjects[0] || { id: "p1", name: "Loading...", code: "", date: "", status: "", type: "", notes: "", driveFolder: "", driveFolderId: "", color: "#ff6b4a" };
+    return { ...raw, producers: Array.isArray(raw.producers) ? raw.producers : [], managers: Array.isArray(raw.managers) ? raw.managers : [], staff: Array.isArray(raw.staff) ? raw.staff : [], pocs: Array.isArray(raw.pocs) ? raw.pocs : [], clientContacts: Array.isArray(raw.clientContacts) ? raw.clientContacts : [], billingContacts: Array.isArray(raw.billingContacts) ? raw.billingContacts : [], services: Array.isArray(raw.services) ? raw.services : [], subEvents: Array.isArray(raw.subEvents) ? raw.subEvents : [] };
+  })();
   const updateProject = (key, val) => {
     setProjects(prev => {
       const safePrev = Array.isArray(prev) ? prev : [];
@@ -2455,7 +2468,7 @@ function DashboardInner({ user, onLogout }) {
     setTimeout(syncDriveCompliance, 2000);
   };
 
-  const peopleOptions = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];
+  const peopleOptions = [...new Set([...contacts.map(c => c.name), ...(project.producers || []), ...(project.managers || []), ...(project.staff || [])])];
 
   // W9 Drop-to-Scrape: parse PDF, upload to Drive, pre-fill vendor form
   const handleW9Upload = async (file) => {
@@ -2534,7 +2547,7 @@ function DashboardInner({ user, onLogout }) {
   };
   // Event contacts = only people on THIS project (for workback Responsible + ROS Contact/Owner)
   const eventContactNames = [...new Set([
-    ...project.producers, ...project.managers, ...(project.staff || []),
+    ...(project.producers || []), ...(project.managers || []), ...(project.staff || []),
     ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
     ...(project.pocs || []).filter(p => p.name).map(p => p.name),
     ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
@@ -2869,7 +2882,7 @@ function DashboardInner({ user, onLogout }) {
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10 }}>{t.icon}</span>{t.label}
                   {t.id === "vendors" && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: compDone < compTotal ? "var(--borderSub)" : "var(--bgCard)", color: compDone < compTotal ? "#e85454" : "#4ecb71", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{compDone}/{compTotal}</span>}
-                  {t.id === "contacts" && (() => { const ct = project.producers.length + project.managers.length + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
+                  {t.id === "contacts" && (() => { const ct = (project.producers?.length || 0) + (project.managers?.length || 0) + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
                 </button>
               ))}
             </div>
@@ -3224,11 +3237,11 @@ function DashboardInner({ user, onLogout }) {
                                     const projIdx = projects.findIndex(p => p.id === assignContactPopover.selectedProject);
                                     if (projIdx < 0) return;
                                     // Check duplicates
-                                    const allPeople = [...targetProject.producers, ...targetProject.managers, ...(targetProject.staff || []), ...(targetProject.pocs || []).map(p => p.name), ...(targetProject.clientContacts || []).map(p => p.name), ...(targetProject.billingContacts || []).map(p => p.name)];
+                                    const allPeople = [...(targetProject.producers || []), ...(targetProject.managers || []), ...(targetProject.staff || []), ...(targetProject.pocs || []).map(p => p.name), ...(targetProject.clientContacts || []).map(p => p.name), ...(targetProject.billingContacts || []).map(p => p.name)];
                                     if (allPeople.includes(c.name)) { alert(`${c.name} is already on ${targetProject.name}.`); return; }
                                     // Add based on role
-                                    if (role === "Producer") updateProject2(assignContactPopover.selectedProject, "producers", [...targetProject.producers, c.name]);
-                                    else if (role === "Manager") updateProject2(assignContactPopover.selectedProject, "managers", [...targetProject.managers, c.name]);
+                                    if (role === "Producer") updateProject2(assignContactPopover.selectedProject, "producers", [...(targetProject.producers || []), c.name]);
+                                    else if (role === "Manager") updateProject2(assignContactPopover.selectedProject, "managers", [...(targetProject.managers || []), c.name]);
                                     else if (role === "Staff / Crew") updateProject2(assignContactPopover.selectedProject, "staff", [...(targetProject.staff || []), c.name]);
                                     else if (role === "Client") updateProject2(assignContactPopover.selectedProject, "clientContacts", [...(targetProject.clientContacts || []), entry]);
                                     else if (role === "Billing") updateProject2(assignContactPopover.selectedProject, "billingContacts", [...(targetProject.billingContacts || []), entry]);
@@ -4173,7 +4186,7 @@ function DashboardInner({ user, onLogout }) {
                   const PROJECT_ROLES = (appSettings.projectRoles || ["Producer", "Manager", "Staff / Crew", "Client", "Point of Contact", "Billing", "Talent", "Artist", "Agent", "Venue Rep"]).slice().sort();
                   const ROLE_COLORS = { Producer: "#ff6b4a", Manager: "#ff6b4a", "Staff / Crew": "#ff6b4a", Client: "#3da5db", "Point of Contact": "#9b6dff", Billing: "#4ecb71", Talent: "#e85494", Artist: "#e85494", Agent: "#dba94e", "Venue Rep": "#4ecbe8" };
 
-                  const teamPeople = [...project.producers.map(n => ({ name: n, role: "Producer", source: "producers" })), ...project.managers.map(n => ({ name: n, role: "Manager", source: "managers" })), ...(project.staff || []).map(n => ({ name: n, role: "Staff / Crew", source: "staff" }))];
+                  const teamPeople = [...(project.producers || []).map(n => ({ name: n, role: "Producer", source: "producers" })), ...(project.managers || []).map(n => ({ name: n, role: "Manager", source: "managers" })), ...(project.staff || []).map(n => ({ name: n, role: "Staff / Crew", source: "staff" }))];
                   const clientPeople = (project.clientContacts || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Client", source: "clientContacts", dept: p.dept || "" }));
                   const pocPeople = (project.pocs || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Point of Contact", source: "pocs", dept: p.dept || "" }));
                   const billingPeople = (project.billingContacts || []).filter(p => p.name).map(p => ({ ...p, role: p.role || "Billing", source: "billingContacts", dept: p.dept || "" }));
@@ -4182,8 +4195,8 @@ function DashboardInner({ user, onLogout }) {
 
                   const addPersonToProject = (contact, role, dept) => {
                     const entry = { name: contact.name || contact, phone: contact.phone || "", email: contact.email || "", address: contact.address || "", company: contact.company || "", dept: dept || "", role: role, fromContacts: !!contact.id };
-                    if (role === "Producer") updateProject("producers", [...project.producers, entry.name]);
-                    else if (role === "Manager") updateProject("managers", [...project.managers, entry.name]);
+                    if (role === "Producer") updateProject("producers", [...(project.producers || []), entry.name]);
+                    else if (role === "Manager") updateProject("managers", [...(project.managers || []), entry.name]);
                     else if (role === "Staff / Crew") updateProject("staff", [...(project.staff || []), entry.name]);
                     else if (role === "Client") updateProject("clientContacts", [...(project.clientContacts || []), entry]);
                     else if (role === "Billing") updateProject("billingContacts", [...(project.billingContacts || []), entry]);
@@ -4192,8 +4205,8 @@ function DashboardInner({ user, onLogout }) {
                   };
 
                   const removePersonFromProject = (person) => {
-                    if (person.source === "producers") updateProject("producers", project.producers.filter(n => n !== person.name));
-                    else if (person.source === "managers") updateProject("managers", project.managers.filter(n => n !== person.name));
+                    if (person.source === "producers") updateProject("producers", (project.producers || []).filter(n => n !== person.name));
+                    else if (person.source === "managers") updateProject("managers", (project.managers || []).filter(n => n !== person.name));
                     else if (person.source === "staff") updateProject("staff", (project.staff || []).filter(n => n !== person.name));
                     else if (person.source === "clientContacts") updateProject("clientContacts", (project.clientContacts || []).filter(p => p.name !== person.name));
                     else if (person.source === "pocs") updateProject("pocs", (project.pocs || []).filter(p => p.name !== person.name));
@@ -4333,7 +4346,7 @@ function DashboardInner({ user, onLogout }) {
                 </div>
                 <div style={{ textAlign: "right", fontSize: 11, color: "#666", lineHeight: 1.8 }}>
                   {project.eventDates.start && <div>Event: {new Date(project.eventDates.start + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} — {new Date(project.eventDates.end + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>}
-                  <div>Producers: {project.producers.join(", ")}</div>
+                  <div>Producers: {(project.producers || []).join(", ")}</div>
                   <div>Managers: {project.managers.join(", ")}</div>
                   <div style={{ marginTop: 6, fontStyle: "italic" }}>Generated {new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</div>
                 </div>
