@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import ReactDOM from "react-dom";
 import { createClient } from "@/lib/supabase-browser";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -543,41 +544,66 @@ function DeptTag({ dept, small }) {
 
 function Dropdown({ value, options, onChange, colors, width, allowBlank, blankLabel }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const ref = useRef(null);
-  useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  const btnRef = useRef(null);
+  const menuRef = useRef(null);
+  useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target) && (!menuRef.current || !menuRef.current.contains(e.target))) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  const handleToggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const menuH = Math.min(220, (options.length + (allowBlank ? 1 : 0)) * 36 + 8);
+      const openUp = spaceBelow < menuH && r.top > menuH;
+      setPos({ top: openUp ? r.top - menuH - 4 : r.bottom + 4, left: r.left, width: Math.max(180, r.width) });
+    }
+    setOpen(!open);
+  };
   const sc = colors?.[value];
   const displayValue = value || blankLabel || "Select...";
   const isEmpty = !value || value === "Select...";
   return (
     <div ref={ref} style={{ position: "relative", display: "inline-block", width: width || "auto" }}>
-      <button onClick={() => setOpen(!open)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: sc?.bg || "var(--bgCard)", border: `1px solid ${sc?.dot || "var(--borderSub)"}40`, borderRadius: 6, color: isEmpty ? "var(--textGhost)" : (sc?.text || "var(--textSub)"), fontSize: 12, fontWeight: 600, cursor: "pointer", width: "100%", justifyContent: "space-between" }}>
+      <button ref={btnRef} onClick={handleToggle} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", background: sc?.bg || "var(--bgCard)", border: `1px solid ${sc?.dot || "var(--borderSub)"}40`, borderRadius: 6, color: isEmpty ? "var(--textGhost)" : (sc?.text || "var(--textSub)"), fontSize: 12, fontWeight: 600, cursor: "pointer", width: "100%", justifyContent: "space-between" }}>
         {sc && <span style={{ width: 6, height: 6, borderRadius: "50%", background: sc.dot }} />}
         <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayValue}</span>
         <span style={{ fontSize: 8, opacity: 0.5 }}>▼</span>
       </button>
-      {open && <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 160, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
+      {open && ReactDOM.createPortal(<div ref={menuRef} style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, minWidth: 180, zIndex: 99999, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 220, overflowY: "auto" }}>
         {allowBlank && <div onClick={() => { onChange(""); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— None —</div>}
         {options.map(opt => <div key={opt} onClick={() => { onChange(opt); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: value === opt ? "#ff6b4a" : "var(--textSub)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>{colors?.[opt] && <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[opt].dot }} />}{opt}</div>)}
-      </div>}
+      </div>, document.body)}
     </div>
   );
 }
 
 function MultiDropdown({ values, options, onChange, colorMap, renderLabel }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
   const ref = useRef(null);
-  useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  const menuRef = useRef(null);
+  useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target) && (!menuRef.current || !menuRef.current.contains(e.target))) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
+  const handleToggle = () => {
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const menuH = Math.min(220, (options.length + (values.length > 0 ? 1 : 0)) * 32 + 8);
+      const openUp = spaceBelow < menuH && r.top > menuH;
+      setPos({ top: openUp ? r.top - menuH - 4 : r.bottom + 4, left: r.left, width: Math.max(200, r.width) });
+    }
+    setOpen(!open);
+  };
   const toggle = (opt) => onChange(values.includes(opt) ? values.filter(v => v !== opt) : [...values, opt]);
   return (
     <div ref={ref} style={{ position: "relative" }}>
-      <div onClick={() => setOpen(!open)} style={{ display: "flex", gap: 3, flexWrap: "wrap", padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, cursor: "pointer", minHeight: 28, alignItems: "center" }}>
+      <div onClick={handleToggle} style={{ display: "flex", gap: 3, flexWrap: "wrap", padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, cursor: "pointer", minHeight: 28, alignItems: "center" }}>
         {values.length === 0 && <span style={{ fontSize: 10, color: "var(--textGhost)" }}>Select...</span>}
         {values.map(v => <span key={v} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: (colorMap?.[v] || "var(--textMuted)") + "20", color: colorMap?.[v] || "var(--textMuted)", fontWeight: 600, border: `1px solid ${colorMap?.[v] || "var(--textMuted)"}30` }}>{renderLabel ? renderLabel(v) : v}</span>)}
       </div>
-      {open && <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 180, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
+      {open && ReactDOM.createPortal(<div ref={menuRef} style={{ position: "fixed", top: pos.top, left: pos.left, width: pos.width, minWidth: 200, zIndex: 99999, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 220, overflowY: "auto" }}>
         {values.length > 0 && <div onClick={() => { onChange([]); setOpen(false); }} style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— Clear all —</div>}
         {options.map(opt => <div key={opt} onClick={() => toggle(opt)} style={{ padding: "6px 12px", fontSize: 11, color: values.includes(opt) ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}><div style={{ width: 14, height: 14, borderRadius: 3, border: `1.5px solid ${values.includes(opt) ? "#4ecb71" : "var(--borderActive)"}`, background: values.includes(opt) ? "#4ecb7120" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, color: "#4ecb71", flexShrink: 0 }}>{values.includes(opt) ? "✓" : ""}</div>{renderLabel ? renderLabel(opt) : opt}</div>)}
-      </div>}
+      </div>, document.body)}
     </div>
   );
 }
@@ -1439,7 +1465,39 @@ export default function Dashboard({ user, onLogout }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
   const saveTimeoutRef = useRef(null);
-  const [projects, setProjects] = useState(initProjects);
+  
+  // ─── LOCAL STORAGE PERSISTENCE ─────────────────────────────────
+  const STORAGE_VERSION = "v8.1";
+  const LS_KEYS = {
+    projects: "adptv_projects",
+    clients: "adptv_clients",
+    contacts: "adptv_contacts",
+    vendors: "adptv_vendors",
+    workback: "adptv_workback",
+    ros: "adptv_ros",
+    settings: "adptv_settings",
+    textSize: "adptv_textSize",
+    version: "adptv_version",
+  };
+  const lsGet = (key, fallback) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } };
+  const lsSave = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.warn("localStorage save failed:", key, e); } };
+  
+  const [projects, setProjects] = useState(() => {
+    const saved = lsGet(LS_KEYS.projects, null);
+    if (saved && saved.length > 0) {
+      // Merge: update codes from initProjects, keep user edits, add new projects
+      const defaults = initProjects();
+      const merged = saved.map(p => {
+        const def = defaults.find(d => d.id === p.id);
+        return def ? { ...p, code: def.code } : p; // Always use latest code format
+      });
+      // Add any new projects from defaults that don't exist in saved
+      const savedIds = new Set(saved.map(p => p.id));
+      const newProjects = defaults.filter(d => !savedIds.has(d.id));
+      return [...merged, ...newProjects];
+    }
+    return initProjects;
+  });
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('acc-theme');
@@ -1474,7 +1532,7 @@ export default function Dashboard({ user, onLogout }) {
   const [activeProjectId, setActiveProjectId] = useState("p1");
   const [activeTab, setActiveTab] = useState("calendar");
   const [glanceTab, setGlanceTab] = useState("cal");
-  const [projectVendors, setProjectVendors] = useState({});
+  const [projectVendors, setProjectVendors] = useState(() => lsGet(LS_KEYS.vendors, {}));
   // Derive vendors for active project — all existing code keeps working
   const vendors = projectVendors[activeProjectId] || [];
   const setVendors = (updater) => {
@@ -1486,17 +1544,50 @@ export default function Dashboard({ user, onLogout }) {
   const [selectedVendorIds, setSelectedVendorIds] = useState(new Set());
   const [selectedContacts, setSelectedContacts] = useState(new Set());
   // ─── CLIENTS (COMPANY-LEVEL) ────────────────────────────────────
-  const [clients, setClients] = useState([]);
+  const [clients, setClients] = useState(() => lsGet(LS_KEYS.clients, []));
   const [selectedClientIds, setSelectedClientIds] = useState(new Set());
   const [expandedClientId, setExpandedClientId] = useState(null);
   const [showAddClient, setShowAddClient] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
+  const [clientFilterAttr, setClientFilterAttr] = useState("");
   const emptyClient = { name: "", code: "", attributes: [], address: "", city: "", state: "", zip: "", country: "", website: "", contactName: "", contactEmail: "", contactPhone: "", contactAddress: "", billingContact: "", billingEmail: "", billingPhone: "", billingAddress: "", billingNameSame: false, billingEmailSame: false, billingPhoneSame: false, billingAddressSame: false, contactNames: [], projects: [], notes: "" };
   const [clientForm, setClientForm] = useState({ ...emptyClient });
   const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
+  // Resizable column widths
+  const defaultClientCols = [36, 190, 80, 130, 140, 170, 110, 150, 170, 140];
+  const defaultPartnerCols = [36, 180, 70, 110, 110, 130, 180, 140, 120, 100, 180];
+  const [clientColWidths, setClientColWidths] = useState(defaultClientCols);
+  const [partnerColWidths, setPartnerColWidths] = useState(defaultPartnerCols);
+  const resizeRef = useRef(null);
+  const handleColResize = (setter, idx) => (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const startX = e.clientX;
+    resizeRef.current = { setter, idx, startX };
+    const onMove = (ev) => {
+      if (!resizeRef.current) return;
+      const dx = ev.clientX - resizeRef.current.startX;
+      resizeRef.current.startX = ev.clientX;
+      resizeRef.current.setter(prev => {
+        const next = [...prev];
+        next[resizeRef.current.idx] = Math.max(40, next[resizeRef.current.idx] + dx);
+        return next;
+      });
+    };
+    const onUp = () => { resizeRef.current = null; document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  };
+  const colsToGrid = (widths) => widths.map((w, i) => i === widths.length - 1 ? "auto" : w + "px").join(" ");
+  const renderResizeHandle = (setter, idx) => (
+    <div onMouseDown={handleColResize(setter, idx)} style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 2 }} onDoubleClick={(e) => { e.stopPropagation(); setter(prev => { const next = [...prev]; next[idx] = (idx === 0 ? 36 : idx === prev.length - 1 ? 140 : 150); return next; }); }}>
+      <div className="resize-handle-line" style={{ position: "absolute", right: 3, top: "20%", bottom: "20%", width: 2, background: "var(--borderSub)", borderRadius: 1, opacity: 0, transition: "opacity 0.15s" }} />
+    </div>
+  );
   const CLIENT_ATTRIBUTES = [...new Set(["Agency", "Artist", "Audio", "Backline", "Brand", "CAD", "Candles", "Corporate", "Creative Director", "Drawings", "Experiential", "Fabrication & Scenic", "Furniture Rentals", "Individual", "LD", "Lighting", "Management", "PR", "Photo Booth", "Producer", "Production General", "Production Manager", "Promoter", "Record Label", "Site Operations", "Sponsorship", "Video", "AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Floral", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"])].sort();
   // ─── PER-PROJECT WORKBACK ──────────────────────────────────────
-  const [projectWorkback, setProjectWorkback] = useState({});
+  const [projectWorkback, setProjectWorkback] = useState(() => lsGet(LS_KEYS.workback, {}));
   const workback = projectWorkback[activeProjectId] || [];
   const setWorkback = (updater) => {
     setProjectWorkback(prev => ({
@@ -1505,7 +1596,7 @@ export default function Dashboard({ user, onLogout }) {
     }));
   };
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
-  const [projectROS, setProjectROS] = useState({});
+  const [projectROS, setProjectROS] = useState(() => lsGet(LS_KEYS.ros, {}));
   const ros = projectROS[activeProjectId] || [];
   const setROS = (updater) => {
     setProjectROS(prev => ({
@@ -1518,6 +1609,20 @@ export default function Dashboard({ user, onLogout }) {
   const [uploadLog, setUploadLog] = useState([]);
   const [expandedVendor, setExpandedVendor] = useState(null);
   useEffect(() => { setSelectedVendorIds(new Set()); setExpandedVendor(null); }, [activeProjectId]);
+  
+  // ─── TEXT SIZE SETTING ──────────────────────────────────────────
+  const [textSize, setTextSize] = useState(() => lsGet(LS_KEYS.textSize, 100)); // percentage: 80, 90, 100, 110, 120
+  const textScale = textSize / 100;
+  
+  // ─── AUTO-SAVE TO LOCALSTORAGE ─────────────────────────────────
+  useEffect(() => { lsSave(LS_KEYS.projects, projects); }, [projects]);
+  useEffect(() => { lsSave(LS_KEYS.clients, clients); }, [clients]);
+  useEffect(() => { lsSave(LS_KEYS.contacts, contacts); }, [contacts]);
+  useEffect(() => { lsSave(LS_KEYS.vendors, projectVendors); }, [projectVendors]);
+  useEffect(() => { lsSave(LS_KEYS.workback, projectWorkback); }, [projectWorkback]);
+  useEffect(() => { lsSave(LS_KEYS.ros, projectROS); }, [projectROS]);
+  useEffect(() => { lsSave(LS_KEYS.textSize, textSize); }, [textSize]);
+  
   const [search, setSearch] = useState("");
   const [sidebarW, setSidebarW] = useState(280);
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -1619,12 +1724,18 @@ export default function Dashboard({ user, onLogout }) {
   const [contactPopover, setContactPopover] = useState(null); // { contact, x, y }
   const [showAddContact, setShowAddContact] = useState(false);
   const [assignContactPopover, setAssignContactPopover] = useState(null); // { contactId, selectedProject, selectedRole }
-  const [contacts, setContacts] = useState([
+  const defaultContacts = [
     { id: "ct_billy", name: "Billy Smith", firstName: "Billy", lastName: "Smith", phone: "+1 (310) 986-5581", email: "billy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: +1 (310) 853-3497 · Intl: +1 (424) 375-5699 · Personal: billysmith08@gmail.com · Home: 15 Wavecrest Ave, Venice CA 90291 · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
     { id: "ct_clancy", name: "Clancy Silver", firstName: "Clancy", lastName: "Silver", phone: "+1 (323) 532-3555", email: "clancy@weareadptv.com", company: "Adaptive by Design", position: "Executive Producer", department: "Leadership", notes: "Work: (310) 853-3497 · WhatsApp: +1 (323) 532-3555 · Also: clancy@auxx.co · clancy.silver@gmail.com · Office: 133 Horizon Ave, Venice CA 90291", source: "system" },
     { id: "ct_eden", name: "Eden Sweeden", firstName: "Eden", lastName: "Sweeden", phone: "+1 (310) 625-2453", email: "eden@weareadptv.com", company: "Adaptive by Design", position: "", department: "", notes: "Personal: edenschroder@icloud.com · Birthday: January 8, 1989", source: "system" },
-  ]);
+  ];
+  const [contacts, setContacts] = useState(() => {
+    const saved = lsGet(LS_KEYS.contacts, null);
+    return saved && saved.length > 0 ? saved : defaultContacts;
+  });
   const [contactSearch, setContactSearch] = useState("");
+  const [contactFilterType, setContactFilterType] = useState("");
+  const [contactFilterResource, setContactFilterResource] = useState("");
   const [todoistKey, setTodoistKey] = useState("564b99b7c52b83c83ab621c45b75787f65c6190a");
   const [todoistTasks, setTodoistTasks] = useState([]);
   const [todoistProjects, setTodoistProjects] = useState([]);
@@ -1636,22 +1747,42 @@ export default function Dashboard({ user, onLogout }) {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
     try {
-      const [tasksRes, projsRes] = await Promise.all([
+      const [tasksRes, projsRes, syncRes] = await Promise.all([
         fetch("https://api.todoist.com/rest/v2/tasks", { headers: { Authorization: `Bearer ${k}` } }),
         fetch("https://api.todoist.com/rest/v2/projects", { headers: { Authorization: `Bearer ${k}` } }),
+        // Sync API to get workspace_id on projects
+        fetch("https://api.todoist.com/sync/v9/sync", { method: "POST", headers: { Authorization: `Bearer ${k}`, "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" }),
       ]);
       if (!tasksRes.ok) throw new Error("Invalid API key");
       const tasks = await tasksRes.json();
       const projs = await projsRes.json();
       setTodoistTasks(tasks);
       setTodoistProjects(projs);
-      // Find ADPTV workspace from existing projects
-      const adptvProj = projs.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV");
-      if (adptvProj?.workspace_id) setAdptvWorkspaceId(adptvProj.workspace_id);
-      else {
-        // Try any project with a workspace_id that's not the personal one
-        const teamProj = projs.find(p => p.workspace_id && !p.inbox_project);
-        if (teamProj?.workspace_id) setAdptvWorkspaceId(teamProj.workspace_id);
+      // Extract workspace_id from Sync API response
+      if (syncRes.ok) {
+        const syncData = await syncRes.json();
+        const syncProjects = syncData.projects || [];
+        const adptvProj = syncProjects.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV" || p.name === "Team Inbox");
+        if (adptvProj?.workspace_id) {
+          setAdptvWorkspaceId(adptvProj.workspace_id);
+          console.log("ADPTV workspace found:", adptvProj.workspace_id, "via:", adptvProj.name);
+        } else {
+          // Try any shared/team project
+          const teamProj = syncProjects.find(p => p.workspace_id && !p.inbox_project && p.shared);
+          if (teamProj?.workspace_id) {
+            setAdptvWorkspaceId(teamProj.workspace_id);
+            console.log("ADPTV workspace found (fallback):", teamProj.workspace_id, "via:", teamProj.name);
+          } else {
+            // Last resort: any project with a workspace_id
+            const anyWs = syncProjects.find(p => p.workspace_id && p.workspace_id !== "0" && !p.inbox_project);
+            if (anyWs?.workspace_id) {
+              setAdptvWorkspaceId(anyWs.workspace_id);
+              console.log("ADPTV workspace found (any):", anyWs.workspace_id, "via:", anyWs.name);
+            } else {
+              console.warn("No ADPTV workspace_id found in", syncProjects.length, "projects");
+            }
+          }
+        }
       }
     } catch (e) { console.error("Todoist:", e); }
     setTodoistLoading(false);
@@ -2768,7 +2899,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", fontSize: `${textSize}%`, ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -2782,6 +2913,8 @@ export default function Dashboard({ user, onLogout }) {
         @keyframes glow { 0%, 100% { box-shadow: 0 0 4px #4ecb71; } 50% { box-shadow: 0 0 12px #4ecb71; } }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         * { transition: background-color 0.25s, border-color 0.25s, color 0.15s; }
+        div:hover > .resize-handle-line { opacity: 0.6 !important; }
+        div:active > .resize-handle-line { opacity: 1 !important; background: #3da5db !important; }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(${darkMode ? "0.6" : "0"}); cursor: pointer; }
       `}</style>
 
@@ -2831,6 +2964,12 @@ export default function Dashboard({ user, onLogout }) {
               <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>SETTINGS</span>
             </button>
           )}
+          {/* Text Size Quick Control */}
+          <div style={{ display: "flex", alignItems: "center", gap: 3, border: "1px solid var(--borderSub)", borderRadius: 20, padding: "3px 6px" }} title={`Text size: ${textSize}%`}>
+            <button onClick={() => setTextSize(s => Math.max(75, s - 5))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "var(--textMuted)", padding: "2px 4px", fontWeight: 700, lineHeight: 1 }}>A−</button>
+            <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, minWidth: 28, textAlign: "center", fontFamily: "'JetBrains Mono', monospace" }}>{textSize}%</span>
+            <button onClick={() => setTextSize(s => Math.min(130, s + 5))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--textMuted)", padding: "2px 4px", fontWeight: 700, lineHeight: 1 }}>A+</button>
+          </div>
           {/* Activity Feed Bell */}
           <div style={{ position: "relative" }}>
             <button onClick={() => { setShowActivityFeed(!showActivityFeed); if (!showActivityFeed) setLastSeenActivity(Date.now()); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "5px 9px", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", gap: 4 }} title="Activity Feed">
@@ -3340,6 +3479,14 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
+                    <select value={contactFilterType} onChange={e => setContactFilterType(e.target.value)} style={{ padding: "8px 10px", background: "var(--bgCard)", border: `1px solid ${contactFilterType ? "#ff6b4a40" : "var(--borderSub)"}`, borderRadius: 7, color: contactFilterType ? "#ff6b4a" : "var(--textFaint)", fontSize: 11, outline: "none", cursor: "pointer", appearance: "auto" }}>
+                      <option value="">All Types</option>
+                      {[...new Set(contacts.map(c => c.contactType).filter(Boolean))].sort().map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <select value={contactFilterResource} onChange={e => setContactFilterResource(e.target.value)} style={{ padding: "8px 10px", background: "var(--bgCard)", border: `1px solid ${contactFilterResource ? "#3da5db40" : "var(--borderSub)"}`, borderRadius: 7, color: contactFilterResource ? "#3da5db" : "var(--textFaint)", fontSize: 11, outline: "none", cursor: "pointer", appearance: "auto" }}>
+                      <option value="">All Resources</option>
+                      {[...new Set(contacts.map(c => c.resourceType).filter(Boolean))].sort().map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
                     <label style={{ padding: "7px 16px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13 }}>📇</span> Import vCard
                       <input type="file" accept=".vcf,.vcard" onChange={handleVCardUpload} style={{ display: "none" }} multiple />
@@ -3379,12 +3526,16 @@ export default function Dashboard({ user, onLogout }) {
                     )}
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
                     <div style={{ minWidth: 1420 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "36px 180px 70px 110px 110px 130px 180px 140px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
-                      <span><input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /></span>
-                      <span>NAME</span><span>TYPE</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
+                    <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
+                      {["", "NAME", "TYPE", "RESOURCE TYPE", "POSITION", "PHONE", "EMAIL", "ADDRESS", "COMPANY", "ACTIONS", "DOCS"].map((label, i) => (
+                        <span key={i} style={{ position: "relative", userSelect: "none" }}>
+                          {i === 0 ? <input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /> : label}
+                          {i < partnerColWidths.length - 1 && renderResizeHandle(setPartnerColWidths, i)}
+                        </span>
+                      ))}
                     </div>
-                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "36px 180px 70px 110px 110px 130px 180px 140px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
+                    {contacts.filter(c => (!contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())) && (!contactFilterType || c.contactType === contactFilterType) && (!contactFilterResource || c.resourceType === contactFilterResource)).map(c => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
                         <span><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={(e) => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
@@ -3546,6 +3697,10 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input value={clientSearch} onChange={e => setClientSearch(e.target.value)} placeholder="Search clients..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
+                    <select value={clientFilterAttr} onChange={e => setClientFilterAttr(e.target.value)} style={{ padding: "8px 10px", background: "var(--bgCard)", border: `1px solid ${clientFilterAttr ? "#9b6dff40" : "var(--borderSub)"}`, borderRadius: 7, color: clientFilterAttr ? "#9b6dff" : "var(--textFaint)", fontSize: 11, outline: "none", cursor: "pointer", appearance: "auto" }}>
+                      <option value="">All Types</option>
+                      {CLIENT_ATTRIBUTES.map(a => <option key={a} value={a}>{a}</option>)}
+                    </select>
                     <label style={{ padding: "7px 16px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 7, color: "#4ecb71", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13 }}>📊</span> Import CSV
                       <input type="file" accept=".csv" onChange={handleClientsCSVUpload} style={{ display: "none" }} />
@@ -3579,24 +3734,29 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     )}
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
-                    <div style={{ minWidth: 1400 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
-                      <span><input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /></span>
-                      <span>COMPANY NAME</span><span>CODE</span><span>ATTRIBUTES</span><span>CONTACT</span><span>EMAIL</span><span>PHONE</span><span>BILLING CONTACT</span><span>BILLING EMAIL</span><span>ACTIONS</span>
+                    <div style={{ minWidth: 1200 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: colsToGrid(clientColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
+                      {["", "COMPANY NAME", "CODE", "ATTRIBUTES", "CONTACT", "EMAIL", "PHONE", "BILLING CONTACT", "BILLING EMAIL", "ACTIONS"].map((label, i) => (
+                        <span key={i} style={{ position: "relative", userSelect: "none" }}>
+                          {i === 0 ? <input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /> : label}
+                          {i < clientColWidths.length - 1 && renderResizeHandle(setClientColWidths, i)}
+                        </span>
+                      ))}
                     </div>
-                    {clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())).map(c => {
+                    {clients.filter(c => (!clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())) && (!clientFilterAttr || (c.attributes || []).includes(clientFilterAttr))).map(c => {
                       const linkedContacts = contacts.filter(ct => (ct.company || "").toLowerCase() === c.name.toLowerCase() || (ct.vendorName || "").toLowerCase() === c.name.toLowerCase() || (ct.clientAssociation || "").toLowerCase() === c.name.toLowerCase());
                       const isExpanded = expandedClientId === c.id;
                       return (
                       <React.Fragment key={c.id}>
-                      <div onClick={() => setExpandedClientId(isExpanded ? null : c.id)} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "10px 16px", borderBottom: isExpanded ? "none" : "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: isExpanded ? "#3da5db08" : selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent", cursor: "pointer", borderLeft: isExpanded ? "3px solid #3da5db" : "3px solid transparent" }}>
+                      <div onClick={() => setExpandedClientId(isExpanded ? null : c.id)} style={{ display: "grid", gridTemplateColumns: colsToGrid(clientColWidths), padding: "10px 16px", borderBottom: isExpanded ? "none" : "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: isExpanded ? "#3da5db08" : selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent", cursor: "pointer", borderLeft: isExpanded ? "3px solid #3da5db" : "3px solid transparent" }}>
                         <span onClick={e => e.stopPropagation()}><input type="checkbox" checked={selectedClientIds.has(c.id)} onChange={(e) => { const next = new Set(selectedClientIds); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedClientIds(next); }} style={{ cursor: "pointer" }} /></span>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
                           <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #3da5db20, #3da5db10)", border: "1px solid #3da5db30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#3da5db", flexShrink: 0 }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                           </div>
                           <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={c.name}>{c.name}</div>
                           {linkedContacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 6px", background: "#3da5db15", border: "1px solid #3da5db25", borderRadius: 10, color: "#3da5db", fontWeight: 700, flexShrink: 0 }}>{linkedContacts.length} {isExpanded ? "▴" : "▾"}</span>}
+                          {linkedContacts.length === 0 && (c.contactName || c.billingContact || (c.contactNames || []).length > 0) && <span style={{ fontSize: 9, padding: "1px 6px", background: "#ff6b4a10", border: "1px solid #ff6b4a20", borderRadius: 10, color: "#ff6b4a", fontWeight: 700, flexShrink: 0 }}>{(c.contactName ? 1 : 0) + (c.billingContact && c.billingContact !== c.contactName ? 1 : 0) + (c.contactNames || []).filter(n => n && n !== c.contactName && n !== c.billingContact).length} {isExpanded ? "▴" : "▾"}</span>}
                         </div>
                         <span style={{ color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600 }}>{c.code || "—"}</span>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>{(c.attributes || []).slice(0, 2).map(a => <span key={a} style={{ padding: "1px 5px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 600, color: "#9b6dff", whiteSpace: "nowrap" }}>{a}</span>)}{(c.attributes || []).length > 2 && <span style={{ fontSize: 8, color: "var(--textFaint)" }}>+{c.attributes.length - 2}</span>}</div>
@@ -3608,34 +3768,61 @@ export default function Dashboard({ user, onLogout }) {
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => { setClientForm({ ...c }); setShowAddClient(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setClients(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕</button>
+                          <span style={{ fontSize: 12, color: isExpanded ? "#3da5db" : "var(--textGhost)", transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "none" }}>▸</span>
                         </div>
                       </div>
                       {isExpanded && (
                         <div style={{ borderBottom: "1px solid var(--calLine)", borderLeft: "3px solid #3da5db", background: "#3da5db05" }}>
-                          <div style={{ padding: "8px 16px 4px 52px", fontSize: 9, color: "#3da5db", fontWeight: 700, letterSpacing: 1 }}>ASSOCIATED CONTACTS ({linkedContacts.length})</div>
-                          {linkedContacts.length === 0 ? (
-                            <div style={{ padding: "12px 16px 16px 52px", fontSize: 11, color: "var(--textFaint)" }}>No contacts linked to {c.name}. Contacts matched by company name or Client Association.</div>
-                          ) : linkedContacts.map(ct => (
-                            <div key={ct.id} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "6px 16px", alignItems: "center", fontSize: 11, borderTop: "1px solid #3da5db10" }}>
-                              <span />
-                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a15, #ff4a6b15)", border: "1px solid #ff6b4a25", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>
-                                  {ct.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                          <div style={{ padding: "10px 16px 6px 52px", fontSize: 9, color: "#3da5db", fontWeight: 700, letterSpacing: 1 }}>CONTACTS FOR {c.name.toUpperCase()}</div>
+                          {(() => {
+                            // Build combined list: client's own contacts + linked partners
+                            const allContacts = [];
+                            // Add client's primary contact if exists
+                            if (c.contactName) allContacts.push({ id: "_primary_" + c.id, name: c.contactName, email: c.contactEmail, phone: c.contactPhone, position: "Client Contact", _source: "client" });
+                            // Add billing contact if different from primary
+                            if (c.billingContact && c.billingContact !== c.contactName) allContacts.push({ id: "_billing_" + c.id, name: c.billingContact, email: c.billingEmail, phone: c.billingPhone, position: "Billing Contact", _source: "client" });
+                            // Add additional contact names from CSV
+                            (c.contactNames || []).forEach((cn, ci) => {
+                              if (cn && cn !== c.contactName && cn !== c.billingContact) allContacts.push({ id: "_cn_" + c.id + "_" + ci, name: cn, email: "", phone: "", position: "Contact", _source: "client" });
+                            });
+                            // Add linked Global Partners (deduplicate by name)
+                            const existingNames = new Set(allContacts.map(x => x.name.toLowerCase()));
+                            linkedContacts.forEach(ct => {
+                              if (!existingNames.has(ct.name.toLowerCase())) {
+                                allContacts.push({ ...ct, _source: "partner" });
+                                existingNames.add(ct.name.toLowerCase());
+                              } else {
+                                // Merge: if partner has more data, update the existing entry
+                                const existing = allContacts.find(x => x.name.toLowerCase() === ct.name.toLowerCase());
+                                if (existing && !existing.email && ct.email) existing.email = ct.email;
+                                if (existing && !existing.phone && ct.phone) existing.phone = ct.phone;
+                                if (existing && ct.position && ct.position !== "Contact") existing.position = ct.position;
+                                if (existing) existing._source = "merged";
+                              }
+                            });
+                            return allContacts.length === 0 ? (
+                              <div style={{ padding: "8px 16px 14px 52px", fontSize: 12, color: "var(--textFaint)" }}>No contacts for {c.name}. Add a contact or billing info via Edit.</div>
+                            ) : (
+                              <div style={{ padding: "0 16px 10px 52px" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "200px 130px 200px 160px auto", padding: "6px 0", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, borderBottom: "1px solid var(--borderSub)" }}>
+                                  <span>NAME</span><span>ROLE</span><span>EMAIL</span><span>PHONE</span><span></span>
                                 </div>
-                                <span style={{ fontWeight: 600, color: "var(--text)" }}>{ct.name}</span>
+                                {allContacts.map(ct => (
+                                  <div key={ct.id} style={{ display: "grid", gridTemplateColumns: "200px 130px 200px 160px auto", padding: "8px 0", fontSize: 11, alignItems: "center", borderBottom: "1px solid var(--calLine)" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: ct._source === "partner" || ct._source === "merged" ? "linear-gradient(135deg, #3da5db15, #3da5db10)" : "linear-gradient(135deg, #ff6b4a15, #ff4a6b15)", border: `1px solid ${ct._source === "partner" || ct._source === "merged" ? "#3da5db25" : "#ff6b4a25"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: ct._source === "partner" || ct._source === "merged" ? "#3da5db" : "#ff6b4a", flexShrink: 0 }}>{ct.name.split(" ").map(n => n[0]).join("").slice(0, 2)}</div>
+                                      <span style={{ fontWeight: 600, color: "var(--text)" }}>{ct.name}</span>
+                                      {(ct._source === "partner" || ct._source === "merged") && <span style={{ fontSize: 7, color: "#3da5db" }} title="Linked in Global Partners">🔗</span>}
+                                    </div>
+                                    <span style={{ fontSize: 10, color: "var(--textMuted)" }}>{ct.position || "—"}</span>
+                                    <span onClick={(e) => ct.email && copyToClipboard(ct.email, "Email", e)} style={{ color: ct.email ? "#3da5db" : "var(--textGhost)", fontSize: 10, cursor: ct.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ct.email}>{ct.email || "—"}</span>
+                                    <span onClick={(e) => ct.phone && copyToClipboard(ct.phone, "Phone", e)} style={{ color: ct.phone ? "var(--textMuted)" : "var(--textGhost)", fontSize: 10, cursor: ct.phone ? "pointer" : "default" }}>{ct.phone || "—"}</span>
+                                    {ct._source !== "client" ? <button onClick={(e) => { e.stopPropagation(); setContactForm({ ...ct }); setShowAddContact(true); }} style={{ padding: "3px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>✏ Edit</button> : <span />}
+                                  </div>
+                                ))}
                               </div>
-                              <span style={{ fontSize: 9 }}><span style={{ padding: "1px 5px", borderRadius: 3, background: ct.contactType === "Client" ? "#ff6b4a10" : "#3da5db10", border: `1px solid ${ct.contactType === "Client" ? "#ff6b4a20" : "#3da5db20"}`, color: ct.contactType === "Client" ? "#ff6b4a" : "#3da5db", fontWeight: 600 }}>{ct.contactType || "—"}</span></span>
-                              <span style={{ color: "var(--textFaint)", fontSize: 10 }}>{ct.position || "—"}</span>
-                              <span style={{ color: "var(--textFaint)", fontSize: 10 }}>{ct.phone || "—"}</span>
-                              <span onClick={(e) => ct.email && copyToClipboard(ct.email, "Email", e)} style={{ color: "var(--textFaint)", fontSize: 10, cursor: ct.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ct.email}>{ct.email || "—"}</span>
-                              <span style={{ color: "var(--textFaint)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ct.address || "—"}</span>
-                              <span />
-                              <span />
-                              <div>
-                                <button onClick={() => { setContactForm({ ...ct }); setShowAddContact(true); }} style={{ padding: "3px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>Edit</button>
-                              </div>
-                            </div>
-                          ))}
+                            );
+                          })()}
                         </div>
                       )}
                       </React.Fragment>
@@ -4058,7 +4245,7 @@ export default function Dashboard({ user, onLogout }) {
                   <button onClick={addWBRow} style={{ padding: "7px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add Row</button>
                 </div>
                 <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
-                  <div style={{ overflowX: "auto" }}>
+                  <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 280px)", minHeight: 300 }}>
                   <div style={{ minWidth: 1100 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 220px 200px 180px 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
                   {workback.map((wb, i) => {
@@ -4637,7 +4824,7 @@ export default function Dashboard({ user, onLogout }) {
               </div>
               {/* Tabs */}
               <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
-                {[["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
+                {[["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["display", "🔤 Display"], ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
                   <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
                 ))}
               </div>
@@ -5133,6 +5320,47 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                     <input placeholder="Add role + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
                       onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { const v = e.target.value.trim(); setAppSettings(prev => ({ ...prev, projectRoles: [...(prev.projectRoles || []).filter(Boolean), v] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── DISPLAY TAB ── */}
+              {settingsTab === "display" && (
+                <div>
+                  <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20, lineHeight: 1.5 }}>Adjust the text size across the dashboard. This setting is saved per browser and persists across sessions.</div>
+                  
+                  <div style={{ padding: "20px 24px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)", marginBottom: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Text Size</div>
+                        <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 2 }}>Current: {textSize}%</div>
+                      </div>
+                      <button onClick={() => setTextSize(100)} style={{ padding: "5px 12px", background: textSize === 100 ? "var(--bgCard)" : "#3da5db15", border: `1px solid ${textSize === 100 ? "var(--borderSub)" : "#3da5db30"}`, borderRadius: 6, color: textSize === 100 ? "var(--textGhost)" : "#3da5db", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Reset to 100%</button>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 600, minWidth: 28 }}>Aa</span>
+                      <input type="range" min={75} max={130} step={5} value={textSize} onChange={e => setTextSize(Number(e.target.value))} style={{ flex: 1, accentColor: "#ff6b4a", cursor: "pointer" }} />
+                      <span style={{ fontSize: 16, color: "var(--textFaint)", fontWeight: 600, minWidth: 28, textAlign: "right" }}>Aa</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
+                      {[75, 85, 100, 115, 130].map(s => (
+                        <button key={s} onClick={() => setTextSize(s)} style={{ padding: "4px 10px", background: textSize === s ? "#ff6b4a20" : "var(--bgCard)", border: `1px solid ${textSize === s ? "#ff6b4a40" : "var(--borderSub)"}`, borderRadius: 5, color: textSize === s ? "#ff6b4a" : "var(--textMuted)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{s}%</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Preview */}
+                  <div style={{ padding: "16px 20px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ fontSize: 9 * textScale, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PREVIEW</div>
+                    <div style={{ fontSize: 18 * textScale, fontWeight: 700, marginBottom: 4, fontFamily: "'Instrument Sans'" }}>Project Title</div>
+                    <div style={{ fontSize: 12 * textScale, color: "var(--textSub)", marginBottom: 8 }}>This is how body text will appear at {textSize}% zoom.</div>
+                    <div style={{ fontSize: 9 * textScale, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>26-GUESS-COACH26-INDIO</div>
+                  </div>
+
+                  {/* Data persistence info */}
+                  <div style={{ marginTop: 20, padding: "16px 20px", background: "#4ecb7108", borderRadius: 10, border: "1px solid #4ecb7125" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#4ecb71", marginBottom: 6 }}>💾 Auto-Save Active</div>
+                    <div style={{ fontSize: 11, color: "var(--textMuted)", lineHeight: 1.5 }}>All data (projects, clients, contacts, vendors, work back, run of show) is automatically saved to your browser's local storage. Data persists across page refreshes and redeployments on the same browser.</div>
                   </div>
                 </div>
               )}
