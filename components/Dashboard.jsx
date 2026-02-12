@@ -5186,7 +5186,11 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 ) : (
                   /* File Browser */
-                  <div>
+                  <div
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.outline = "2px dashed #4ecb71"; e.currentTarget.style.outlineOffset = "-2px"; }}
+                    onDragLeave={e => { e.currentTarget.style.outline = "none"; }}
+                    onDrop={e => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.outline = "none"; const f = e.dataTransfer.files[0]; if (f) { setRenameModal({ file: f, mode: 'drive', suggestedName: f.name, originalName: f.name, ext: f.name.includes('.') ? '.' + f.name.split('.').pop() : '', folderName: projDrivePath[projDrivePath.length - 1]?.name || '' }); } }}
+                  >
                     {/* Header bar */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -5199,7 +5203,7 @@ export default function Dashboard({ user, onLogout }) {
                         )}
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <input type="file" ref={projDriveFileRef} onChange={e => { if (e.target.files[0]) driveUploadFile(e.target.files[0]); e.target.value = ""; }} style={{ display: "none" }} />
+                        <input type="file" ref={projDriveFileRef} onChange={e => { const f = e.target.files[0]; if (f) { setRenameModal({ file: f, mode: 'drive', suggestedName: f.name, originalName: f.name, ext: f.name.includes('.') ? '.' + f.name.split('.').pop() : '', folderName: projDrivePath[projDrivePath.length - 1]?.name || '' }); } e.target.value = ""; }} style={{ display: "none" }} />
                         <button onClick={() => projDriveFileRef.current?.click()} disabled={projDriveUploading} style={{ padding: "6px 14px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                           {projDriveUploading ? "⏳ Uploading..." : "⬆ Upload"}
                         </button>
@@ -6924,22 +6928,25 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ FILE RENAME MODAL ═══ */}
       {renameModal && (() => {
         const DOC_LABELS = { coi: 'Certificate of Insurance', w9: 'W-9 Tax Form', banking: 'Banking Details', contract: 'Contract', invoice: 'Invoice' };
-        const isInvoice = renameModal.compKey === 'invoice';
+        const isDrive = renameModal.mode === 'drive';
+        const isInvoice = !isDrive && renameModal.compKey === 'invoice';
         return (
         <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setRenameModal(null); }}>
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 480, maxWidth: "92vw", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
             <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>RENAME BEFORE UPLOAD</div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>📄 {DOC_LABELS[renameModal.compKey] || renameModal.compKey.toUpperCase()}</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{isDrive ? `📁 Upload to ${renameModal.folderName || 'Drive'}` : `📄 ${DOC_LABELS[renameModal.compKey] || renameModal.compKey?.toUpperCase()}`}</div>
               </div>
               <button onClick={() => setRenameModal(null)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "4px" }}>✕</button>
             </div>
             <div style={{ padding: "20px 24px" }}>
+              {!isDrive && (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>VENDOR / CONTRACTOR</div>
                 <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>{renameModal.vendorName}</div>
               </div>
+              )}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>ORIGINAL FILE</div>
                 <div style={{ fontSize: 11, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px", background: "var(--bgCard)", borderRadius: 6, border: "1px solid var(--borderSub)", wordBreak: "break-all" }}>{renameModal.originalName}</div>
@@ -6958,19 +6965,23 @@ export default function Dashboard({ user, onLogout }) {
               )}
               <div style={{ marginBottom: 8 }}>
                 <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>FILE NAME</div>
-                <input value={renameModal.suggestedName} onChange={e => setRenameModal(prev => ({ ...prev, suggestedName: e.target.value }))} style={{ width: "100%", padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} onFocus={e => { const val = e.target.value; const dotIdx = val.lastIndexOf('.'); if (dotIdx > 0) e.target.setSelectionRange(0, dotIdx); }} autoFocus />
+                <input value={renameModal.suggestedName} onChange={e => setRenameModal(prev => ({ ...prev, suggestedName: e.target.value }))} style={{ width: "100%", padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} onFocus={e => { const val = e.target.value; const dotIdx = val.lastIndexOf('.'); if (dotIdx > 0) e.target.setSelectionRange(0, dotIdx); }} autoFocus onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('rename-modal-upload-btn')?.click(); } }} />
               </div>
               <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 20 }}>
-                {isInvoice ? "Format: ProjectCode_Vendor Name_Version.ext" : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'banking' ? 'Banking' : 'Contract'} - Vendor Name.ext`}
+                {isDrive ? "Rename the file before uploading to Drive" : isInvoice ? "Format: ProjectCode_Vendor Name_Version.ext" : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'banking' ? 'Banking' : 'Contract'} - Vendor Name.ext`}
               </div>
             </div>
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
               <button onClick={() => setRenameModal(null)} style={{ padding: "8px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Cancel</button>
-              <button onClick={() => {
+              <button id="rename-modal-upload-btn" onClick={() => {
                 const newName = renameModal.suggestedName.trim();
                 if (!newName) return;
                 const renamedFile = new File([renameModal.file], newName, { type: renameModal.file.type });
-                executeFileDrop(renameModal.vendorId, renameModal.compKey, renamedFile, renameModal.drivePath, renameModal.basePath);
+                if (isDrive) {
+                  driveUploadFile(renamedFile);
+                } else {
+                  executeFileDrop(renameModal.vendorId, renameModal.compKey, renamedFile, renameModal.drivePath, renameModal.basePath);
+                }
                 setRenameModal(null);
               }} style={{ padding: "8px 24px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
                 Upload
