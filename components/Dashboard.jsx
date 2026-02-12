@@ -2273,13 +2273,14 @@ function DashboardInner({ user, onLogout }) {
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
         if (data?.state) {
           const s = data.state;
-          if (s.projects) setProjects(s.projects);
-          if (s.projectVendors) setProjectVendors(s.projectVendors);
-          if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
-          if (s.projectROS) setProjectROS(s.projectROS);
-          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
-          if (s.contacts) setContacts(s.contacts);
-          if (s.activityLog) setActivityLog(s.activityLog);
+          // Validate data types before setting state to prevent runtime errors
+          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects);
+          if (s.projectVendors && typeof s.projectVendors === 'object' && !Array.isArray(s.projectVendors)) setProjectVendors(s.projectVendors);
+          if (s.projectWorkback && typeof s.projectWorkback === 'object' && !Array.isArray(s.projectWorkback)) setProjectWorkback(s.projectWorkback);
+          if (s.projectROS && typeof s.projectROS === 'object' && !Array.isArray(s.projectROS)) setProjectROS(s.projectROS);
+          if (s.rosDayDates && typeof s.rosDayDates === 'object' && !Array.isArray(s.rosDayDates)) setRosDayDates(s.rosDayDates);
+          if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
+          if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
         }
         setDataLoaded(true);
         // Sync compliance with Drive

@@ -36,10 +36,19 @@ async function findOrCreateFolder(drive, parentId, name) {
 }
 
 async function findSharedDrive(drive) {
-  const res = await drive.drives.list({ pageSize: 20, fields: 'drives(id, name)' });
-  const drives = res.data.drives || [];
-  const adptv = drives.find(d => d.name.toLowerCase().includes('weareadptv') || d.name.toLowerCase().includes('adptv'));
-  return adptv || drives[0] || null;
+  try {
+    const res = await drive.drives.list({ pageSize: 20, fields: 'drives(id, name)' });
+    const drives = res.data.drives || [];
+    if (!Array.isArray(drives) || drives.length === 0) {
+      console.error('No drives found. Service account may lack access.');
+      return null;
+    }
+    const adptv = drives.find(d => d.name && (d.name.toLowerCase().includes('weareadptv') || d.name.toLowerCase().includes('adptv')));
+    return adptv || drives[0] || null;
+  } catch (error) {
+    console.error('Error listing drives:', error.message);
+    return null;
+  }
 }
 
 async function getCommandCenterFolder(drive) {
