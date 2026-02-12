@@ -503,7 +503,7 @@ const initProjects = () => [
   { id: "p20", code: "26-BRUNELO-MELLOWCIRC-MIA", name: "Brunelo - Mellow Circus", client: "Brunelo", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-07-11", end: "2026-07-12" }, engagementDates: { start: "", end: "" }, location: "MIA", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
   { id: "p21", code: "26-EXPONLY-FESTIVAL-NYC", name: "Experts Only NYC", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-09-19", end: "2026-09-20" }, engagementDates: { start: "", end: "" }, location: "NYC", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
   { id: "p22", code: "26-EXPONLY-FESTIVAL-GORGE", name: "Experts Only Gorge", client: "Experts Only", status: "Exploration", projectType: "Live Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-03", end: "2026-10-04" }, engagementDates: { start: "", end: "" }, location: "Gorge", why: "Experiential Design and mgmt.", budget: 0, spent: 0, services: ["Experiential Design"] },
-  { id: "p23", code: "26-FRANK-SYBER-PHX", name: "Syber World x UP.Summit", client: "Franklin Pictures", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-09", end: "2026-10-12" }, engagementDates: { start: "", end: "" }, location: "PHX", why: "Syberworld x UP.Summit", budget: 0, spent: 0 },
+  { id: "p23", code: "26-FRANK-SYBER-PHX", name: "Syber World x UP.Summit", client: "Franklin Pictures, Inc.", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-09", end: "2026-10-12" }, engagementDates: { start: "", end: "" }, location: "PHX", why: "Syberworld x UP.Summit", budget: 0, spent: 0 },
   { id: "p24", code: "26-GT-HALLOWEEN-LA", name: "GT's Day of the Dead", client: "GT's Living Foods", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-10-17", end: "" }, engagementDates: { start: "", end: "" }, location: "LA", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
   { id: "p25", code: "26-LOSTMX-KAPPA-MTYMX", name: "Kappa Futur Festival", client: "Lost Nights", status: "Exploration", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-11-13", end: "2026-11-14" }, engagementDates: { start: "", end: "" }, location: "MTYMX", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
 ];
@@ -1530,7 +1530,7 @@ export default function Dashboard({ user, onLogout }) {
   const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
   // Resizable column widths
   const defaultClientCols = [36, 190, 80, 130, 140, 170, 110, 150, 170, 140];
-  const defaultPartnerCols = [36, 180, 70, 110, 110, 130, 180, 140, 120, 100, 180];
+  const defaultPartnerCols = [36, 170, 65, 105, 105, 125, 170, 130, 115, 150, 160];
   const [clientColWidths, setClientColWidths] = useState(defaultClientCols);
   const [partnerColWidths, setPartnerColWidths] = useState(defaultPartnerCols);
   const resizeRef = useRef(null);
@@ -1722,7 +1722,13 @@ export default function Dashboard({ user, onLogout }) {
         setProjects([...merged, ...brandNew]);
       }
       const savedClients = g(LS_KEYS.clients);
-      if (savedClients && savedClients.length > 0) setClients(savedClients);
+      if (savedClients && savedClients.length > 0) {
+        const nameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
+        const migrated = savedClients.map(c => ({ ...c, name: nameMap[c.name] || c.name }));
+        const seen = new Set();
+        const deduped = migrated.filter(c => { const k = c.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+        setClients(deduped);
+      }
       const savedContacts = g(LS_KEYS.contacts);
       if (savedContacts && savedContacts.length > 0) setContacts(savedContacts);
       const savedVendors = g(LS_KEYS.vendors);
@@ -1745,6 +1751,72 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.ros, JSON.stringify(projectROS)); } catch {} }, [projectROS]);
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.textSize, JSON.stringify(textSize)); } catch {} }, [textSize]);
   useEffect(() => { saveSkipRef.current = false; }, []);
+
+  // Undo/Redo history
+  const undoStack = useRef([]);
+  const redoStack = useRef([]);
+  const pushUndo = useCallback((label) => {
+    undoStack.current.push({ label, projects: JSON.stringify(projects), clients: JSON.stringify(clients), contacts: JSON.stringify(contacts) });
+    if (undoStack.current.length > 30) undoStack.current.shift();
+    redoStack.current = [];
+  }, [projects, clients, contacts]);
+  const doUndo = useCallback(() => {
+    if (undoStack.current.length === 0) return;
+    const snap = undoStack.current.pop();
+    redoStack.current.push({ label: snap.label, projects: JSON.stringify(projects), clients: JSON.stringify(clients), contacts: JSON.stringify(contacts) });
+    saveSkipRef.current = true;
+    setProjects(JSON.parse(snap.projects));
+    setClients(JSON.parse(snap.clients));
+    setContacts(JSON.parse(snap.contacts));
+    setTimeout(() => { saveSkipRef.current = false; }, 100);
+    setClipboardToast({ text: `↩ Undo: ${snap.label}`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 2000);
+  }, [projects, clients, contacts]);
+  const doRedo = useCallback(() => {
+    if (redoStack.current.length === 0) return;
+    const snap = redoStack.current.pop();
+    undoStack.current.push({ label: snap.label, projects: JSON.stringify(projects), clients: JSON.stringify(clients), contacts: JSON.stringify(contacts) });
+    saveSkipRef.current = true;
+    setProjects(JSON.parse(snap.projects));
+    setClients(JSON.parse(snap.clients));
+    setContacts(JSON.parse(snap.contacts));
+    setTimeout(() => { saveSkipRef.current = false; }, 100);
+    setClipboardToast({ text: `↪ Redo: ${snap.label}`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 2000);
+  }, [projects, clients, contacts]);
+
+  // Keyboard shortcuts: Esc to close, Cmd+Z undo, Cmd+Y/Shift+Cmd+Z redo
+  useEffect(() => {
+    const handler = (e) => {
+      // ESC closes modals (priority order)
+      if (e.key === "Escape") {
+        if (showSettings) { setShowSettings(false); e.preventDefault(); return; }
+        if (docPreview) { setDocPreview(null); e.preventDefault(); return; }
+        if (showAddProject) { setShowAddProject(false); e.preventDefault(); return; }
+        if (showAddContact) { setShowAddContact(false); e.preventDefault(); return; }
+        if (showAddClient) { setShowAddClient(false); e.preventDefault(); return; }
+        if (showAddVendor) { setShowAddVendor(false); e.preventDefault(); return; }
+        if (showPrintROS) { setShowPrintROS(false); e.preventDefault(); return; }
+        if (showVersionHistory) { setShowVersionHistory(false); e.preventDefault(); return; }
+        if (showActivityFeed) { setShowActivityFeed(false); e.preventDefault(); return; }
+        if (assignContactPopover) { setAssignContactPopover(null); e.preventDefault(); return; }
+        if (contactPopover) { setContactPopover(null); e.preventDefault(); return; }
+        if (contextMenu) { setContextMenu(null); e.preventDefault(); return; }
+      }
+      // Cmd+Z / Ctrl+Z = Undo
+      if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        doUndo();
+        return;
+      }
+      // Cmd+Y or Cmd+Shift+Z = Redo
+      if ((e.metaKey || e.ctrlKey) && (e.key === "y" || (e.key === "z" && e.shiftKey))) {
+        e.preventDefault();
+        doRedo();
+        return;
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [showSettings, showAddProject, showAddContact, showAddClient, showAddVendor, showPrintROS, showVersionHistory, showActivityFeed, assignContactPopover, contactPopover, contextMenu, docPreview, doUndo, doRedo]);
   const todoistFetch = useCallback(async (key) => {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
@@ -2548,8 +2620,10 @@ export default function Dashboard({ user, onLogout }) {
           const s = data.state;
           // Sanitize projects: ensure all array fields are actually arrays
           if (s.projects && Array.isArray(s.projects)) {
+            const clientNameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
             setProjects(s.projects.map(p => ({
               ...p,
+              client: clientNameMap[p.client] || p.client,
               producers: Array.isArray(p.producers) ? p.producers : [],
               managers: Array.isArray(p.managers) ? p.managers : [],
               staff: Array.isArray(p.staff) ? p.staff : [],
@@ -2586,7 +2660,15 @@ export default function Dashboard({ user, onLogout }) {
           if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
-          if (s.clients && Array.isArray(s.clients)) setClients(s.clients);
+          if (s.clients && Array.isArray(s.clients)) {
+            // Migrate client names to match Drive folders
+            const nameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
+            const migrated = s.clients.map(c => ({ ...c, name: nameMap[c.name] || c.name }));
+            // Deduplicate by name (keep first occurrence)
+            const seen = new Set();
+            const deduped = migrated.filter(c => { const k = c.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+            setClients(deduped);
+          }
         }
         setDataLoaded(true);
         // Sync compliance with Drive
@@ -2927,7 +3009,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", zoom: textSize !== 100 ? textSize / 100 : undefined, ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -2964,7 +3046,7 @@ export default function Dashboard({ user, onLogout }) {
       )}
 
       {/* TOP BAR */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s", flexShrink: 0, position: "sticky", top: 0, zIndex: 100 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s", flexShrink: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
           <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", background: "linear-gradient(135deg, #ff6b4a, #ff4a6b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Adaptive by Design</span>
           <div style={{ width: 1, height: 20, background: "var(--border)" }} />
@@ -3062,7 +3144,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", zoom: textSize !== 100 ? textSize / 100 : undefined }}>
 
         {/* SIDEBAR */}
         {sidebarOpen && (
@@ -3551,7 +3633,7 @@ export default function Dashboard({ user, onLogout }) {
                     {selectedContacts.size > 0 && (
                       <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#ff6b4a" }}>{selectedContacts.size} selected</span>
-                        <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
+                        <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { pushUndo("Delete contacts"); setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
                         <button onClick={() => setSelectedContacts(new Set())} style={{ padding: "4px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕ Clear</button>
                       </div>
                     )}
@@ -3635,7 +3717,7 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
                           <button onClick={() => { setContactForm({ ...c, clientAssociation: c.clientAssociation || (clients.find(cl => cl.name.toLowerCase() === (c.company || c.vendorName || "").toLowerCase())?.name || "") }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => downloadVCard(c)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
-                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setContacts(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
+                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) { pushUndo("Delete contact"); setContacts(prev => prev.filter(x => x.id !== c.id)); } }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
                         {/* DOCS column - functional upload buttons synced with vendor compliance */}
                         {(() => {
@@ -3763,7 +3845,7 @@ export default function Dashboard({ user, onLogout }) {
                     {selectedClientIds.size > 0 && (
                       <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#ff6b4a" }}>{selectedClientIds.size} selected</span>
-                        <button onClick={() => { if (confirm(`Delete ${selectedClientIds.size} selected client(s)?`)) { setClients(prev => prev.filter(c => !selectedClientIds.has(c.id))); setSelectedClientIds(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
+                        <button onClick={() => { if (confirm(`Delete ${selectedClientIds.size} selected client(s)?`)) { pushUndo("Delete clients"); setClients(prev => prev.filter(c => !selectedClientIds.has(c.id))); setSelectedClientIds(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
                         <button onClick={() => setSelectedClientIds(new Set())} style={{ padding: "4px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕ Clear</button>
                       </div>
                     )}
@@ -3801,7 +3883,7 @@ export default function Dashboard({ user, onLogout }) {
                         <span onClick={(e) => { e.stopPropagation(); c.billingEmail && copyToClipboard(c.billingEmail, "Billing Email", e); }} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.billingEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingEmail}>{c.billingEmail || "—"}</span>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => { setClientForm({ ...c }); setShowAddClient(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
-                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setClients(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕</button>
+                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) { pushUndo("Delete client"); setClients(prev => prev.filter(x => x.id !== c.id)); } }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕</button>
                           <span style={{ fontSize: 12, color: isExpanded ? "#3da5db" : "var(--textGhost)", transition: "transform 0.2s", transform: isExpanded ? "rotate(90deg)" : "none" }}>▸</span>
                         </div>
                       </div>
@@ -5533,6 +5615,7 @@ export default function Dashboard({ user, onLogout }) {
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => { setArchiveConfirm(null); setSwipeState({}); }} style={{ flex: 1, padding: "10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textSub)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
               <button onClick={() => {
+                pushUndo(archiveConfirm.action === "archive" ? "Archive project" : "Delete project");
                 if (archiveConfirm.action === "archive") {
                   const p = projects.find(x => x.id === archiveConfirm.projectId);
                   if (p?.archived) {
@@ -5846,7 +5929,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD PROJECT MODAL ═══ */}
       {showAddProject && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddProject(false); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 680, maxHeight: "90vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 820, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
             <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>New Project</div>
