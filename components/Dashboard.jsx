@@ -1716,7 +1716,7 @@ export default function Dashboard({ user, onLogout }) {
       const savedProjects = g(LS_KEYS.projects);
       if (savedProjects && savedProjects.length > 0) {
         const defaults = initProjects();
-        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...p, code: def.code } : p; });
+        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...def, ...p } : p; });
         const savedIds = new Set(savedProjects.map(p => p.id));
         const brandNew = defaults.filter(d => !savedIds.has(d.id));
         setProjects([...merged, ...brandNew]);
