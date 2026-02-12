@@ -1713,6 +1713,8 @@ export default function Dashboard({ user, onLogout }) {
   const [todoistCollaborators, setTodoistCollaborators] = useState([]);
   const [todoistAutoLinking, setTodoistAutoLinking] = useState(false);
   const [todoistEditingTask, setTodoistEditingTask] = useState(null);
+  const [todoistComments, setTodoistComments] = useState({});
+  const [todoistNewComment, setTodoistNewComment] = useState("");
   const [todoistNewSection, setTodoistNewSection] = useState("");
   const [todoistAddingSection, setTodoistAddingSection] = useState(false);
   const [todoistNewTaskSection, setTodoistNewTaskSection] = useState(null);
@@ -1858,7 +1860,7 @@ export default function Dashboard({ user, onLogout }) {
       const syncData = await tp("/api/v1/sync", {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: "sync_token=*&resource_types=[\"items\",\"projects\",\"sections\",\"collaborators\"]"
+        body: "sync_token=*&resource_types=[\"items\",\"projects\",\"sections\",\"collaborators\",\"notes\"]"
       });
       const syncProjects = syncData.projects || [];
       const syncItems = (syncData.items || []).filter(i => !i.checked && !i.is_deleted);
@@ -1897,7 +1899,19 @@ export default function Dashboard({ user, onLogout }) {
       if (syncCollabs.length > 0) {
         setTodoistCollaborators(syncCollabs.map(c => ({ id: c.id, name: c.full_name || c.email, email: c.email })));
       }
-      console.log("Todoist loaded:", mappedProjects.length, "projects,", mappedTasks.length, "tasks,", syncSections.length, "sections,", syncCollabs.length, "collaborators");
+      // Store notes/comments grouped by task
+      const syncNotes = (syncData.notes || []).filter(n => !n.is_deleted);
+      if (syncNotes.length > 0) {
+        const grouped = {};
+        syncNotes.forEach(n => {
+          if (!grouped[n.item_id]) grouped[n.item_id] = [];
+          grouped[n.item_id].push({ id: n.id, content: n.content, posted_at: n.posted_at || n.posted, posted_uid: n.posted_uid });
+        });
+        // Sort each group by date
+        Object.values(grouped).forEach(arr => arr.sort((a, b) => (a.posted_at || "").localeCompare(b.posted_at || "")));
+        setTodoistComments(grouped);
+      }
+      console.log("Todoist loaded:", mappedProjects.length, "projects,", mappedTasks.length, "tasks,", syncSections.length, "sections,", syncCollabs.length, "collaborators,", syncNotes.length, "comments");
       // Extract workspace
       const adptvProj = syncProjects.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV" || p.name === "Team Inbox");
       if (adptvProj?.workspace_id) {
@@ -2023,6 +2037,20 @@ export default function Dashboard({ user, onLogout }) {
     if (!todoistKey || !taskId) return;
     const uuid = "upd_" + Date.now();
     await todoistSyncCmd([{ type: "item_update", uuid, args: { id: taskId, ...updates } }]);
+    await todoistFetch();
+  };
+  const todoistAddComment = async (taskId, content) => {
+    if (!todoistKey || !taskId || !content) return;
+    const tempId = "note_" + Date.now();
+    await todoistSyncCmd([{ type: "note_add", temp_id: tempId, uuid: tempId, args: { item_id: taskId, content } }]);
+    await todoistFetch();
+  };
+  const todoistMoveTask = async (taskId, sectionId) => {
+    if (!todoistKey || !taskId) return;
+    const uuid = "move_" + Date.now();
+    const args = { id: taskId };
+    if (sectionId) { args.section_id = sectionId; } else { args.section_id = null; }
+    await todoistSyncCmd([{ type: "item_move", uuid, args }]);
     await todoistFetch();
   };
   const searchTimerRef = useRef(null);
@@ -4635,24 +4663,137 @@ export default function Dashboard({ user, onLogout }) {
                         const projSections = todoistSections.filter(s => s.project_id === linkedTodoistId).sort((a, b) => (a.order || 0) - (b.order || 0));
                         const unsectioned = projectTasks.filter(t => !t.section_id).sort((a, b) => (a.order || 0) - (b.order || 0));
                         const priColors = { 1: "var(--textMuted)", 2: "#3da5db", 3: "#dba94e", 4: "#ff6b4a" };
+                        const priLabels = { 1: "—", 2: "Low", 3: "Med", 4: "High" };
                         const renderTask = (task) => {
                           const isOverdue = task.due && task.due.date < today;
                           const isToday = task.due && task.due.date === today;
                           const assignee = task.assignee_id ? (() => { const c = todoistCollaborators.find(x => x.id === task.assignee_id); return c ? c.name?.split(" ")[0] : ""; })() : "";
+                          const isEditing = todoistEditingTask === task.id;
+                          const taskComments = todoistComments[task.id] || [];
                           return (
-                            <div key={task.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr auto 100px 50px", padding: "10px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center" }}>
-                              <div onClick={() => todoistClose(task.id)} style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                <span style={{ fontSize: 10, opacity: 0.4 }}>✓</span>
+                            <div key={task.id}>
+                              {/* Task row */}
+                              <div style={{ display: "grid", gridTemplateColumns: "32px 1fr auto auto 100px 32px", padding: "10px 12px", borderBottom: isEditing ? "none" : "1px solid var(--calLine)", alignItems: "center", cursor: "pointer", background: isEditing ? "#ff6b4a08" : "transparent", transition: "background 0.15s" }}>
+                                <div onClick={(e) => { e.stopPropagation(); todoistClose(task.id); }} style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                  <span style={{ fontSize: 10, opacity: 0.4 }}>✓</span>
+                                </div>
+                                <div onClick={() => setTodoistEditingTask(isEditing ? null : task.id)} style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{task.content}</div>
+                                  {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.description}</div>}
+                                </div>
+                                {taskComments.length > 0 && <span style={{ fontSize: 9, color: "var(--textFaint)", padding: "2px 6px", background: "var(--bgInput)", borderRadius: 4, marginRight: 6 }}>{String.fromCharCode(128172)}{taskComments.length}</span>}
+                                <div>{assignee && <span style={{ fontSize: 9, color: "var(--textFaint)", padding: "2px 6px", background: "var(--bgInput)", borderRadius: 4 }}>@{assignee}</span>}</div>
+                                <div style={{ fontSize: 10, color: isOverdue ? "#ff4a6b" : isToday ? "#ff6b4a" : "var(--textMuted)", fontWeight: isOverdue || isToday ? 600 : 400, textAlign: "right" }}>
+                                  {task.due ? (isToday ? "Today" : task.due.string || task.due.date) : ""}
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); todoistDelete(task.id); }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13, padding: 4 }} title="Delete">×</button>
                               </div>
-                              <div>
-                                <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{task.content}</div>
-                                {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 2 }}>{task.description.slice(0, 80)}</div>}
-                              </div>
-                              <div>{assignee && <span style={{ fontSize: 9, color: "var(--textFaint)", padding: "2px 6px", background: "var(--bgInput)", borderRadius: 4 }}>@{assignee}</span>}</div>
-                              <div style={{ fontSize: 10, color: isOverdue ? "#ff4a6b" : isToday ? "#ff6b4a" : "var(--textMuted)", fontWeight: isOverdue || isToday ? 600 : 400 }}>
-                                {task.due ? (isToday ? "Today" : task.due.string || task.due.date) : ""}
-                              </div>
-                              <button onClick={() => todoistDelete(task.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13 }} title="Delete">×</button>
+
+                              {/* Expanded edit panel */}
+                              {isEditing && (
+                                <div style={{ padding: "16px 20px", background: "#ff6b4a05", borderBottom: "1px solid var(--calLine)", animation: "fadeUp 0.15s ease" }}>
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                                    {/* Due Date */}
+                                    <div>
+                                      <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DUE DATE</div>
+                                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                        <input type="date" defaultValue={task.due?.date || ""} onChange={(e) => {
+                                          const val = e.target.value;
+                                          if (val) todoistUpdateTask(task.id, { due: { date: val } });
+                                          else todoistUpdateTask(task.id, { due: null });
+                                        }} style={{ flex: 1, padding: "6px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                                        {task.due && <button onClick={() => todoistUpdateTask(task.id, { due: null })} style={{ padding: "4px 8px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textFaint)", cursor: "pointer", fontSize: 10 }}>Clear</button>}
+                                      </div>
+                                      {/* Quick date buttons */}
+                                      <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                                        {[
+                                          { label: "Today", date: today },
+                                          { label: "Tomorrow", date: new Date(Date.now() + 86400000).toISOString().split("T")[0] },
+                                          { label: "+7d", date: new Date(Date.now() + 604800000).toISOString().split("T")[0] },
+                                        ].map(q => (
+                                          <button key={q.label} onClick={() => todoistUpdateTask(task.id, { due: { date: q.date } })} style={{ padding: "3px 8px", background: task.due?.date === q.date ? "#ff6b4a20" : "var(--bgCard)", border: `1px solid ${task.due?.date === q.date ? "#ff6b4a40" : "var(--borderSub)"}`, borderRadius: 4, color: task.due?.date === q.date ? "#ff6b4a" : "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>{q.label}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+
+                                    {/* Priority */}
+                                    <div>
+                                      <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>PRIORITY</div>
+                                      <div style={{ display: "flex", gap: 4 }}>
+                                        {[4, 3, 2, 1].map(p => (
+                                          <button key={p} onClick={() => todoistUpdateTask(task.id, { priority: p })} style={{ flex: 1, padding: "6px 0", background: task.priority === p ? priColors[p] + "20" : "var(--bgCard)", border: `1px solid ${task.priority === p ? priColors[p] : "var(--borderSub)"}`, borderRadius: 6, color: task.priority === p ? priColors[p] : "var(--textMuted)", cursor: "pointer", fontSize: 11, fontWeight: 600, transition: "all 0.15s" }}>{priLabels[p]}</button>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                                    {/* Assignee */}
+                                    <div>
+                                      <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>ASSIGNEE</div>
+                                      <select value={task.assignee_id || ""} onChange={(e) => {
+                                        const val = e.target.value;
+                                        todoistUpdateTask(task.id, { responsible_uid: val ? val : null });
+                                      }} style={{ width: "100%", padding: "6px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                                        <option value="">Unassigned</option>
+                                        {todoistCollaborators.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                      </select>
+                                    </div>
+
+                                    {/* Section */}
+                                    <div>
+                                      <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>SECTION</div>
+                                      <select value={task.section_id || ""} onChange={(e) => {
+                                        const val = e.target.value;
+                                        todoistMoveTask(task.id, val || null);
+                                      }} style={{ width: "100%", padding: "6px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                                        <option value="">No section</option>
+                                        {projSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  {/* Description */}
+                                  <div style={{ marginBottom: 14 }}>
+                                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DESCRIPTION</div>
+                                    <textarea defaultValue={task.description || ""} placeholder="Add a description..." onBlur={(e) => {
+                                      if (e.target.value !== (task.description || "")) todoistUpdateTask(task.id, { description: e.target.value });
+                                    }} style={{ width: "100%", padding: "8px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", minHeight: 40, fontFamily: "inherit" }} />
+                                  </div>
+
+                                  {/* Comments */}
+                                  <div>
+                                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>COMMENTS {taskComments.length > 0 && `(${taskComments.length})`}</div>
+                                    {taskComments.length > 0 && (
+                                      <div style={{ marginBottom: 8, maxHeight: 200, overflowY: "auto" }}>
+                                        {taskComments.map(c => {
+                                          const author = c.posted_uid ? todoistCollaborators.find(x => x.id === c.posted_uid) : null;
+                                          return (
+                                            <div key={c.id} style={{ padding: "8px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, marginBottom: 4, fontSize: 12 }}>
+                                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                                <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)" }}>{author?.name?.split(" ")[0] || "Unknown"}</span>
+                                                <span style={{ fontSize: 9, color: "var(--textGhost)" }}>{c.posted_at ? new Date(c.posted_at).toLocaleDateString() : ""}</span>
+                                              </div>
+                                              <div style={{ color: "var(--text)", lineHeight: 1.4, whiteSpace: "pre-wrap" }}>{c.content}</div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                    <div style={{ display: "flex", gap: 6 }}>
+                                      <input placeholder="Add a comment..." value={todoistEditingTask === task.id ? todoistNewComment : ""} onChange={(e) => setTodoistNewComment(e.target.value)} onKeyDown={(e) => {
+                                        if (e.key === "Enter" && todoistNewComment.trim()) { todoistAddComment(task.id, todoistNewComment.trim()); setTodoistNewComment(""); }
+                                      }} style={{ flex: 1, padding: "7px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                                      <button onClick={() => { if (todoistNewComment.trim()) { todoistAddComment(task.id, todoistNewComment.trim()); setTodoistNewComment(""); } }} disabled={!todoistNewComment.trim()} style={{ padding: "7px 14px", background: todoistNewComment.trim() ? "#ff6b4a" : "var(--bgInput)", border: "none", borderRadius: 6, color: todoistNewComment.trim() ? "#fff" : "var(--textGhost)", cursor: todoistNewComment.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 700 }}>Post</button>
+                                    </div>
+                                  </div>
+
+                                  {/* Close edit panel */}
+                                  <div style={{ textAlign: "right", marginTop: 10 }}>
+                                    <button onClick={() => { setTodoistEditingTask(null); setTodoistNewComment(""); }} style={{ padding: "5px 14px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>Done</button>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         };
