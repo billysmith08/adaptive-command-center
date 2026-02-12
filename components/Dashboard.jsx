@@ -3317,6 +3317,7 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3 }}>{p.name}</div>
+                    <div style={{ fontSize: 8, color: p.code ? "var(--textGhost)" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.3, marginBottom: 3, opacity: p.code ? 1 : 0.5 }}>{p.code || generateProjectCode(p)}</div>
                     {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
                       {p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
                       {p.eventDates && p.eventDates.start && <div>🎪 {fmtShort(p.eventDates.start)}{p.eventDates.end ? ` – ${fmtShort(p.eventDates.end)}` : ""}</div>}
@@ -4200,12 +4201,30 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     </div>
 
-                    {/* CLIENT CONTACTS */}
-                    <ContactListBlock label="CLIENT" searchLabel="🔍 Search Clients" items={project.clientContacts || []} contacts={clients.map(cl => ({ id: cl.id, name: cl.name, phone: cl.contactPhone || cl.billingPhone || "", email: cl.contactEmail || cl.billingEmail || "", company: cl.name, position: "Client", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") }))} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
+                    {/* CLIENT CONTACTS - auto-populate from Clients list if empty */}
+                    {(() => {
+                      let effectiveClientContacts = project.clientContacts || [];
+                      if (effectiveClientContacts.length === 0 && project.client) {
+                        const clientLower = project.client.trim().toLowerCase();
+                        const matchedClient = clients.find(cl => cl.name?.trim().toLowerCase() === clientLower) || clients.find(cl => clientLower.includes(cl.name?.trim().toLowerCase()) || cl.name?.trim().toLowerCase().includes(clientLower));
+                        if (matchedClient) {
+                          effectiveClientContacts = [{
+                            name: matchedClient.companyContact || matchedClient.contactName || matchedClient.billingContact || matchedClient.name,
+                            phone: matchedClient.contactPhone || matchedClient.billingPhone || "",
+                            email: matchedClient.contactEmail || matchedClient.billingEmail || "",
+                            company: matchedClient.name,
+                            position: "Client",
+                            address: [matchedClient.address, matchedClient.city, matchedClient.state, matchedClient.zip].filter(Boolean).join(", "),
+                            autoPopulated: true
+                          }];
+                        }
+                      }
+                      return <ContactListBlock label="CLIENT" searchLabel="🔍 Search Clients" items={effectiveClientContacts} contacts={clients.map(cl => ({ id: cl.id, name: cl.name, phone: cl.contactPhone || cl.billingPhone || "", email: cl.contactEmail || cl.billingEmail || "", company: cl.name, position: "Client", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") }))} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Client", department: "", address: poc.address || "", notes: `Client for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.clientContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("clientContacts", arr);
-                    }} />
+                    }} />;
+                    })()}
 
                     {/* POINT OF CONTACT(S) */}
                     <ContactListBlock label="POINT OF CONTACT(S)" searchLabel="🔍 Search Partners" items={project.pocs || []} contacts={contacts} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("pocs", v)} onSaveToGlobal={(poc, pi) => {
