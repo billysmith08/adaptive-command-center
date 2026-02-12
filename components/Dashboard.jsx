@@ -1464,11 +1464,13 @@ export default function Dashboard({ user, onLogout }) {
   const supabase = createClient();
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
+  const [forceSaveCounter, setForceSaveCounter] = useState(0);
   const saveTimeoutRef = useRef(null);
   
   // ─── LOCAL STORAGE PERSISTENCE (post-mount hydration for SSR safety) ──
-  const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", ros: "adptv_ros", textSize: "adptv_textSize" };
+  const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
   const lsHydrated = useRef(false);
+  const pendingSaveRef = useRef(null); // holds the state object for beforeunload flush
   
   const [projects, setProjects] = useState(initProjects);
   const [darkMode, setDarkMode] = useState(() => {
@@ -1743,12 +1745,13 @@ export default function Dashboard({ user, onLogout }) {
   }, []);
   // ─── AUTO-SAVE TO LOCALSTORAGE (skip initial render) ────────────
   const saveSkipRef = useRef(true);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.projects, JSON.stringify(projects)); } catch {} }, [projects]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.clients, JSON.stringify(clients)); } catch {} }, [clients]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.contacts, JSON.stringify(contacts)); } catch {} }, [contacts]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.vendors, JSON.stringify(projectVendors)); } catch {} }, [projectVendors]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.workback, JSON.stringify(projectWorkback)); } catch {} }, [projectWorkback]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.ros, JSON.stringify(projectROS)); } catch {} }, [projectROS]);
+  const stampLS = () => { try { localStorage.setItem(LS_KEYS.updatedAt, new Date().toISOString()); } catch {} };
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.projects, JSON.stringify(projects)); stampLS(); } catch {} }, [projects]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.clients, JSON.stringify(clients)); stampLS(); } catch {} }, [clients]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.contacts, JSON.stringify(contacts)); stampLS(); } catch {} }, [contacts]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.vendors, JSON.stringify(projectVendors)); stampLS(); } catch {} }, [projectVendors]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.workback, JSON.stringify(projectWorkback)); stampLS(); } catch {} }, [projectWorkback]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.ros, JSON.stringify(projectROS)); stampLS(); } catch {} }, [projectROS]);
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.textSize, JSON.stringify(textSize)); } catch {} }, [textSize]);
   useEffect(() => { saveSkipRef.current = false; }, []);
 
@@ -1800,6 +1803,12 @@ export default function Dashboard({ user, onLogout }) {
         if (assignContactPopover) { setAssignContactPopover(null); e.preventDefault(); return; }
         if (contactPopover) { setContactPopover(null); e.preventDefault(); return; }
         if (contextMenu) { setContextMenu(null); e.preventDefault(); return; }
+      }
+      // Cmd+S / Ctrl+S = Force save to Supabase
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        setForceSaveCounter(c => c + 1);
+        return;
       }
       // Cmd+Z / Ctrl+Z = Undo
       if ((e.metaKey || e.ctrlKey) && e.key === "z" && !e.shiftKey) {
@@ -2612,11 +2621,42 @@ export default function Dashboard({ user, onLogout }) {
       try {
         const { data, error } = await supabase
           .from('shared_state')
-          .select('state')
+          .select('state, updated_at')
           .eq('id', 'shared')
           .single();
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
         if (data?.state) {
+          // Compare timestamps: only overwrite local data if Supabase is newer
+          const lsTimestamp = localStorage.getItem(LS_KEYS.updatedAt);
+          const sbTimestamp = data.updated_at;
+          const lsDate = lsTimestamp ? new Date(lsTimestamp) : new Date(0);
+          const sbDate = sbTimestamp ? new Date(sbTimestamp) : new Date(0);
+          
+          // If localStorage is newer than Supabase, skip the overwrite and push local to Supabase instead
+          if (lsDate > sbDate && lsTimestamp) {
+            console.log(`localStorage is newer (${lsTimestamp} > ${sbTimestamp}) — keeping local data, pushing to Supabase`);
+            setDataLoaded(true);
+            // Force-push localStorage state to Supabase so they're in sync
+            // Read directly from localStorage since React state may not be hydrated yet
+            setTimeout(async () => {
+              try {
+                const localState = {};
+                ['projects', 'clients', 'contacts', 'vendors', 'workback', 'ros'].forEach(k => {
+                  try { const v = localStorage.getItem(LS_KEYS[k]); if (v) localState[k === 'vendors' ? 'projectVendors' : k === 'workback' ? 'projectWorkback' : k === 'ros' ? 'projectROS' : k] = JSON.parse(v); } catch {}
+                });
+                if (Object.keys(localState).length > 0) {
+                  const now = new Date().toISOString();
+                  await supabase.from('shared_state').update({ state: localState, updated_at: now, updated_by: user.id }).eq('id', 'shared');
+                  try { localStorage.setItem(LS_KEYS.updatedAt, now); } catch {}
+                  console.log('Force-pushed localStorage to Supabase');
+                  setSaveStatus("saved");
+                }
+              } catch (e) { console.warn('Force-push failed:', e); }
+            }, 2000);
+            syncDriveCompliance();
+            return;
+          }
+          
           const s = data.state;
           // Sanitize projects: ensure all array fields are actually arrays
           if (s.projects && Array.isArray(s.projects)) {
@@ -2731,23 +2771,77 @@ export default function Dashboard({ user, onLogout }) {
     if (!user) return;
     setSaveStatus("saving");
     try {
+      const now = new Date().toISOString();
       const { error } = await supabase
         .from('shared_state')
-        .update({ state, updated_at: new Date().toISOString(), updated_by: user.id })
+        .update({ state, updated_at: now, updated_by: user.id })
         .eq('id', 'shared');
-      if (error) { console.error('Save error:', error); setSaveStatus("error"); }
-      else { setSaveStatus("saved"); }
-    } catch (e) { console.error('Save failed:', e); setSaveStatus("error"); }
+      if (error) {
+        console.error('Save error:', error);
+        setSaveStatus("error");
+        // Retry once after 3 seconds
+        setTimeout(() => {
+          if (pendingSaveRef.current) {
+            console.log('Retrying save...');
+            saveToSupabase(pendingSaveRef.current);
+          }
+        }, 3000);
+      }
+      else {
+        setSaveStatus("saved");
+        // Stamp localStorage so it matches Supabase
+        try { localStorage.setItem(LS_KEYS.updatedAt, now); } catch {}
+        pendingSaveRef.current = null;
+      }
+    } catch (e) {
+      console.error('Save failed:', e);
+      setSaveStatus("error");
+      // Retry once after 3 seconds
+      setTimeout(() => {
+        if (pendingSaveRef.current) saveToSupabase(pendingSaveRef.current);
+      }, 3000);
+    }
   }, [user, supabase]);
 
   useEffect(() => {
     if (!dataLoaded) return;
+    const stateToSave = { projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients };
+    pendingSaveRef.current = stateToSave;
+    setSaveStatus("saving");
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    const delay = forceSaveCounter > 0 ? 50 : 800; // Immediate on Cmd+S
     saveTimeoutRef.current = setTimeout(() => {
-      saveToSupabase({ projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients });
-    }, 1500);
+      saveToSupabase(stateToSave);
+    }, delay);
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients, dataLoaded]);
+  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients, dataLoaded, forceSaveCounter]);
+
+  // Flush pending save on tab close / navigate away
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (pendingSaveRef.current && user) {
+        // Use sendBeacon for reliable save on tab close
+        const payload = JSON.stringify({
+          state: pendingSaveRef.current,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id
+        });
+        // Try sendBeacon first (most reliable for unload)
+        const beaconUrl = `${window.location.origin}/api/save-state`;
+        try { navigator.sendBeacon(beaconUrl, new Blob([payload], { type: 'application/json' })); } catch {}
+        // Also try synchronous XHR as fallback
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', beaconUrl, false); // synchronous
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.send(payload);
+        } catch {}
+        pendingSaveRef.current = null;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [user]);
 
   const _rawProject = projects.find(p => p.id === activeProjectId) || projects[0];
   const project = _rawProject ? {
@@ -3021,6 +3115,7 @@ export default function Dashboard({ user, onLogout }) {
         ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--scrollThumb); border-radius: 4px; }
         .pac-container { z-index: 100000 !important; }
         @keyframes glow { 0%, 100% { box-shadow: 0 0 4px #4ecb71; } 50% { box-shadow: 0 0 12px #4ecb71; } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         * { transition: background-color 0.25s, border-color 0.25s, color 0.15s; }
         div:hover > .resize-handle-line { opacity: 0.6 !important; }
@@ -3137,7 +3232,7 @@ export default function Dashboard({ user, onLogout }) {
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5 }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "none" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{saveStatus === "saving" ? "SAVING" : saveStatus === "error" ? "ERROR" : "LIVE"}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast saved: ${(() => { try { return localStorage.getItem(LS_KEYS.updatedAt) || "never"; } catch { return "unknown"; } })()}`} onClick={() => { const stateToSave = { projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients }; pendingSaveRef.current = stateToSave; saveToSupabase(stateToSave); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ SYNCED"}</span></div>
           <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
           {user && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{user.email}</span>}
           {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
