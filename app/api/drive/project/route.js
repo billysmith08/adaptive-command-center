@@ -394,9 +394,11 @@ async function handleScanVendors(body) {
   }
 
   // ═══════════════════════════════════════════════════════
-  // PASS 2: Scan global ADMIN → External Vendors (W9 & Work Comp) → latest period
+  // PASS 2: Scan global ADMIN → External Vendors (W9 & Work Comp) → latest period → W9s / COIs subfolders
   // ═══════════════════════════════════════════════════════
   let globalComplianceFolder = null;
+  let globalW9sFolder = null;
+  let globalCOIsFolder = null;
   try {
     const rootAdmin = await findFolderInParent(drive, driveId, driveId, 'ADMIN');
     if (rootAdmin) {
@@ -410,32 +412,55 @@ async function handleScanVendors(body) {
         periods.sort((a, b) => b.name.localeCompare(a.name));
         globalComplianceFolder = periods[0] || null;
         console.log('Global compliance folder:', globalComplianceFolder?.name || 'not found');
+
+        // Find W9s and COIs subfolders inside the period folder
+        if (globalComplianceFolder) {
+          const periodSubs = await listSubfolders(globalComplianceFolder.id);
+          globalW9sFolder = periodSubs.find(f => /w9/i.test(f.name));
+          globalCOIsFolder = periodSubs.find(f => /coi|cert.*ins|insurance|workers?\s*comp/i.test(f.name));
+          console.log('Global W9s folder:', globalW9sFolder?.name || 'not found');
+          console.log('Global COIs folder:', globalCOIsFolder?.name || 'not found');
+        }
       }
     }
   } catch (e) {
     console.error('Error finding global compliance folder:', e.message);
   }
 
-  if (globalComplianceFolder) {
-    const globalVendorFolders = await listSubfolders(globalComplianceFolder.id);
-    for (const gvf of globalVendorFolders) {
+  // Scan vendor folders inside each doc-type subfolder
+  const globalDocFolders = [
+    { folder: globalW9sFolder, docType: 'w9' },
+    { folder: globalCOIsFolder, docType: 'coi' },
+  ];
+
+  for (const { folder: docFolder, docType } of globalDocFolders) {
+    if (!docFolder) continue;
+    const vendorFolders = await listSubfolders(docFolder.id);
+    for (const gvf of vendorFolders) {
       const files = await listFiles(gvf.id);
       if (files.length === 0) continue;
       const globalDocs = classifyFiles(files);
+      // If no classified doc of the expected type, try to use first file as that type
+      if (!globalDocs[docType]?.done && files.length > 0) {
+        globalDocs[docType] = { done: true, file: files[0].name, link: files[0].webViewLink, modified: files[0].modifiedTime, fileId: files[0].id };
+      }
 
       if (vendors[gvf.name]) {
-        // Vendor already found in project — merge global W9/COI if project doesn't have them
-        ['w9', 'coi'].forEach(key => {
-          if (globalDocs[key]?.done && !vendors[gvf.name].docs[key]?.done) {
-            vendors[gvf.name].docs[key] = { ...globalDocs[key], source: 'global' };
-          }
-        });
-        vendors[gvf.name].globalFolderId = gvf.id;
+        // Vendor already found in project — merge if project doesn't have this doc
+        if (globalDocs[docType]?.done && !vendors[gvf.name].docs[docType]?.done) {
+          vendors[gvf.name].docs[docType] = { ...globalDocs[docType], source: 'global' };
+        }
+        if (!vendors[gvf.name].globalFolderId) vendors[gvf.name].globalFolderId = {};
+        if (typeof vendors[gvf.name].globalFolderId === 'string') {
+          vendors[gvf.name].globalFolderId = { [docType]: vendors[gvf.name].globalFolderId };
+        }
+        vendors[gvf.name].globalFolderId[docType] = gvf.id;
       } else {
-        // Vendor only in global — add with W9/COI status
+        // Vendor only in global — add with doc status
         vendors[gvf.name] = {
-          docs: { w9: globalDocs.w9 || null, coi: globalDocs.coi || null },
-          fileCount: files.length, folderId: gvf.id, globalFolderId: gvf.id,
+          docs: { [docType]: globalDocs[docType] || null },
+          fileCount: files.length, folderId: gvf.id,
+          globalFolderId: { [docType]: gvf.id },
         };
       }
     }
@@ -450,26 +475,36 @@ async function handleScanVendors(body) {
       const doc = vdata.docs[docType];
       if (!doc?.done || !doc.fileId) continue;
 
-      const inProject = vdata.projectFolderId && doc.source !== 'global';
-      const inGlobal = vdata.globalFolderId && doc.source === 'global';
+      // Determine which global doc-type folder to use
+      const globalDocTypeFolder = docType === 'w9' ? globalW9sFolder : globalCOIsFolder;
+      const globalVendorFolderId = typeof vdata.globalFolderId === 'object' ? vdata.globalFolderId?.[docType] : vdata.globalFolderId;
 
-      // If doc is in project but NOT in global → copy to global
-      if (inProject && globalComplianceFolder && !inGlobal) {
-        const targetFolder = await ensureFolder(globalComplianceFolder.id, vendorName);
+      const inProject = vdata.projectFolderId && doc.source !== 'global';
+      const inGlobal = globalVendorFolderId && doc.source === 'global';
+
+      // If doc is in project but NOT in global → copy to global (inside correct doc-type subfolder)
+      if (inProject && globalDocTypeFolder && !inGlobal) {
+        const targetFolder = await ensureFolder(globalDocTypeFolder.id, vendorName);
         // Check if already exists in target
         const existingFiles = await listFiles(targetFolder.id);
-        const alreadyThere = existingFiles.some(f => classifyFile(f.name) === docType);
+        const alreadyThere = existingFiles.some(f => classifyFile(f.name) === docType || f.name === doc.file);
         if (!alreadyThere) {
           const copied = await copyFileTo(doc.fileId, targetFolder.id, doc.file);
           if (copied) copyResults.push({ vendor: vendorName, doc: docType, direction: 'project→global' });
         }
-        if (!vdata.globalFolderId) vendors[vendorName].globalFolderId = targetFolder.id;
+        if (!vdata.globalFolderId) vendors[vendorName].globalFolderId = {};
+        if (typeof vendors[vendorName].globalFolderId === 'string') {
+          vendors[vendorName].globalFolderId = { [docType]: vendors[vendorName].globalFolderId };
+        }
+        if (typeof vendors[vendorName].globalFolderId === 'object') {
+          vendors[vendorName].globalFolderId[docType] = targetFolder.id;
+        }
       }
 
       // If doc is in global but NOT in project → copy to project vendor folder
       if (inGlobal && vdata.projectFolderId) {
         const existingFiles = await listFiles(vdata.projectFolderId);
-        const alreadyThere = existingFiles.some(f => classifyFile(f.name) === docType);
+        const alreadyThere = existingFiles.some(f => classifyFile(f.name) === docType || f.name === doc.file);
         if (!alreadyThere) {
           const copied = await copyFileTo(doc.fileId, vdata.projectFolderId, doc.file);
           if (copied) copyResults.push({ vendor: vendorName, doc: docType, direction: 'global→project' });
