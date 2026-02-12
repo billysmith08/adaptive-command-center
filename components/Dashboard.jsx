@@ -813,28 +813,42 @@ function AddToProjectDropdown({ contacts, allProjectPeople, onAdd, deptOptions, 
   );
 }
 
-function ClientSearchInput({ value, onChange, projects }) {
+function ClientSearchInput({ value, onChange, projects, contacts }) {
   const [clientOpen, setClientOpen] = useState(false);
   const clientRef = useRef(null);
   useEffect(() => { const h = (e) => { if (clientRef.current && !clientRef.current.contains(e.target)) setClientOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
   const existingClients = [...new Set(projects.map(p => p.client).filter(Boolean))].sort();
+  const clientContacts = (contacts || []).filter(c => c.contactCategory === "Client" && c.company).map(c => c.company);
+  const allClients = [...new Set([...existingClients, ...clientContacts])].sort();
   const q = value.toLowerCase();
-  const filteredClients = existingClients.filter(c => c.toLowerCase().includes(q));
-  const exactMatch = existingClients.some(c => c.toLowerCase() === q);
+  const filteredClients = allClients.filter(c => c.toLowerCase().includes(q));
+  const exactMatch = allClients.some(c => c.toLowerCase() === q);
+  // Also show individual client contact names matching
+  const matchingClientPeople = (contacts || []).filter(c => c.contactCategory === "Client" && c.name.toLowerCase().includes(q) && !filteredClients.some(fc => fc.toLowerCase() === c.name.toLowerCase()));
   return (
     <div ref={clientRef} style={{ position: "relative" }}>
       <input value={value} onChange={e => { onChange(e.target.value); setClientOpen(true); }} onFocus={() => setClientOpen(true)} placeholder="Search or add new client..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} />
-      {clientOpen && (filteredClients.length > 0 || (q && !exactMatch)) && (
-        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 2, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 70, overflow: "hidden", maxHeight: 200, overflowY: "auto" }}>
+      {clientOpen && (filteredClients.length > 0 || matchingClientPeople.length > 0 || (q && !exactMatch)) && (
+        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 2, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", zIndex: 70, overflow: "hidden", maxHeight: 240, overflowY: "auto" }}>
           {q && !exactMatch && (
             <div onClick={() => { setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 11, color: "#ff6b4a", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
               <span style={{ fontSize: 13, fontWeight: 700 }}>+</span> Add "{value}" as new client
             </div>
           )}
-          {filteredClients.map(c => (
-            <div key={c} onClick={() => { onChange(c); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-              <span style={{ fontWeight: 600, color: "var(--text)" }}>{c}</span>
-              <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{projects.filter(p => p.client === c).length} project{projects.filter(p => p.client === c).length !== 1 ? "s" : ""}</span>
+          {filteredClients.map(c => {
+            const fromContacts = clientContacts.includes(c);
+            const projCount = projects.filter(p => p.client === c).length;
+            return (
+              <div key={c} onClick={() => { onChange(c); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <span style={{ fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>{c} {fromContacts && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 2, background: "#dba94e15", color: "#dba94e", fontWeight: 700 }}>CLIENT</span>}</span>
+                <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{projCount > 0 ? `${projCount} project${projCount !== 1 ? "s" : ""}` : "contact"}</span>
+              </div>
+            );
+          })}
+          {matchingClientPeople.map(c => (
+            <div key={c.id} onClick={() => { onChange(c.company || c.name); setClientOpen(false); }} style={{ padding: "9px 14px", cursor: "pointer", fontSize: 12, color: "var(--textSub)", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <span style={{ fontWeight: 600, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>{c.name} {c.company && <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 400 }}>({c.company})</span>} <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 2, background: "#dba94e15", color: "#dba94e", fontWeight: 700 }}>CLIENT</span></span>
+              <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{c.position || "contact"}</span>
             </div>
           ))}
         </div>
@@ -1746,8 +1760,10 @@ export default function Dashboard({ user, onLogout }) {
     e.target.value = "";
   };
 
-  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual" };
+  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", notes: "", source: "manual", contactCategory: "" };
   const [contactForm, setContactForm] = useState({ ...emptyContact });
+  const [contactSort, setContactSort] = useState({ key: "name", dir: "asc" });
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
   const updateCF = (k, v) => setContactForm(p => ({ ...p, [k]: v }));
   const submitContact = () => {
     const name = contactForm.name || `${contactForm.firstName} ${contactForm.lastName}`.trim();
@@ -1805,19 +1821,42 @@ export default function Dashboard({ user, onLogout }) {
     if (changed) setProjects(updated);
   }, [todoistProjects]);
 
-  // Todoist: add collaborator to a project
-  const todoistAddCollaborator = async (todoistProjId, email) => {
-    if (!todoistKey || !todoistProjId || !email) return;
-    try {
-      await fetch("https://api.todoist.com/rest/v2/projects/" + todoistProjId + "/collaborators", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ email })
-      });
-    } catch (e) { console.error("Todoist collaborator add:", e); }
+  // Find ADPTV workspace/folder in Todoist to nest projects under
+  const getAdptvParentId = () => {
+    // Check if ADPTV is a project (parent_id approach)
+    const adptv = todoistProjects.find(p => (p.name || "").toUpperCase() === "ADPTV");
+    if (adptv) return { parent_id: adptv.id };
+    // Check if existing CC-style projects share a parent_id or workspace_id
+    const ccProject = todoistProjects.find(p => /^\d{2}-\d{4}/.test(p.name));
+    if (ccProject?.parent_id) return { parent_id: ccProject.parent_id };
+    if (ccProject?.workspace_id) return { workspace_id: ccProject.workspace_id };
+    return {};
   };
 
-  // When project team changes, sync collaborators to Todoist
+  // Create Todoist project under ADPTV parent/workspace
+  const createTodoistProjectForCC = async (projectCode) => {
+    if (!todoistKey || !projectCode) return null;
+    const parentInfo = getAdptvParentId();
+    const body = { name: projectCode, ...parentInfo };
+    try {
+      const res = await fetch("https://api.todoist.com/rest/v2/projects", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) {
+        const tp = await res.json();
+        await todoistFetch(); // refresh project list
+        return tp.id;
+      } else {
+        const err = await res.text();
+        console.error("Todoist create failed:", res.status, err);
+      }
+    } catch (e) { console.error("Todoist project create:", e); }
+    return null;
+  };
+
+  // Todoist: sync collaborators (Todoist Sync API for sharing)
   const syncTodoistCollaborators = async (proj) => {
     if (!todoistKey || !proj.todoistProjectId) return;
     const teamEmails = new Set();
@@ -1825,8 +1864,15 @@ export default function Dashboard({ user, onLogout }) {
       const c = contacts.find(ct => (ct.name || "").toLowerCase() === name.toLowerCase());
       if (c?.email) teamEmails.add(c.email);
     });
+    // Use Sync API to share project with collaborators
     for (const email of teamEmails) {
-      await todoistAddCollaborator(proj.todoistProjectId, email);
+      try {
+        await fetch("https://api.todoist.com/sync/v9/collaborators/invite_to_project", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+          body: `project_id=${proj.todoistProjectId}&email=${encodeURIComponent(email)}`
+        });
+      } catch (e) { console.error("Todoist collaborator:", e); }
     }
   };
 
@@ -2959,6 +3005,12 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
+                    {selectedContacts.size > 0 && (
+                      <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "7px 16px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 7, color: "#e85454", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                        🗑 Delete Selected ({selectedContacts.size})
+                      </button>
+                    )}
+                    <button onClick={() => { if (contacts.length > 0 && confirm(`Delete ALL ${contacts.length} contacts? This cannot be undone.`)) { setContacts([]); setSelectedContacts(new Set()); } }} style={{ padding: "7px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textGhost)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Clear all contacts">🗑 Clear All</button>
                     <label style={{ padding: "7px 16px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 13 }}>📇</span> Import vCard
                       <input type="file" accept=".vcf,.vcard" onChange={handleVCardUpload} style={{ display: "none" }} multiple />
@@ -2989,14 +3041,32 @@ export default function Dashboard({ user, onLogout }) {
                 ) : (
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                     <div style={{ overflowX: "auto" }}>
-                    <div style={{ minWidth: 1320 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                      <span>NAME</span><span>RESOURCE TYPE</span><span>POSITION</span><span>PHONE</span><span>EMAIL</span><span>ADDRESS</span><span>COMPANY</span><span>ACTIONS</span><span>DOCS</span>
-                    </div>
-                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "200px 110px 110px 130px 180px 160px 120px auto 180px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                    <div style={{ minWidth: 1420 }}>
+                    {/* Sortable header */}
+                    {(() => {
+                      const SH = ({ label, sortKey, w }) => {
+                        const active = contactSort.key === sortKey;
+                        return <span onClick={() => setContactSort(prev => ({ key: sortKey, dir: prev.key === sortKey && prev.dir === "asc" ? "desc" : "asc" }))} style={{ cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", gap: 3, color: active ? "#ff6b4a" : "var(--textFaint)" }}>{label} {active ? (contactSort.dir === "asc" ? "▲" : "▼") : ""}</span>;
+                      };
+                      return (
+                        <div style={{ display: "grid", gridTemplateColumns: "32px 180px 80px 110px 110px 130px 180px 140px 110px auto 170px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, fontWeight: 700, letterSpacing: 1 }}>
+                          <span><input type="checkbox" checked={selectedContacts.size > 0 && selectedContacts.size === contacts.length} onChange={e => { if (e.target.checked) setSelectedContacts(new Set(contacts.map(c => c.id))); else setSelectedContacts(new Set()); }} style={{ cursor: "pointer" }} /></span>
+                          <SH label="NAME" sortKey="name" /><SH label="TYPE" sortKey="contactCategory" /><SH label="RESOURCE" sortKey="resourceType" /><SH label="POSITION" sortKey="position" /><SH label="PHONE" sortKey="phone" /><SH label="EMAIL" sortKey="email" /><SH label="ADDRESS" sortKey="address" /><SH label="COMPANY" sortKey="company" /><span style={{ color: "var(--textFaint)" }}>ACTIONS</span><span style={{ color: "var(--textFaint)" }}>DOCS</span>
+                        </div>
+                      );
+                    })()}
+                    {contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactCategory || "").toLowerCase().includes(contactSearch.toLowerCase())).sort((a, b) => {
+                      const k = contactSort.key;
+                      const av = (a[k] || "").toLowerCase();
+                      const bv = (b[k] || "").toLowerCase();
+                      return contactSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+                    }).map(c => (
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "32px 180px 80px 110px 110px 130px 180px 140px 110px auto 170px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
+                        <div style={{ display: "flex", alignItems: "center" }}>
+                          <input type="checkbox" checked={selectedContacts.has(c.id)} onChange={e => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} />
+                        </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
+                          <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: c.contactCategory === "Client" ? "linear-gradient(135deg, #dba94e20, #ff6b4a20)" : "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: `1px solid ${c.contactCategory === "Client" ? "#dba94e30" : "#ff6b4a30"}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: c.contactCategory === "Client" ? "#dba94e" : "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                           </div>
                           <div style={{ overflow: "hidden" }}>
@@ -3004,6 +3074,7 @@ export default function Dashboard({ user, onLogout }) {
                             {c.department && <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{c.department}</div>}
                           </div>
                         </div>
+                        <span style={{ fontSize: 9 }}>{c.contactCategory ? <span style={{ padding: "2px 7px", background: c.contactCategory === "Client" ? "#dba94e12" : "#9b6dff12", border: `1px solid ${c.contactCategory === "Client" ? "#dba94e25" : "#9b6dff25"}`, borderRadius: 3, fontWeight: 700, color: c.contactCategory === "Client" ? "#dba94e" : "#9b6dff", whiteSpace: "nowrap", cursor: "pointer" }} onClick={() => { const next = c.contactCategory === "Client" ? "Partner" : "Client"; setContacts(prev => prev.map(ct => ct.id === c.id ? { ...ct, contactCategory: next } : ct)); }}>{c.contactCategory}</span> : <span style={{ color: "var(--textGhost)", cursor: "pointer" }} onClick={() => setContacts(prev => prev.map(ct => ct.id === c.id ? { ...ct, contactCategory: "Client" } : ct))}>—</span>}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 10 }}>{c.resourceType ? <span style={{ padding: "2px 7px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 3, fontSize: 9, fontWeight: 600, color: "#3da5db", whiteSpace: "nowrap" }}>{c.resourceType}</span> : "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.position || "—"}</span>
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
@@ -3434,28 +3505,16 @@ export default function Dashboard({ user, onLogout }) {
 
               const createTodoistProject = async () => {
                 if (!todoistKey || !project.code) return;
-                try {
-                  const res = await fetch("https://api.todoist.com/rest/v2/projects", {
-                    method: "POST",
-                    headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
-                    body: JSON.stringify({ name: project.code })
-                  });
-                  if (res.ok) {
-                    const tp = await res.json();
-                    setProjects(prev => prev.map(p => p.id === project.id ? { ...p, todoistProjectId: tp.id } : p));
-                    todoistFetch();
-                    // Auto-invite team members as collaborators
-                    const teamEmails = new Set();
-                    [...(project.producers || []), ...(project.managers || []), ...(project.staff || [])].forEach(name => {
-                      const c = contacts.find(ct => (ct.name || "").toLowerCase() === name.toLowerCase());
-                      if (c?.email) teamEmails.add(c.email);
-                    });
-                    for (const email of teamEmails) {
-                      try { await fetch(`https://api.todoist.com/rest/v2/projects/${tp.id}/collaborators`, { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ email }) }); } catch (e) {}
-                    }
-                  }
-                } catch (e) { console.error("Todoist project create:", e); }
+                setTodoistLoading(true);
+                const tpNewId = await createTodoistProjectForCC(project.code);
+                if (tpNewId) {
+                  setProjects(prev => prev.map(p => p.id === project.id ? { ...p, todoistProjectId: tpNewId } : p));
+                  syncTodoistCollaborators({ ...project, todoistProjectId: tpNewId });
+                }
+                setTodoistLoading(false);
               };
+
+              const adptvParent = getAdptvParentId();
 
               const addTaskToProject = async (content, dueDate, priority) => {
                 if (!todoistKey || !tpId || !content.trim()) return;
@@ -3519,13 +3578,18 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 40, marginBottom: 14 }}>✅</div>
                       <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Create Todoist Project</div>
                       <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6, marginBottom: 6 }}>Set up a Todoist project for this event to start tracking tasks.</div>
-                      <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 20, fontFamily: "'JetBrains Mono', monospace" }}>Project will be named: {project.code || project.name}</div>
+                      <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 8, fontFamily: "'JetBrains Mono', monospace" }}>Project will be named: {project.code || project.name}</div>
+                      <div style={{ fontSize: 10, color: adptvParent.parent_id ? "#4ecb71" : adptvParent.workspace_id ? "#4ecb71" : "#dba94e", marginBottom: 16 }}>
+                        {adptvParent.parent_id ? "✓ Will be created under ADPTV" : adptvParent.workspace_id ? "✓ Will be created in ADPTV workspace" : "⚠ ADPTV parent not found — will create at root level"}
+                      </div>
                       {(project.producers?.length > 0 || project.managers?.length > 0 || (project.staff || []).length > 0) && (
-                        <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20 }}>
+                        <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 16 }}>
                           Team members with emails on file will be auto-invited as collaborators.
                         </div>
                       )}
-                      <button onClick={createTodoistProject} style={{ padding: "12px 28px", background: "#e44232", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700, letterSpacing: 0.3 }}>Create Project</button>
+                      <button onClick={createTodoistProject} disabled={todoistLoading} style={{ padding: "12px 28px", background: todoistLoading ? "var(--borderActive)" : "#e44232", border: "none", borderRadius: 8, color: "#fff", cursor: todoistLoading ? "wait" : "pointer", fontSize: 14, fontWeight: 700, letterSpacing: 0.3 }}>
+                        {todoistLoading ? "Creating..." : "Create Project"}
+                      </button>
                     </div>
                   ) : (
                     <div>
@@ -4902,6 +4966,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div onClick={(e) => copyToClipboard(c.name, "Name", e)} style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }} onMouseEnter={e => e.currentTarget.style.color = "#fff"} onMouseLeave={e => e.currentTarget.style.color = "var(--text)"}>
                     {c.name} <span style={{ fontSize: 8, color: "var(--textGhost)" }}>⧉</span>
                   </div>
+                  {c.contactCategory && <span style={{ fontSize: 8, fontWeight: 700, padding: "2px 6px", borderRadius: 3, marginLeft: 6, background: c.contactCategory === "Client" ? "#dba94e18" : "#9b6dff18", color: c.contactCategory === "Client" ? "#dba94e" : "#9b6dff", border: `1px solid ${c.contactCategory === "Client" ? "#dba94e30" : "#9b6dff30"}` }}>{c.contactCategory === "Client" ? "CLIENT" : "PARTNER"}</span>}
                   {c.position && <div style={{ fontSize: 11, color: "#ff6b4a", fontWeight: 600 }}>{c.position}</div>}
                   {c.company && <div style={{ fontSize: 10, color: "var(--textFaint)" }}>{c.company}</div>}
                 </div>
@@ -4961,8 +5026,25 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             </div>
             <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
+              {/* Client / Partner toggle */}
               <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>VENDOR / COMPANY NAME</label>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>CONTACT TYPE</label>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {[{ key: "Client", color: "#dba94e", desc: "Client" }, { key: "Partner", color: "#9b6dff", desc: "Subcontractor / Vendor" }].map(opt => (
+                    <button key={opt.key} onClick={() => updateCF("contactCategory", contactForm.contactCategory === opt.key ? "" : opt.key)} style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: `1px solid ${contactForm.contactCategory === opt.key ? opt.color + "50" : "var(--borderSub)"}`, background: contactForm.contactCategory === opt.key ? opt.color + "12" : "var(--bgCard)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.15s" }}>
+                      <div style={{ width: 14, height: 14, borderRadius: "50%", border: `2px solid ${contactForm.contactCategory === opt.key ? opt.color : "var(--textGhost)"}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {contactForm.contactCategory === opt.key && <div style={{ width: 7, height: 7, borderRadius: "50%", background: opt.color }} />}
+                      </div>
+                      <div style={{ textAlign: "left" }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: contactForm.contactCategory === opt.key ? opt.color : "var(--textSub)" }}>{opt.key}</div>
+                        <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{opt.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>{contactForm.contactCategory === "Client" ? "CLIENT / COMPANY NAME" : "VENDOR / COMPANY NAME"}</label>
                 <input value={contactForm.vendorName || contactForm.company || ""} onChange={e => { updateCF("vendorName", e.target.value); updateCF("company", e.target.value); }} placeholder="e.g. GDRB, Collins Visual Media..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
@@ -5045,7 +5127,7 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 14, marginBottom: 14 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>CLIENT *</label>
-                  <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} />
+                  <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} contacts={contacts} />
                 </div>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT NAME *</label>
@@ -5113,7 +5195,7 @@ export default function Dashboard({ user, onLogout }) {
                   <input type="number" value={newProjectForm.budget || ""} onChange={e => updateNPF("budget", Number(e.target.value))} placeholder="0" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
                 </div>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT TYPE</label>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>MULTI-DATE / TOUR</label>
                   <div onClick={() => updateNPF("isTour", !newProjectForm.isTour)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: newProjectForm.isTour ? "#ff6b4a10" : "var(--bgInput)", border: `1px solid ${newProjectForm.isTour ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, cursor: "pointer", transition: "all 0.15s" }}>
                     <div style={{ width: 36, height: 20, borderRadius: 10, background: newProjectForm.isTour ? "#ff6b4a" : "var(--borderSub)", position: "relative", transition: "background 0.2s" }}>
                       <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 2, left: newProjectForm.isTour ? 18 : 2, transition: "left 0.2s" }} />
