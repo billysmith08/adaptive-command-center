@@ -3543,100 +3543,6 @@ export default function Dashboard({ user, onLogout }) {
                       <button key={t.key} onClick={() => setGlanceTab(t.key)} style={{ background: "none", border: "none", borderBottom: glanceTab === t.key ? "2px solid #ff6b4a" : "2px solid transparent", marginBottom: -2, cursor: "pointer", fontSize: 12, fontWeight: 600, color: glanceTab === t.key ? "#ff6b4a" : "var(--textFaint)", padding: "8px 18px", transition: "all 0.15s", letterSpacing: 0.3 }}>{t.label}</button>
                     ))}
                   </div>
-
-                  {/* Macro View stats - inside sticky */}
-                  {glanceTab === "macro" && (() => {
-                    const activeProjects = projects.filter(p => !p.archived && p.status !== "Complete");
-                    const today2 = new Date(); today2.setHours(0, 0, 0, 0);
-                    const weekFromNow = new Date(today2); weekFromNow.setDate(weekFromNow.getDate() + 7);
-                    const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => (Array.isArray(items) ? items : []).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "" })));
-                    const overdueWB = allWB.filter(w => w.date && w.status !== "Done" && new Date(w.date + "T23:59:59") < today2);
-                    const dueThisWeek = allWB.filter(w => { if (!w.date || w.status === "Done") return false; const d = new Date(w.date + "T12:00:00"); return d >= today2 && d <= weekFromNow; });
-                    const allVendors = Object.values(projectVendors).flatMap(v => Array.isArray(v) ? v : []);
-                    const totalCompItems = allVendors.length * 5;
-                    const doneCompItems = allVendors.reduce((s, v) => s + (v.compliance ? Object.values(v.compliance).filter(c => c.done).length : 0), 0);
-                    const compPct = totalCompItems > 0 ? Math.round((doneCompItems / totalCompItems) * 100) : 0;
-                    const totalBudget = projects.reduce((s, p) => s + (p.budget || 0), 0);
-                    const totalSpent = projects.reduce((s, p) => s + (p.spent || 0), 0);
-                    const upcoming = projects.filter(p => { if (p.archived || p.status === "Complete") return false; const d = p.eventDates?.start; if (!d) return false; const evtDate = new Date(d + "T12:00:00"); return evtDate >= today2 && evtDate <= new Date(today2.getTime() + 30 * 86400000); });
-                    return (
-                      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginTop: 16, marginBottom: 4 }}>
-                        <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
-                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>ACTIVE PROJECTS</div>
-                          <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>{activeProjects.length}</div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{upcoming.length} event{upcoming.length !== 1 ? "s" : ""} in next 30 days</div>
-                        </div>
-                        <div style={{ background: overdueWB.length > 0 ? "#e854540a" : "var(--bgInput)", border: `1px solid ${overdueWB.length > 0 ? "#e8545430" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
-                          <div style={{ fontSize: 9, color: overdueWB.length > 0 ? "#e85454" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>OVERDUE TASKS</div>
-                          <div style={{ fontSize: 28, fontWeight: 700, color: overdueWB.length > 0 ? "#e85454" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{overdueWB.length}</div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{overdueWB.length > 0 ? `across ${new Set(overdueWB.map(w => w._pid)).size} project${new Set(overdueWB.map(w => w._pid)).size !== 1 ? "s" : ""}` : "all on track ✓"}</div>
-                        </div>
-                        <div style={{ background: dueThisWeek.length > 0 ? "#f5a6230a" : "var(--bgInput)", border: `1px solid ${dueThisWeek.length > 0 ? "#f5a62330" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 18px" }}>
-                          <div style={{ fontSize: 9, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>DUE THIS WEEK</div>
-                          <div style={{ fontSize: 28, fontWeight: 700, color: dueThisWeek.length > 0 ? "#f5a623" : "var(--text)", fontFamily: "'Instrument Sans'" }}>{dueThisWeek.length}</div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{dueThisWeek.length > 0 ? dueThisWeek.slice(0, 2).map(w => w.task || "untitled").join(", ") : "clear week"}</div>
-                        </div>
-                        <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
-                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>VENDOR COMPLIANCE</div>
-                          <div style={{ fontSize: 28, fontWeight: 700, color: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", fontFamily: "'Instrument Sans'" }}>{compPct}%</div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>{doneCompItems}/{totalCompItems} docs collected</div>
-                          <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}><div style={{ height: "100%", width: `${compPct}%`, background: compPct === 100 ? "#4ecb71" : compPct >= 60 ? "#f5a623" : "#e85454", borderRadius: 2, transition: "width 0.5s" }} /></div>
-                        </div>
-                        <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "16px 18px" }}>
-                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>TOTAL BUDGET</div>
-                          <div style={{ fontSize: 28, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>${totalBudget > 999999 ? `${(totalBudget / 1000000).toFixed(1)}M` : totalBudget > 999 ? `${(totalBudget / 1000).toFixed(0)}K` : totalBudget.toLocaleString()}</div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>${totalSpent.toLocaleString()} spent ({totalBudget > 0 ? Math.round((totalSpent / totalBudget) * 100) : 0}%)</div>
-                          {totalBudget > 0 && <div style={{ height: 3, background: "var(--borderSub)", borderRadius: 2, marginTop: 6, overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.min(100, (totalSpent / totalBudget) * 100)}%`, background: (totalSpent / totalBudget) > 0.9 ? "#e85454" : (totalSpent / totalBudget) > 0.7 ? "#f5a623" : "#4ecb71", borderRadius: 2, transition: "width 0.5s" }} /></div>}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Master Todoist stats - inside sticky */}
-                  {glanceTab === "masterTodoist" && todoistKey && (() => {
-                    const adptvProjects2 = todoistProjects.filter(p => !p.inbox_project && (adptvWorkspaceId ? p.workspace_id === adptvWorkspaceId : true));
-                    const adptvTasks2 = todoistTasks.filter(t => adptvProjects2.some(p => p.id === t.project_id));
-                    const today2 = new Date().toISOString().split("T")[0];
-                    if (adptvProjects2.length === 0) return null;
-                    return (
-                      <div style={{ marginTop: 16, marginBottom: 4 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                          <div>
-                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ADPTV WORKSPACE</div>
-                            <div style={{ fontSize: 16, fontWeight: 700 }}>All Todoist Tasks</div>
-                          </div>
-                          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                            <span style={{ fontSize: 11, color: "var(--textFaint)" }}>{adptvProjects2.length} projects · {adptvTasks2.length} tasks</span>
-                            {adptvTasks2.filter(t => t.due?.date && t.due.date < today2).length > 0 && <span style={{ fontSize: 11, color: "#e85454", fontWeight: 700 }}>{adptvTasks2.filter(t => t.due?.date && t.due.date < today2).length} overdue</span>}
-                            <button onClick={async () => { await todoistFetch(); await todoistFetchAllSections(); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
-                          {[{ id: "all", label: "All" }, { id: "today", label: "Today" }, { id: "overdue", label: "Overdue" }].map(f => (
-                            <button key={f.id} onClick={() => setTodoistFilter(f.id)} style={{ padding: "5px 12px", background: todoistFilter === f.id ? "#ff6b4a15" : "var(--bgInput)", border: `1px solid ${todoistFilter === f.id ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 6, color: todoistFilter === f.id ? "#ff6b4a" : "var(--textMuted)", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{f.label}</button>
-                          ))}
-                        </div>
-                        <div style={{ display: "flex", gap: 12 }}>
-                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TOTAL TASKS</div>
-                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{adptvTasks2.length}</div>
-                          </div>
-                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DUE TODAY</div>
-                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{adptvTasks2.filter(t => t.due?.date === today2).length}</div>
-                          </div>
-                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: "#ff4a6b", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
-                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff4a6b" }}>{adptvTasks2.filter(t => t.due?.date && t.due.date < today2).length}</div>
-                          </div>
-                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>PROJECTS</div>
-                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{adptvProjects2.length}</div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
                 </div>
                 <div style={{ paddingTop: 20 }}></div>
 
@@ -3647,7 +3553,7 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* ── Macro View ── */}
                 {glanceTab === "macro" && (
-                  <div>
+                  <div style={{ maxHeight: "calc(100vh - 320px)", overflowY: "auto", overflowX: "hidden" }}>
                     {/* Macro table */}
                     <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
                       <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
@@ -3721,7 +3627,7 @@ export default function Dashboard({ user, onLogout }) {
                   const total = sorted.length;
 
                   return (
-                    <div>
+                    <div style={{ maxHeight: "calc(100vh - 280px)", overflowY: "auto" }}>
                       {/* Summary bar */}
                       <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, fontSize: 11 }}>
@@ -3800,7 +3706,7 @@ export default function Dashboard({ user, onLogout }) {
                   }
 
                   return (
-                    <div>
+                    <div style={{ maxHeight: "calc(100vh - 380px)", overflowY: "auto" }}>
                       {!todoistKey ? (
                         <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 40, textAlign: "center" }}>
                           <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
