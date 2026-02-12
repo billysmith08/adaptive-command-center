@@ -1854,16 +1854,28 @@ export default function Dashboard({ user, onLogout }) {
       body: JSON.stringify({ endpoint, apiKey: k, method: opts.method || "GET", headers: opts.headers, body: opts.body })
     }).then(r => r.json());
     try {
-      const [tasks, projs, syncData] = await Promise.all([
+      const [tasks, projs] = await Promise.all([
         tp("/api/v1/tasks"),
         tp("/api/v1/projects"),
-        tp("/api/v1/sync", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" }),
       ]);
+      // Sync API call separately so it doesn't break tasks/projects if it fails
+      let syncData = {};
+      try {
+        syncData = await tp("/api/v1/sync", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" });
+      } catch (syncErr) { console.warn("Todoist sync API failed (non-fatal):", syncErr); }
       if (tasks.error) throw new Error(tasks.error);
       setTodoistTasks(Array.isArray(tasks) ? tasks : []);
-      setTodoistProjects(Array.isArray(projs) ? projs : []);
-      // Extract workspace_id from Sync API response
+      // Extract workspace_id from Sync API response and enrich REST projects
       const syncProjects = syncData.projects || [];
+      const syncMap = {};
+      syncProjects.forEach(sp => { if (sp.id) syncMap[sp.id] = sp; });
+      // Merge workspace_id from Sync into REST projects
+      const enrichedProjs = (Array.isArray(projs) ? projs : []).map(p => {
+        const sp = syncMap[p.id];
+        return sp ? { ...p, workspace_id: sp.workspace_id, shared: sp.shared } : p;
+      });
+      setTodoistProjects(enrichedProjs);
+      console.log("Todoist loaded:", enrichedProjs.length, "projects,", (Array.isArray(tasks) ? tasks : []).length, "tasks, sync projects:", syncProjects.length);
       const adptvProj = syncProjects.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV" || p.name === "Team Inbox");
       if (adptvProj?.workspace_id) {
         setAdptvWorkspaceId(adptvProj.workspace_id);
@@ -2952,12 +2964,19 @@ export default function Dashboard({ user, onLogout }) {
     todoistAutoLinkRef.current[proj.id] = true;
     setTodoistAutoLinking(true);
     try {
-      const match = todoistProjects.find(p => p.name === projCode);
+      console.log("Auto-link: looking for", JSON.stringify(projCode), "in", todoistProjects.length, "projects:", todoistProjects.map(p => p.name));
+      // Try exact match first, then case-insensitive, then trimmed
+      const match = todoistProjects.find(p => p.name === projCode) 
+        || todoistProjects.find(p => p.name?.toLowerCase() === projCode.toLowerCase())
+        || todoistProjects.find(p => p.name?.trim().toLowerCase() === projCode.trim().toLowerCase());
       if (match) {
+        console.log("Auto-link: MATCHED", match.name, "id:", match.id);
         updateProject("todoistProjectId", match.id);
-        setClipboardToast({ text: `Linked to existing Todoist project: ${projCode}`, x: window.innerWidth / 2, y: 60 });
+        setClipboardToast({ text: `Linked to Todoist: ${match.name}`, x: window.innerWidth / 2, y: 60 });
         setTimeout(() => setClipboardToast(null), 3000);
         await todoistFetchProjectDetails(match.id);
+      } else {
+        console.log("Auto-link: no match for", projCode);
       }
     } catch (e) { console.error("Todoist auto-link:", e); }
     setTodoistAutoLinking(false);
@@ -2966,11 +2985,17 @@ export default function Dashboard({ user, onLogout }) {
 
   // Auto-link: when Todoist tab is opened for a project without a linked Todoist project
   useEffect(() => {
-    if (activeTab !== "todoist" || !project || !todoistKey || todoistProjects.length === 0) return;
+    if (activeTab !== "todoist" || !project || !todoistKey) return;
+    if (todoistProjects.length === 0) {
+      console.log("Auto-link useEffect: waiting for todoistProjects to load...");
+      return;
+    }
     if (project.todoistProjectId) {
+      console.log("Auto-link useEffect: already linked to", project.todoistProjectId);
       todoistFetchProjectDetails(project.todoistProjectId);
       return;
     }
+    console.log("Auto-link useEffect: attempting auto-link for", project.name, "code:", project.code);
     todoistAutoLink(project);
   }, [activeTab, project?.id, project?.todoistProjectId, todoistProjects.length, todoistKey]);
 
@@ -3723,6 +3748,9 @@ export default function Dashboard({ user, onLogout }) {
                   const adptvTasks = todoistTasks.filter(t => adptvProjects.some(p => p.id === t.project_id));
                   const today = new Date().toISOString().split("T")[0];
                   const priColors = { 1: "var(--textGhost)", 2: "#3da5db", 3: "#dba94e", 4: "#ff6b4a" };
+                  if (todoistProjects.length > 0 && adptvProjects.length === 0) {
+                    console.warn("Master Todoist: 0 ADPTV projects from", todoistProjects.length, "total. adptvWorkspaceId:", adptvWorkspaceId, "Sample project:", JSON.stringify(todoistProjects[0]?.workspace_id), todoistProjects[0]?.name);
+                  }
 
                   return (
                     <div>
@@ -3734,7 +3762,7 @@ export default function Dashboard({ user, onLogout }) {
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           <span style={{ fontSize: 11, color: "var(--textFaint)" }}>{adptvProjects.length} projects · {adptvTasks.length} tasks</span>
                           {adptvTasks.filter(t => t.due?.date && t.due.date < today).length > 0 && <span style={{ fontSize: 11, color: "#e85454", fontWeight: 700 }}>{adptvTasks.filter(t => t.due?.date && t.due.date < today).length} overdue</span>}
-                          <button onClick={() => todoistFetch()} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>
+                          <button onClick={async () => { await todoistFetch(); await todoistFetchAllSections(); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>
                         </div>
                       </div>
 
@@ -4548,7 +4576,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>TASK MANAGEMENT</div>
                       <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Todoist — {project.name}</div>
                     </div>
-                    {linkedProject && <button onClick={() => todoistFetch()} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>}
+                    {linkedProject && <button onClick={async () => { await todoistFetch(); if (linkedTodoistId) await todoistFetchProjectDetails(linkedTodoistId); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>}
                   </div>
 
                   {!todoistKey ? (
@@ -4567,9 +4595,12 @@ export default function Dashboard({ user, onLogout }) {
                         const btn = e.currentTarget;
                         btn.disabled = true;
                         btn.textContent = "⏳ Creating...";
+                        console.log("Creating Todoist project:", projCode, "workspace:", adptvWorkspaceId);
                         const newId = await todoistCreateProject(projCode);
+                        console.log("todoistCreateProject returned:", newId);
                         if (newId) {
                           updateProject("todoistProjectId", newId);
+                          await todoistFetchProjectDetails(newId);
                           setClipboardToast({ text: `Created Todoist project: ${projCode}`, x: window.innerWidth / 2, y: 60 });
                           setTimeout(() => setClipboardToast(null), 3000);
                         } else {
