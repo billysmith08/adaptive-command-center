@@ -555,7 +555,7 @@ function Dropdown({ value, options, onChange, colors, width, allowBlank, blankLa
         <span style={{ flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{displayValue}</span>
         <span style={{ fontSize: 8, opacity: 0.5 }}>▼</span>
       </button>
-      {open && <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
+      {open && <div style={{ position: "absolute", top: "100%", left: 0, minWidth: 160, zIndex: 50, marginTop: 4, background: "var(--bgHover)", border: "1px solid var(--borderActive)", borderRadius: 8, boxShadow: "0 12px 32px rgba(0,0,0,0.6)", maxHeight: 200, overflowY: "auto" }}>
         {allowBlank && <div onClick={() => { onChange(""); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: "var(--textGhost)", cursor: "pointer", borderBottom: "1px solid var(--borderSub)" }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>— None —</div>}
         {options.map(opt => <div key={opt} onClick={() => { onChange(opt); setOpen(false); }} style={{ padding: "8px 12px", fontSize: 12, color: value === opt ? "#ff6b4a" : "var(--textSub)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onMouseEnter={e => e.target.style.background = "var(--bgCard)"} onMouseLeave={e => e.target.style.background = "transparent"}>{colors?.[opt] && <span style={{ width: 6, height: 6, borderRadius: "50%", background: colors[opt].dot }} />}{opt}</div>)}
       </div>}
@@ -1488,6 +1488,7 @@ export default function Dashboard({ user, onLogout }) {
   // ─── CLIENTS (COMPANY-LEVEL) ────────────────────────────────────
   const [clients, setClients] = useState([]);
   const [selectedClientIds, setSelectedClientIds] = useState(new Set());
+  const [expandedClientId, setExpandedClientId] = useState(null);
   const [showAddClient, setShowAddClient] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
   const emptyClient = { name: "", code: "", attributes: [], address: "", city: "", state: "", zip: "", country: "", website: "", contactName: "", contactEmail: "", contactPhone: "", contactAddress: "", billingContact: "", billingEmail: "", billingPhone: "", billingAddress: "", billingNameSame: false, billingEmailSame: false, billingPhoneSame: false, billingAddressSame: false, contactNames: [], projects: [], notes: "" };
@@ -1630,6 +1631,7 @@ export default function Dashboard({ user, onLogout }) {
   const [todoistLoading, setTodoistLoading] = useState(false);
   const [todoistNewTask, setTodoistNewTask] = useState("");
   const [todoistFilter, setTodoistFilter] = useState("all"); // all, today, overdue, project id
+  const [adptvWorkspaceId, setAdptvWorkspaceId] = useState(null);
   const todoistFetch = useCallback(async (key) => {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
@@ -1639,8 +1641,18 @@ export default function Dashboard({ user, onLogout }) {
         fetch("https://api.todoist.com/rest/v2/projects", { headers: { Authorization: `Bearer ${k}` } }),
       ]);
       if (!tasksRes.ok) throw new Error("Invalid API key");
-      setTodoistTasks(await tasksRes.json());
-      setTodoistProjects(await projsRes.json());
+      const tasks = await tasksRes.json();
+      const projs = await projsRes.json();
+      setTodoistTasks(tasks);
+      setTodoistProjects(projs);
+      // Find ADPTV workspace from existing projects
+      const adptvProj = projs.find(p => p.name === "ADPTV CATCH ALL" || p.name?.toUpperCase() === "ADPTV");
+      if (adptvProj?.workspace_id) setAdptvWorkspaceId(adptvProj.workspace_id);
+      else {
+        // Try any project with a workspace_id that's not the personal one
+        const teamProj = projs.find(p => p.workspace_id && !p.inbox_project);
+        if (teamProj?.workspace_id) setAdptvWorkspaceId(teamProj.workspace_id);
+      }
     } catch (e) { console.error("Todoist:", e); }
     setTodoistLoading(false);
   }, [todoistKey]);
@@ -1658,8 +1670,48 @@ export default function Dashboard({ user, onLogout }) {
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistCreateProject = async (projectCode) => {
-    if (!todoistKey || !projectCode) return null;
+    if (!todoistKey || !projectCode) { 
+      setClipboardToast({ text: "Todoist: No API key or project code", x: window.innerWidth / 2, y: 60 });
+      setTimeout(() => setClipboardToast(null), 3000);
+      return null; 
+    }
     try {
+      // Try Sync API first to create in ADPTV workspace
+      if (adptvWorkspaceId) {
+        const tempId = "proj_" + Date.now();
+        const commands = JSON.stringify([{
+          type: "project_add",
+          temp_id: tempId,
+          uuid: crypto.randomUUID ? crypto.randomUUID() : tempId,
+          args: { name: projectCode, workspace_id: adptvWorkspaceId }
+        }]);
+        try {
+          const res = await fetch("https://api.todoist.com/sync/v9/sync", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/x-www-form-urlencoded" },
+            body: `commands=${encodeURIComponent(commands)}`
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const newId = data.temp_id_mapping?.[tempId];
+            if (newId) {
+              await todoistFetch();
+              return newId;
+            }
+            // Check for sync_status errors
+            const syncStatus = data.sync_status || {};
+            const cmdUuid = Object.keys(syncStatus)[0];
+            if (cmdUuid && syncStatus[cmdUuid]?.error) {
+              console.error("Todoist sync error:", syncStatus[cmdUuid].error);
+            }
+          } else {
+            console.error("Todoist sync API error:", res.status, await res.text());
+          }
+        } catch (syncErr) {
+          console.error("Todoist sync exception:", syncErr);
+        }
+      }
+      // Fallback: REST API (creates in personal/default workspace)
       const res = await fetch("https://api.todoist.com/rest/v2/projects", {
         method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ name: projectCode })
@@ -1668,8 +1720,17 @@ export default function Dashboard({ user, onLogout }) {
         const proj = await res.json();
         await todoistFetch();
         return proj.id;
+      } else {
+        const errText = await res.text();
+        console.error("Todoist REST create error:", res.status, errText);
+        setClipboardToast({ text: `Todoist error ${res.status}: ${errText.slice(0, 60)}`, x: window.innerWidth / 2, y: 60 });
+        setTimeout(() => setClipboardToast(null), 4000);
       }
-    } catch (e) { console.error("Todoist create:", e); }
+    } catch (e) { 
+      console.error("Todoist create:", e);
+      setClipboardToast({ text: `Todoist error: ${e.message}`, x: window.innerWidth / 2, y: 60 });
+      setTimeout(() => setClipboardToast(null), 4000);
+    }
     return null;
   };
   const todoistAddTaskToProject = async (content, projectId) => {
@@ -2979,7 +3040,7 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
                 {/* Sub-tabs */}
                 <div style={{ display: "flex", gap: 0, marginBottom: 20, borderBottom: "2px solid var(--borderSub)" }}>
-                  {[{ key: "cal", label: "📅 Cal View" }, { key: "macro", label: "📋 Macro View" }, { key: "masterWB", label: "◄ Master Work Back" }].map(t => (
+                  {[{ key: "cal", label: "📅 Cal View" }, { key: "macro", label: "📋 Macro View" }, { key: "masterWB", label: "◄ Master Work Back" }, { key: "masterTodoist", label: "✅ Master Todoist" }].map(t => (
                     <button key={t.key} onClick={() => setGlanceTab(t.key)} style={{ background: "none", border: "none", borderBottom: glanceTab === t.key ? "2px solid #ff6b4a" : "2px solid transparent", marginBottom: -2, cursor: "pointer", fontSize: 12, fontWeight: 600, color: glanceTab === t.key ? "#ff6b4a" : "var(--textFaint)", padding: "8px 18px", transition: "all 0.15s", letterSpacing: 0.3 }}>{t.label}</button>
                   ))}
                 </div>
@@ -3191,6 +3252,78 @@ export default function Dashboard({ user, onLogout }) {
                           );
                         })}
                       </div>
+                    </div>
+                  );
+                })()}
+
+                {/* ── Master Todoist ── */}
+                {glanceTab === "masterTodoist" && (() => {
+                  const adptvProjects = todoistProjects.filter(p => !p.inbox_project && (adptvWorkspaceId ? p.workspace_id === adptvWorkspaceId : true));
+                  const adptvTasks = todoistTasks.filter(t => adptvProjects.some(p => p.id === t.project_id));
+                  const today = new Date().toISOString().split("T")[0];
+
+                  return (
+                    <div>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ADPTV WORKSPACE</div>
+                          <div style={{ fontSize: 16, fontWeight: 700 }}>All Todoist Tasks</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <span style={{ fontSize: 11, color: "var(--textFaint)" }}>{adptvProjects.length} projects · {adptvTasks.length} tasks</span>
+                          {adptvTasks.filter(t => t.due?.date && t.due.date < today).length > 0 && <span style={{ fontSize: 11, color: "#e85454", fontWeight: 700 }}>{adptvTasks.filter(t => t.due?.date && t.due.date < today).length} overdue</span>}
+                          <button onClick={() => todoistFetch()} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>
+                        </div>
+                      </div>
+
+                      {!todoistKey ? (
+                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 40, textAlign: "center" }}>
+                          <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Connect Todoist</div>
+                          <div style={{ fontSize: 13, color: "var(--textFaint)" }}>Set up your API key in Settings to see ADPTV tasks here.</div>
+                        </div>
+                      ) : adptvProjects.length === 0 ? (
+                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 40, textAlign: "center" }}>
+                          <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No ADPTV workspace projects found</div>
+                          <div style={{ fontSize: 13, color: "var(--textFaint)" }}>Create Todoist projects from individual project tabs to see them here.</div>
+                        </div>
+                      ) : (
+                        <div>
+                          {adptvProjects.filter(p => todoistTasks.some(t => t.project_id === p.id)).map(proj => {
+                            const tasks = todoistTasks.filter(t => t.project_id === proj.id);
+                            const projOverdue = tasks.filter(t => t.due?.date && t.due.date < today).length;
+                            return (
+                              <div key={proj.id} style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, marginBottom: 12, overflow: "hidden" }}>
+                                <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", background: "var(--bgCard)" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span style={{ fontSize: 12 }}>📁</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{proj.name}</span>
+                                    <span style={{ fontSize: 10, color: "var(--textFaint)" }}>{tasks.length} task{tasks.length !== 1 ? "s" : ""}</span>
+                                  </div>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                                    {projOverdue > 0 && <span style={{ fontSize: 9, padding: "2px 7px", background: "#e8545415", border: "1px solid #e8545420", borderRadius: 10, color: "#e85454", fontWeight: 700 }}>{projOverdue} overdue</span>}
+                                    {(() => { const linked = projects.find(p => p.todoistProjectId === proj.id); return linked ? <button onClick={() => { setActiveProjectId(linked.id); setActiveTab("todoist"); }} style={{ fontSize: 9, padding: "2px 7px", background: "#3da5db15", border: "1px solid #3da5db20", borderRadius: 10, color: "#3da5db", fontWeight: 600, cursor: "pointer" }}>→ Open Project</button> : null; })()}
+                                  </div>
+                                </div>
+                                {tasks.slice(0, 8).map(task => {
+                                  const isOverdue = task.due?.date && task.due.date < today;
+                                  const isToday = task.due?.date === today;
+                                  return (
+                                    <div key={task.id} style={{ padding: "8px 16px", borderBottom: "1px solid var(--calLine)", display: "flex", alignItems: "center", gap: 10, fontSize: 12, borderLeft: isOverdue ? "3px solid #e85454" : isToday ? "3px solid #f5a623" : "3px solid transparent" }}>
+                                      <button onClick={() => todoistClose(task.id)} style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid var(--borderActive)", background: "none", cursor: "pointer", flexShrink: 0 }} title="Complete" />
+                                      <span style={{ flex: 1, color: "var(--text)" }}>{task.content}</span>
+                                      {task.due?.date && <span style={{ fontSize: 10, color: isOverdue ? "#e85454" : isToday ? "#f5a623" : "var(--textFaint)", fontWeight: isOverdue || isToday ? 700 : 400, fontFamily: "'JetBrains Mono', monospace" }}>{task.due.date}</span>}
+                                      <button onClick={() => todoistDelete(task.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 12 }}>×</button>
+                                    </div>
+                                  );
+                                })}
+                                {tasks.length > 8 && <div style={{ padding: "6px 16px", fontSize: 10, color: "var(--textFaint)", textAlign: "center" }}>+{tasks.length - 8} more tasks</div>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -3451,28 +3584,63 @@ export default function Dashboard({ user, onLogout }) {
                       <span><input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /></span>
                       <span>COMPANY NAME</span><span>CODE</span><span>ATTRIBUTES</span><span>CONTACT</span><span>EMAIL</span><span>PHONE</span><span>BILLING CONTACT</span><span>BILLING EMAIL</span><span>ACTIONS</span>
                     </div>
-                    {clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent" }}>
-                        <span><input type="checkbox" checked={selectedClientIds.has(c.id)} onChange={(e) => { const next = new Set(selectedClientIds); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedClientIds(next); }} style={{ cursor: "pointer" }} /></span>
+                    {clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())).map(c => {
+                      const linkedContacts = contacts.filter(ct => (ct.company || "").toLowerCase() === c.name.toLowerCase() || (ct.vendorName || "").toLowerCase() === c.name.toLowerCase() || (ct.clientAssociation || "").toLowerCase() === c.name.toLowerCase());
+                      const isExpanded = expandedClientId === c.id;
+                      return (
+                      <React.Fragment key={c.id}>
+                      <div onClick={() => setExpandedClientId(isExpanded ? null : c.id)} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "10px 16px", borderBottom: isExpanded ? "none" : "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: isExpanded ? "#3da5db08" : selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent", cursor: "pointer", borderLeft: isExpanded ? "3px solid #3da5db" : "3px solid transparent" }}>
+                        <span onClick={e => e.stopPropagation()}><input type="checkbox" checked={selectedClientIds.has(c.id)} onChange={(e) => { const next = new Set(selectedClientIds); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedClientIds(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #3da5db20, #3da5db10)", border: "1px solid #3da5db30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#3da5db", flexShrink: 0 }}>
                             {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
                           </div>
                           <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={c.name}>{c.name}</div>
+                          {linkedContacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 6px", background: "#3da5db15", border: "1px solid #3da5db25", borderRadius: 10, color: "#3da5db", fontWeight: 700, flexShrink: 0 }}>{linkedContacts.length} {isExpanded ? "▴" : "▾"}</span>}
                         </div>
                         <span style={{ color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600 }}>{c.code || "—"}</span>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>{(c.attributes || []).slice(0, 2).map(a => <span key={a} style={{ padding: "1px 5px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 600, color: "#9b6dff", whiteSpace: "nowrap" }}>{a}</span>)}{(c.attributes || []).length > 2 && <span style={{ fontSize: 8, color: "var(--textFaint)" }}>+{c.attributes.length - 2}</span>}</div>
                         <span style={{ color: "var(--textMuted)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.contactName}>{c.contactName || "—"}</span>
-                        <span onClick={(e) => (c.contactEmail) && copyToClipboard(c.contactEmail, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.contactEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.contactEmail}>{c.contactEmail || "—"}</span>
-                        <span onClick={(e) => (c.contactPhone) && copyToClipboard(c.contactPhone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.contactPhone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.contactPhone || "—"}</span>
+                        <span onClick={(e) => { e.stopPropagation(); (c.contactEmail) && copyToClipboard(c.contactEmail, "Email", e); }} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.contactEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.contactEmail}>{c.contactEmail || "—"}</span>
+                        <span onClick={(e) => { e.stopPropagation(); (c.contactPhone) && copyToClipboard(c.contactPhone, "Phone", e); }} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.contactPhone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.contactPhone || "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingContact}>{c.billingContact || "—"}</span>
-                        <span onClick={(e) => c.billingEmail && copyToClipboard(c.billingEmail, "Billing Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.billingEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingEmail}>{c.billingEmail || "—"}</span>
-                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <span onClick={(e) => { e.stopPropagation(); c.billingEmail && copyToClipboard(c.billingEmail, "Billing Email", e); }} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.billingEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingEmail}>{c.billingEmail || "—"}</span>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => { setClientForm({ ...c }); setShowAddClient(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setClients(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕</button>
                         </div>
                       </div>
-                    ))}
+                      {isExpanded && (
+                        <div style={{ borderBottom: "1px solid var(--calLine)", borderLeft: "3px solid #3da5db", background: "#3da5db05" }}>
+                          <div style={{ padding: "8px 16px 4px 52px", fontSize: 9, color: "#3da5db", fontWeight: 700, letterSpacing: 1 }}>ASSOCIATED CONTACTS ({linkedContacts.length})</div>
+                          {linkedContacts.length === 0 ? (
+                            <div style={{ padding: "12px 16px 16px 52px", fontSize: 11, color: "var(--textFaint)" }}>No contacts linked to {c.name}. Contacts matched by company name or Client Association.</div>
+                          ) : linkedContacts.map(ct => (
+                            <div key={ct.id} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "6px 16px", alignItems: "center", fontSize: 11, borderTop: "1px solid #3da5db10" }}>
+                              <span />
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a15, #ff4a6b15)", border: "1px solid #ff6b4a25", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>
+                                  {ct.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                                </div>
+                                <span style={{ fontWeight: 600, color: "var(--text)" }}>{ct.name}</span>
+                              </div>
+                              <span style={{ fontSize: 9 }}><span style={{ padding: "1px 5px", borderRadius: 3, background: ct.contactType === "Client" ? "#ff6b4a10" : "#3da5db10", border: `1px solid ${ct.contactType === "Client" ? "#ff6b4a20" : "#3da5db20"}`, color: ct.contactType === "Client" ? "#ff6b4a" : "#3da5db", fontWeight: 600 }}>{ct.contactType || "—"}</span></span>
+                              <span style={{ color: "var(--textFaint)", fontSize: 10 }}>{ct.position || "—"}</span>
+                              <span style={{ color: "var(--textFaint)", fontSize: 10 }}>{ct.phone || "—"}</span>
+                              <span onClick={(e) => ct.email && copyToClipboard(ct.email, "Email", e)} style={{ color: "var(--textFaint)", fontSize: 10, cursor: ct.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={ct.email}>{ct.email || "—"}</span>
+                              <span style={{ color: "var(--textFaint)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ct.address || "—"}</span>
+                              <span />
+                              <span />
+                              <div>
+                                <button onClick={() => { setContactForm({ ...ct }); setShowAddContact(true); }} style={{ padding: "3px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>Edit</button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      </React.Fragment>
+                      );
+                    })}
                     </div>
                     </div>
                   </div>
@@ -3785,12 +3953,22 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: "'Instrument Sans'" }}>No Todoist project linked</div>
                       <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 8, lineHeight: 1.6 }}>Create a Todoist project for this event to manage tasks.</div>
                       <div style={{ fontSize: 12, color: "var(--textMuted)", marginBottom: 24 }}>Project will be named: <span style={{ fontWeight: 700, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{projCode}</span></div>
-                      <button onClick={async () => {
+                      <button onClick={async (e) => {
+                        const btn = e.currentTarget;
+                        btn.disabled = true;
+                        btn.textContent = "⏳ Creating...";
                         const newId = await todoistCreateProject(projCode);
                         if (newId) {
                           updateProject("todoistProjectId", newId);
                           setClipboardToast({ text: `Created Todoist project: ${projCode}`, x: window.innerWidth / 2, y: 60 });
                           setTimeout(() => setClipboardToast(null), 3000);
+                        } else {
+                          btn.disabled = false;
+                          btn.textContent = "🚀 Start Todoist Project";
+                          if (!document.querySelector("[data-toast]")) {
+                            setClipboardToast({ text: "Failed to create project — check console for details", x: window.innerWidth / 2, y: 60 });
+                            setTimeout(() => setClipboardToast(null), 4000);
+                          }
                         }
                       }} style={{ padding: "14px 32px", background: "#ff6b4a", border: "none", borderRadius: 10, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 14px rgba(255,107,74,0.3)", transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
                         🚀 Start Todoist Project
@@ -3879,8 +4057,10 @@ export default function Dashboard({ user, onLogout }) {
                   <div><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PRE-PRODUCTION WORK BACK</div><div style={{ fontSize: 13, color: "var(--textMuted)" }}>Engagement: <span style={{ color: "var(--text)" }}>{fmtShort(project.engagementDates.start)}</span> → Event: <span style={{ color: "#ff6b4a" }}>{fmtShort(project.eventDates.start)}</span> → End: <span style={{ color: "var(--text)" }}>{fmtShort(project.engagementDates.end)}</span></div></div>
                   <button onClick={addWBRow} style={{ padding: "7px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add Row</button>
                 </div>
-                <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "100px 2fr 1.2fr 1fr 1fr 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
+                <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
+                  <div style={{ overflowX: "auto" }}>
+                  <div style={{ minWidth: 1100 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 220px 200px 180px 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
                   {workback.map((wb, i) => {
                     // Deadline color-coding
                     const wbDeadlineStyle = (() => {
@@ -3903,7 +4083,7 @@ export default function Dashboard({ user, onLogout }) {
                       return null;
                     })();
                     return (
-                    <div key={wb.id} style={{ display: "grid", gridTemplateColumns: "100px 2fr 1.2fr 1fr 1fr 36px", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wbDeadlineStyle.bg, borderLeft: wbDeadlineStyle.borderLeft }}>
+                    <div key={wb.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 220px 200px 180px 36px", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wbDeadlineStyle.bg, borderLeft: wbDeadlineStyle.borderLeft }}>
                       <div style={{ position: "relative" }}>
                         <DatePicker value={wb.date} onChange={v => updateWB(wb.id, "date", v)} />
                         {overdueLabel && <div style={{ fontSize: 8, fontWeight: 700, color: overdueLabel.color, marginTop: 2 }}>{overdueLabel.text}</div>}
@@ -3916,6 +4096,8 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                     );
                   })}
+                </div>
+                </div>
                 </div>
               </div>
             )}
