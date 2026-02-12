@@ -1523,6 +1523,8 @@ export default function Dashboard({ user, onLogout }) {
   const [showAddClient, setShowAddClient] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
   const [clientFilterAttr, setClientFilterAttr] = useState("");
+  const [clientSort, setClientSort] = useState({ col: null, dir: "asc" });
+  const [partnerSort, setPartnerSort] = useState({ col: null, dir: "asc" });
   const emptyClient = { name: "", code: "", attributes: [], address: "", city: "", state: "", zip: "", country: "", website: "", contactName: "", contactEmail: "", contactPhone: "", contactAddress: "", billingContact: "", billingEmail: "", billingPhone: "", billingAddress: "", billingNameSame: false, billingEmailSame: false, billingPhoneSame: false, billingAddressSame: false, contactNames: [], projects: [], notes: "" };
   const [clientForm, setClientForm] = useState({ ...emptyClient });
   const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
@@ -1555,7 +1557,7 @@ export default function Dashboard({ user, onLogout }) {
   const colsToGrid = (widths) => widths.map((w, i) => i === widths.length - 1 ? "auto" : w + "px").join(" ");
   const renderResizeHandle = (setter, idx) => (
     <div onMouseDown={handleColResize(setter, idx)} style={{ position: "absolute", right: -3, top: 0, bottom: 0, width: 7, cursor: "col-resize", zIndex: 2 }} onDoubleClick={(e) => { e.stopPropagation(); setter(prev => { const next = [...prev]; next[idx] = (idx === 0 ? 36 : idx === prev.length - 1 ? 140 : 150); return next; }); }}>
-      <div className="resize-handle-line" style={{ position: "absolute", right: 3, top: "20%", bottom: "20%", width: 2, background: "var(--borderSub)", borderRadius: 1, opacity: 0, transition: "opacity 0.15s" }} />
+      <div className="resize-handle-line" style={{ position: "absolute", right: 3, top: "20%", bottom: "20%", width: 2, background: "var(--borderSub)", borderRadius: 1, opacity: 0.3, transition: "opacity 0.15s" }} />
     </div>
   );
   const CLIENT_ATTRIBUTES = [...new Set(["Agency", "Artist", "Audio", "Backline", "Brand", "CAD", "Candles", "Corporate", "Creative Director", "Drawings", "Experiential", "Fabrication & Scenic", "Furniture Rentals", "Individual", "LD", "Lighting", "Management", "PR", "Photo Booth", "Producer", "Production General", "Production Manager", "Promoter", "Record Label", "Site Operations", "Sponsorship", "Video", "AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Floral", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"])].sort();
@@ -1714,7 +1716,7 @@ export default function Dashboard({ user, onLogout }) {
       const savedProjects = g(LS_KEYS.projects);
       if (savedProjects && savedProjects.length > 0) {
         const defaults = initProjects();
-        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...p, code: def.code } : p; });
+        const merged = savedProjects.map(p => { const def = defaults.find(d => d.id === p.id); return def ? { ...def, ...p } : p; });
         const savedIds = new Set(savedProjects.map(p => p.id));
         const brandNew = defaults.filter(d => !savedIds.has(d.id));
         setProjects([...merged, ...brandNew]);
@@ -2207,7 +2209,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const submitProject = () => {
     if (!newProjectForm.name && !newProjectForm.client) return;
-    const code = generateProjectCode(newProjectForm);
+    const code = newProjectForm.code || generateProjectCode(newProjectForm);
     const newP = { ...newProjectForm, id: `p_${Date.now()}`, code };
     if (newP.isTour) newP.subEvents = newP.subEvents || [];
     setProjects(prev => [...prev, newP]);
@@ -2899,7 +2901,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", fontSize: `${textSize}%`, ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", zoom: textSize !== 100 ? textSize / 100 : undefined, ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -3140,7 +3142,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                     <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>{project.client}</span>
-                    {project.code && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3 }}>{project.code}</span>}
+                    {project.code ? <input value={project.code} onChange={e => updateProject("code", e.target.value.toUpperCase())} style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3, outline: "none", width: Math.max(120, project.code.length * 7) }} /> : <input value="" onChange={e => updateProject("code", e.target.value.toUpperCase())} placeholder="YY-CODE-NAME-LOC" style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px dashed var(--borderSub)", borderRadius: 3, letterSpacing: 0.3, outline: "none", width: 140, opacity: 0.5 }} />}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={22} fontWeight={700} color="var(--text)" /></h1>
@@ -3527,14 +3529,14 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
                     <div style={{ minWidth: 1420 }}>
                     <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
-                      {["", "NAME", "TYPE", "RESOURCE TYPE", "POSITION", "PHONE", "EMAIL", "ADDRESS", "COMPANY", "ACTIONS", "DOCS"].map((label, i) => (
-                        <span key={i} style={{ position: "relative", userSelect: "none" }}>
-                          {i === 0 ? <input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /> : label}
+                      {[["", ""], ["NAME", "name"], ["TYPE", "contactType"], ["RESOURCE TYPE", "resourceType"], ["POSITION", "position"], ["PHONE", "phone"], ["EMAIL", "email"], ["ADDRESS", "address"], ["COMPANY", "company"], ["ACTIONS", ""], ["DOCS", ""]].map(([label, sortKey], i) => (
+                        <span key={i} style={{ position: "relative", userSelect: "none", cursor: sortKey ? "pointer" : "default", display: "flex", alignItems: "center", gap: 3 }} onClick={() => { if (!sortKey) return; setPartnerSort(prev => prev.col === sortKey ? { col: sortKey, dir: prev.dir === "asc" ? "desc" : "asc" } : { col: sortKey, dir: "asc" }); }}>
+                          {i === 0 ? <input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /> : <>{label}{partnerSort.col === sortKey && <span style={{ color: "#ff6b4a", fontSize: 8 }}>{partnerSort.dir === "asc" ? "▲" : "▼"}</span>}</>}
                           {i < partnerColWidths.length - 1 && renderResizeHandle(setPartnerColWidths, i)}
                         </span>
                       ))}
                     </div>
-                    {contacts.filter(c => (!contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())) && (!contactFilterType || c.contactType === contactFilterType) && (!contactFilterResource || c.resourceType === contactFilterResource)).map(c => (
+                    {contacts.filter(c => (!contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())) && (!contactFilterType || c.contactType === contactFilterType) && (!contactFilterResource || c.resourceType === contactFilterResource)).sort((a, b) => { if (!partnerSort.col) return 0; const av = (a[partnerSort.col] || "").toString().toLowerCase(); const bv = (b[partnerSort.col] || "").toString().toLowerCase(); return partnerSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); }).map(c => (
                       <div key={c.id} style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent" }}>
                         <span><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={(e) => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -3736,14 +3738,14 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
                     <div style={{ minWidth: 1200 }}>
                     <div style={{ display: "grid", gridTemplateColumns: colsToGrid(clientColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5 }}>
-                      {["", "COMPANY NAME", "CODE", "ATTRIBUTES", "CONTACT", "EMAIL", "PHONE", "BILLING CONTACT", "BILLING EMAIL", "ACTIONS"].map((label, i) => (
-                        <span key={i} style={{ position: "relative", userSelect: "none" }}>
-                          {i === 0 ? <input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /> : label}
+                      {[["", ""], ["COMPANY NAME", "name"], ["CODE", "code"], ["ATTRIBUTES", "attributes"], ["CONTACT", "companyContact"], ["EMAIL", "billingEmail"], ["PHONE", "billingPhone"], ["BILLING CONTACT", "billingContact"], ["BILLING EMAIL", "billingEmail"], ["ACTIONS", ""]].map(([label, sortKey], i) => (
+                        <span key={i} style={{ position: "relative", userSelect: "none", cursor: sortKey ? "pointer" : "default", display: "flex", alignItems: "center", gap: 3 }} onClick={() => { if (!sortKey) return; setClientSort(prev => prev.col === sortKey ? { col: sortKey, dir: prev.dir === "asc" ? "desc" : "asc" } : { col: sortKey, dir: "asc" }); }}>
+                          {i === 0 ? <input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /> : <>{label}{clientSort.col === sortKey && <span style={{ color: "#ff6b4a", fontSize: 8 }}>{clientSort.dir === "asc" ? "▲" : "▼"}</span>}</>}
                           {i < clientColWidths.length - 1 && renderResizeHandle(setClientColWidths, i)}
                         </span>
                       ))}
                     </div>
-                    {clients.filter(c => (!clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())) && (!clientFilterAttr || (c.attributes || []).includes(clientFilterAttr))).map(c => {
+                    {clients.filter(c => (!clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())) && (!clientFilterAttr || (c.attributes || []).includes(clientFilterAttr))).sort((a, b) => { if (!clientSort.col) return 0; const av = clientSort.col === "attributes" ? (a.attributes || []).join(", ").toLowerCase() : (a[clientSort.col] || "").toString().toLowerCase(); const bv = clientSort.col === "attributes" ? (b.attributes || []).join(", ").toLowerCase() : (b[clientSort.col] || "").toString().toLowerCase(); return clientSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); }).map(c => {
                       const linkedContacts = contacts.filter(ct => (ct.company || "").toLowerCase() === c.name.toLowerCase() || (ct.vendorName || "").toLowerCase() === c.name.toLowerCase() || (ct.clientAssociation || "").toLowerCase() === c.name.toLowerCase());
                       const isExpanded = expandedClientId === c.id;
                       return (
@@ -5821,13 +5823,11 @@ export default function Dashboard({ user, onLogout }) {
               <button onClick={() => setShowAddProject(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "4px 8px" }}>✕</button>
             </div>
 
-            {/* Auto-generated project code preview */}
+            {/* Project code — editable, auto-fills if blank */}
             <div style={{ padding: "14px 28px", background: "var(--bgInput)", borderBottom: "1px solid var(--borderSub)" }}>
-              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>PROJECT CODE (AUTO-GENERATED)</div>
-              <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a", letterSpacing: 0.5 }}>
-                {generateProjectCode(newProjectForm) || "YY-CLIENT-PROJECT-LOC"}
-              </div>
-              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Format: YEAR-CLIENT-PROJECT-LOCATION</div>
+              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 6 }}>PROJECT CODE</div>
+              <input value={newProjectForm.code || ""} onChange={e => updateNPF("code", e.target.value.toUpperCase())} placeholder={generateProjectCode(newProjectForm) || "YY-CLIENT-PROJECT-LOC"} style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a", letterSpacing: 0.5, background: "transparent", border: "1px dashed var(--borderSub)", borderRadius: 4, padding: "4px 8px", outline: "none", width: "100%" }} />
+              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Leave blank to auto-generate: YEAR-CLIENT-PROJECT-LOCATION</div>
             </div>
 
             <div style={{ padding: "20px 28px 24px" }}>
