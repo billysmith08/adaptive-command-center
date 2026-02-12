@@ -1855,13 +1855,13 @@ export default function Dashboard({ user, onLogout }) {
     }).then(r => r.json());
     try {
       const [tasks, projs] = await Promise.all([
-        tp("/api/v1/tasks"),
-        tp("/api/v1/projects"),
+        tp("/rest/v2/tasks"),
+        tp("/rest/v2/projects"),
       ]);
       // Sync API call separately so it doesn't break tasks/projects if it fails
       let syncData = {};
       try {
-        syncData = await tp("/api/v1/sync", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" });
+        syncData = await tp("/sync/v9/sync", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: "sync_token=*&resource_types=[\"projects\",\"workspace\"]" });
       } catch (syncErr) { console.warn("Todoist sync API failed (non-fatal):", syncErr); }
       if (tasks.error) throw new Error(tasks.error);
       setTodoistTasks(Array.isArray(tasks) ? tasks : []);
@@ -1905,15 +1905,15 @@ export default function Dashboard({ user, onLogout }) {
   }).then(r => r.json()), [todoistKey]);
   const todoistAdd = async () => {
     if (!todoistNewTask.trim() || !todoistKey) return;
-    const res = await todoistProxy("/api/v1/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: { content: todoistNewTask.trim() } });
+    const res = await todoistProxy("/rest/v2/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: { content: todoistNewTask.trim() } });
     if (!res.error) { setTodoistNewTask(""); todoistFetch(); }
   };
   const todoistClose = async (id) => {
-    await todoistProxy(`/api/v1/tasks/${id}/close`, { method: "POST" });
+    await todoistProxy(`/rest/v2/tasks/${id}/close`, { method: "POST" });
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistDelete = async (id) => {
-    await todoistProxy(`/api/v1/tasks/${id}`, { method: "DELETE" });
+    await todoistProxy(`/rest/v2/tasks/${id}`, { method: "DELETE" });
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
   };
   const todoistCreateProject = async (projectCode) => {
@@ -1933,7 +1933,7 @@ export default function Dashboard({ user, onLogout }) {
           args: { name: projectCode, workspace_id: adptvWorkspaceId }
         }]);
         try {
-          const data = await todoistProxy("/api/v1/sync", {
+          const data = await todoistProxy("/sync/v9/sync", {
             method: "POST",
             headers: { "Content-Type": "application/x-www-form-urlencoded" },
             body: `commands=${encodeURIComponent(commands)}`
@@ -1953,7 +1953,7 @@ export default function Dashboard({ user, onLogout }) {
         }
       }
       // Fallback: REST API (creates in personal/default workspace)
-      const proj = await todoistProxy("/api/v1/projects", {
+      const proj = await todoistProxy("/rest/v2/projects", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: { name: projectCode }
       });
@@ -1974,7 +1974,7 @@ export default function Dashboard({ user, onLogout }) {
   };
   const todoistAddTaskToProject = async (content, projectId, sectionId) => {
     if (!todoistKey || !content || !projectId) return;
-    await todoistProxy("/api/v1/tasks", {
+    await todoistProxy("/rest/v2/tasks", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: { content, project_id: projectId, ...(sectionId ? { section_id: sectionId } : {}) }
     });
@@ -2039,7 +2039,7 @@ export default function Dashboard({ user, onLogout }) {
   };
   const todoistUpdateTask = async (taskId, updates) => {
     if (!todoistKey || !taskId) return;
-    await todoistProxy(`/api/v1/tasks/${taskId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: updates });
+    await todoistProxy(`/rest/v2/tasks/${taskId}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: updates });
     await todoistFetch();
   };
   const searchTimerRef = useRef(null);
