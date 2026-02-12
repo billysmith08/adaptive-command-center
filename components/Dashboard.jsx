@@ -2019,7 +2019,7 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   // Auto-link Todoist project for an event (match only, never create)
-  const todoistAutoLink = useCallback(async (proj) => {
+  const todoistAutoLink = async (proj) => {
     if (!todoistKey || !proj) return;
     const projCode = proj.code || generateProjectCode(proj);
     if (!projCode) return;
@@ -2044,7 +2044,7 @@ export default function Dashboard({ user, onLogout }) {
     setTodoistAutoLinking(false);
     // Allow retry after 10s if it failed
     setTimeout(() => { delete todoistAutoLinkRef.current[proj.id]; }, 10000);
-  }, [todoistKey, todoistProjects, todoistFetchProjectDetails, updateProject]);
+  };
 
   // Section CRUD
   const todoistCreateSection = async (name, projectId) => {
