@@ -1633,12 +1633,12 @@ export default function Dashboard({ user, onLogout }) {
   const [driveDiag, setDriveDiag] = useState(null); // diagnostics result
   const [driveDiagLoading, setDriveDiagLoading] = useState(false);
   // ─── DRIVE FILE BROWSER ──────────────────────────────────────────
-  const [driveFiles, setDriveFiles] = useState([]); // items in current folder
-  const [drivePath, setDrivePath] = useState([]); // breadcrumb: [{id, name}, ...]
-  const [driveLoading, setDriveLoading] = useState(false);
-  const [driveUploading, setDriveUploading] = useState(false);
-  const [driveEnsuring, setDriveEnsuring] = useState(false);
-  const driveFileInputRef = useRef(null);
+  const [projDriveFiles, setProjDriveFiles] = useState([]); // items in current folder
+  const [projDrivePath, setProjDrivePath] = useState([]); // breadcrumb: [{id, name}, ...]
+  const [projDriveLoading, setProjDriveLoading] = useState(false);
+  const [projDriveUploading, setProjDriveUploading] = useState(false);
+  const [projDriveEnsuring, setProjDriveEnsuring] = useState(false);
+  const projDriveFileRef = useRef(null);
   // ─── ACTIVITY FEED ──────────────────────────────────────────────
   const [activityLog, setActivityLog] = useState([]);
   const [showActivityFeed, setShowActivityFeed] = useState(false);
@@ -2995,7 +2995,7 @@ export default function Dashboard({ user, onLogout }) {
   // ─── DRIVE PROJECT FOLDER ────────────────────────────────────────
   const ensureProjectDrive = async (proj) => {
     if (!proj || !proj.client || !proj.code) return null;
-    setDriveEnsuring(true);
+    setProjDriveEnsuring(true);
     try {
       const res = await fetch("/api/drive/project", {
         method: "POST",
@@ -3021,46 +3021,46 @@ export default function Dashboard({ user, onLogout }) {
       console.error("Drive ensure error:", e);
       return null;
     } finally {
-      setDriveEnsuring(false);
+      setProjDriveEnsuring(false);
     }
   };
 
   const driveBrowse = async (folderId, folderName, isRoot = false) => {
-    setDriveLoading(true);
+    setProjDriveLoading(true);
     try {
       const res = await fetch(`/api/drive/project?folderId=${folderId}`);
       const data = await res.json();
       if (data.success) {
-        setDriveFiles(data.items || []);
+        setProjDriveFiles(data.items || []);
         if (isRoot) {
-          setDrivePath([{ id: folderId, name: folderName || project?.code || "Project" }]);
+          setProjDrivePath([{ id: folderId, name: folderName || project?.code || "Project" }]);
         } else {
-          setDrivePath(prev => [...prev, { id: folderId, name: folderName }]);
+          setProjDrivePath(prev => [...prev, { id: folderId, name: folderName }]);
         }
       }
     } catch (e) { console.error("Drive browse error:", e); }
-    setDriveLoading(false);
+    setProjDriveLoading(false);
   };
 
   const driveBrowseBreadcrumb = async (index) => {
-    const target = drivePath[index];
+    const target = projDrivePath[index];
     if (!target) return;
-    setDriveLoading(true);
+    setProjDriveLoading(true);
     try {
       const res = await fetch(`/api/drive/project?folderId=${target.id}`);
       const data = await res.json();
       if (data.success) {
-        setDriveFiles(data.items || []);
-        setDrivePath(prev => prev.slice(0, index + 1));
+        setProjDriveFiles(data.items || []);
+        setProjDrivePath(prev => prev.slice(0, index + 1));
       }
     } catch (e) { console.error("Drive breadcrumb error:", e); }
-    setDriveLoading(false);
+    setProjDriveLoading(false);
   };
 
   const driveUploadFile = async (file) => {
-    const currentFolder = drivePath[drivePath.length - 1];
+    const currentFolder = projDrivePath[projDrivePath.length - 1];
     if (!currentFolder || !file) return;
-    setDriveUploading(true);
+    setProjDriveUploading(true);
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -3069,14 +3069,14 @@ export default function Dashboard({ user, onLogout }) {
       const data = await res.json();
       if (data.success) {
         // Refresh current folder
-        await driveBrowseBreadcrumb(drivePath.length - 1);
+        await driveBrowseBreadcrumb(projDrivePath.length - 1);
         setClipboardToast({ text: `Uploaded: ${data.file.name}`, x: window.innerWidth / 2, y: 60 });
         setTimeout(() => setClipboardToast(null), 3000);
       } else {
         alert("Upload failed: " + data.error);
       }
     } catch (e) { alert("Upload error: " + e.message); }
-    setDriveUploading(false);
+    setProjDriveUploading(false);
   };
 
   const driveFormatSize = (bytes) => {
@@ -3149,10 +3149,10 @@ export default function Dashboard({ user, onLogout }) {
     if (activeTab !== "drive" || !project) return;
     if (project.driveFolderId) {
       // Already linked — browse it
-      if (drivePath.length === 0 || drivePath[0]?.id !== project.driveFolderId) {
+      if (projDrivePath.length === 0 || projDrivePath[0]?.id !== project.driveFolderId) {
         driveBrowse(project.driveFolderId, project.code || project.name, true);
       }
-    } else if (project.client && project.code && !driveEnsuring) {
+    } else if (project.client && project.code && !projDriveEnsuring) {
       // Has client + code but no folder ID — try to ensure
       ensureProjectDrive(project).then(data => {
         if (data?.folderId) {
@@ -5012,7 +5012,7 @@ export default function Dashboard({ user, onLogout }) {
                       Path: ADPTV LLC → CLIENTS → [Client] → [Year] → [Project Code]
                     </div>
                   </div>
-                ) : !project.driveFolderId && !driveEnsuring ? (
+                ) : !project.driveFolderId && !projDriveEnsuring ? (
                   /* Has client + code but no folder yet */
                   <div style={{ textAlign: "center", padding: 60 }}>
                     <div style={{ fontSize: 40, marginBottom: 16 }}>📁</div>
@@ -5027,7 +5027,7 @@ export default function Dashboard({ user, onLogout }) {
                       📁 Create Folder Structure
                     </button>
                   </div>
-                ) : driveEnsuring ? (
+                ) : projDriveEnsuring ? (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--textFaint)" }}>
                     <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
                     Creating folder structure...
@@ -5047,11 +5047,11 @@ export default function Dashboard({ user, onLogout }) {
                         )}
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
-                        <input type="file" ref={driveFileInputRef} onChange={e => { if (e.target.files[0]) driveUploadFile(e.target.files[0]); e.target.value = ""; }} style={{ display: "none" }} />
-                        <button onClick={() => driveFileInputRef.current?.click()} disabled={driveUploading} style={{ padding: "6px 14px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                          {driveUploading ? "⏳ Uploading..." : "⬆ Upload"}
+                        <input type="file" ref={projDriveFileRef} onChange={e => { if (e.target.files[0]) driveUploadFile(e.target.files[0]); e.target.value = ""; }} style={{ display: "none" }} />
+                        <button onClick={() => projDriveFileRef.current?.click()} disabled={projDriveUploading} style={{ padding: "6px 14px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          {projDriveUploading ? "⏳ Uploading..." : "⬆ Upload"}
                         </button>
-                        <button onClick={() => driveBrowseBreadcrumb(drivePath.length - 1)} disabled={driveLoading} style={{ padding: "6px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        <button onClick={() => driveBrowseBreadcrumb(projDrivePath.length - 1)} disabled={projDriveLoading} style={{ padding: "6px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                           🔄 Refresh
                         </button>
                       </div>
@@ -5059,10 +5059,10 @@ export default function Dashboard({ user, onLogout }) {
 
                     {/* Breadcrumb */}
                     <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 12, padding: "8px 12px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)", flexWrap: "wrap" }}>
-                      {drivePath.map((crumb, i) => (
+                      {projDrivePath.map((crumb, i) => (
                         <React.Fragment key={i}>
                           {i > 0 && <span style={{ color: "var(--textGhost)", fontSize: 10 }}>›</span>}
-                          <button onClick={() => driveBrowseBreadcrumb(i)} style={{ background: "none", border: "none", color: i === drivePath.length - 1 ? "var(--text)" : "#3da5db", fontSize: 11, fontWeight: i === drivePath.length - 1 ? 700 : 500, cursor: "pointer", padding: "2px 4px", borderRadius: 3 }}>
+                          <button onClick={() => driveBrowseBreadcrumb(i)} style={{ background: "none", border: "none", color: i === projDrivePath.length - 1 ? "var(--text)" : "#3da5db", fontSize: 11, fontWeight: i === projDrivePath.length - 1 ? 700 : 500, cursor: "pointer", padding: "2px 4px", borderRadius: 3 }}>
                             {crumb.name}
                           </button>
                         </React.Fragment>
@@ -5070,13 +5070,13 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
 
                     {/* File/folder list */}
-                    {driveLoading ? (
+                    {projDriveLoading ? (
                       <div style={{ textAlign: "center", padding: 40, color: "var(--textFaint)" }}>Loading...</div>
-                    ) : driveFiles.length === 0 ? (
+                    ) : projDriveFiles.length === 0 ? (
                       <div style={{ textAlign: "center", padding: 40 }}>
                         <div style={{ fontSize: 24, marginBottom: 8 }}>📂</div>
                         <div style={{ fontSize: 13, color: "var(--textFaint)" }}>Empty folder</div>
-                        <button onClick={() => driveFileInputRef.current?.click()} style={{ marginTop: 12, padding: "8px 20px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 8, color: "#4ecb71", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        <button onClick={() => projDriveFileRef.current?.click()} style={{ marginTop: 12, padding: "8px 20px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 8, color: "#4ecb71", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                           ⬆ Upload First File
                         </button>
                       </div>
@@ -5089,7 +5089,7 @@ export default function Dashboard({ user, onLogout }) {
                           <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5 }}>MODIFIED</span>
                           <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, textAlign: "right" }}>OPEN</span>
                         </div>
-                        {driveFiles.map(item => (
+                        {projDriveFiles.map(item => (
                           <div key={item.id} onClick={() => { if (item.isFolder) driveBrowse(item.id, item.name); }} style={{ display: "grid", gridTemplateColumns: "1fr 100px 140px 60px", padding: "10px 14px", borderBottom: "1px solid var(--borderSub)", cursor: item.isFolder ? "pointer" : "default", transition: "background 0.15s" }}
                             onMouseEnter={e => e.currentTarget.style.background = "var(--bgInput)"}
                             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
