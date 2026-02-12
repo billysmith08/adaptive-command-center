@@ -5643,8 +5643,9 @@ export default function Dashboard({ user, onLogout }) {
                           <span>#</span><span>NAME</span><span>ROLE</span><span>DEPARTMENT</span><span>PHONE</span><span>EMAIL</span><span>ACTIONS</span>
                         </div>
                         {filtered.map((person, i) => {
-                          const c = contacts.find(ct => ct.name === person.name);
-                          const inGlobal = !!c;
+                          const c = contacts.find(ct => ct.name?.toLowerCase().trim() === person.name?.toLowerCase().trim());
+                          const inClients = clients.some(cl => (cl.contactName || "").toLowerCase().trim() === person.name?.toLowerCase().trim() || (cl.name || "").toLowerCase().trim() === person.name?.toLowerCase().trim() || (cl.contactNames || []).some(n => n?.toLowerCase().trim() === person.name?.toLowerCase().trim()));
+                          const inGlobal = !!c || inClients;
                           const rc = ROLE_COLORS[person.role] || "var(--textMuted)";
                           const dc = DEPT_COLORS[person.dept] || null;
                           const isTeam = person.source === "producers" || person.source === "managers" || person.source === "staff";
