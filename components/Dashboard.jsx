@@ -3530,7 +3530,7 @@ export default function Dashboard({ user, onLogout }) {
             {activeTab === "calendar" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 {/* Sticky header */}
-                <div style={{ position: "sticky", top: -20, zIndex: 10, background: "var(--bgBase)", paddingTop: 20, paddingBottom: 4, marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28 }}>
+                <div style={{ position: "sticky", top: -20, zIndex: 20, background: "var(--bgBase)", paddingTop: 20, paddingBottom: 16, marginLeft: -28, marginRight: -28, paddingLeft: 28, paddingRight: 28, borderBottom: "1px solid var(--borderSub)", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                     <div>
                       <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL PROJECTS</div>
@@ -3654,7 +3654,7 @@ export default function Dashboard({ user, onLogout }) {
                         <thead>
                           <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
                             {["Project", "Status", "Date(s)", "Client", "Project Type", "Location", "Producer(s)", "Manager(s)", "Services Needed", "Brief", "Project Code"].map(h => (
-                              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", position: "sticky", top: 0, background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
+                              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
                             ))}
                           </tr>
                         </thead>
