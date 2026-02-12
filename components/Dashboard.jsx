@@ -1549,6 +1549,7 @@ export default function Dashboard({ user, onLogout }) {
   const SECTION_OPTIONS = [
     { key: "overview", label: "Overview" },
     { key: "budget", label: "Budget" },
+    { key: "projectTodoist", label: "Project Todoist" },
     { key: "workback", label: "Work Back" },
     { key: "ros", label: "Run of Show" },
     { key: "drive", label: "Drive" },
@@ -1789,6 +1790,44 @@ export default function Dashboard({ user, onLogout }) {
     logActivity("updated", `created project "${newP.name}"`, newP.name);
     setShowAddProject(false);
     setNewProjectForm({ ...emptyProject });
+  };
+
+  // Auto-link existing projects to Todoist projects by matching code → name
+  useEffect(() => {
+    if (!todoistProjects.length || !projects.length) return;
+    let changed = false;
+    const updated = projects.map(p => {
+      if (p.todoistProjectId) return p; // already linked
+      const match = todoistProjects.find(tp => tp.name === p.code);
+      if (match) { changed = true; return { ...p, todoistProjectId: match.id }; }
+      return p;
+    });
+    if (changed) setProjects(updated);
+  }, [todoistProjects]);
+
+  // Todoist: add collaborator to a project
+  const todoistAddCollaborator = async (todoistProjId, email) => {
+    if (!todoistKey || !todoistProjId || !email) return;
+    try {
+      await fetch("https://api.todoist.com/rest/v2/projects/" + todoistProjId + "/collaborators", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ email })
+      });
+    } catch (e) { console.error("Todoist collaborator add:", e); }
+  };
+
+  // When project team changes, sync collaborators to Todoist
+  const syncTodoistCollaborators = async (proj) => {
+    if (!todoistKey || !proj.todoistProjectId) return;
+    const teamEmails = new Set();
+    [...(proj.producers || []), ...(proj.managers || []), ...(proj.staff || [])].forEach(name => {
+      const c = contacts.find(ct => (ct.name || "").toLowerCase() === name.toLowerCase());
+      if (c?.email) teamEmails.add(c.email);
+    });
+    for (const email of teamEmails) {
+      await todoistAddCollaborator(proj.todoistProjectId, email);
+    }
   };
 
   const copyToClipboard = (text, label, e) => {
@@ -2356,6 +2395,7 @@ export default function Dashboard({ user, onLogout }) {
   const allTabs = [
     { id: "overview", label: "Overview", icon: "◉" },
     { id: "budget", label: "Budget", icon: "$" },
+    { id: "projectTodoist", label: "Todoist", icon: "✅" },
     { id: "workback", label: "Work Back", icon: "◄" },
     { id: "ros", label: "Run of Show", icon: "▶" },
     { id: "drive", label: "Drive", icon: "◫" },
@@ -3379,6 +3419,222 @@ export default function Dashboard({ user, onLogout }) {
 
             {/* ═══ BUDGET ═══ */}
             {activeTab === "budget" && <div style={{ animation: "fadeUp 0.3s ease", textAlign: "center", padding: 60 }}><div style={{ fontSize: 40, marginBottom: 16 }}>📊</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Saturation Budget Integration</div><div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>This tab pulls directly from Saturation. Role-based access coming.</div><a href="https://app.saturation.io/weareadptv" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", padding: "10px 20px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 8, color: "#ff6b4a", fontWeight: 600, fontSize: 13, textDecoration: "none" }}>Open in Saturation →</a></div>}
+
+            {/* ═══ PROJECT TODOIST ═══ */}
+            {activeTab === "projectTodoist" && (() => {
+              const tpId = project.todoistProjectId;
+              const projTasks = tpId ? todoistTasks.filter(t => t.project_id === tpId) : [];
+              const today = new Date().toISOString().split("T")[0];
+              const overdue = projTasks.filter(t => t.due && t.due.date < today);
+              const dueToday = projTasks.filter(t => t.due && t.due.date === today);
+              const upcoming = projTasks.filter(t => t.due && t.due.date > today);
+              const noDue = projTasks.filter(t => !t.due);
+              const priLabels = { 4: "Urgent", 3: "High", 2: "Medium", 1: "Normal" };
+              const priColors = { 4: "#ff6b4a", 3: "#dba94e", 2: "#3da5db", 1: "var(--textMuted)" };
+
+              const createTodoistProject = async () => {
+                if (!todoistKey || !project.code) return;
+                try {
+                  const res = await fetch("https://api.todoist.com/rest/v2/projects", {
+                    method: "POST",
+                    headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
+                    body: JSON.stringify({ name: project.code })
+                  });
+                  if (res.ok) {
+                    const tp = await res.json();
+                    setProjects(prev => prev.map(p => p.id === project.id ? { ...p, todoistProjectId: tp.id } : p));
+                    todoistFetch();
+                    // Auto-invite team members as collaborators
+                    const teamEmails = new Set();
+                    [...(project.producers || []), ...(project.managers || []), ...(project.staff || [])].forEach(name => {
+                      const c = contacts.find(ct => (ct.name || "").toLowerCase() === name.toLowerCase());
+                      if (c?.email) teamEmails.add(c.email);
+                    });
+                    for (const email of teamEmails) {
+                      try { await fetch(`https://api.todoist.com/rest/v2/projects/${tp.id}/collaborators`, { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify({ email }) }); } catch (e) {}
+                    }
+                  }
+                } catch (e) { console.error("Todoist project create:", e); }
+              };
+
+              const addTaskToProject = async (content, dueDate, priority) => {
+                if (!todoistKey || !tpId || !content.trim()) return;
+                const body = { content: content.trim(), project_id: tpId };
+                if (dueDate) body.due_date = dueDate;
+                if (priority && priority > 1) body.priority = priority;
+                await fetch("https://api.todoist.com/rest/v2/tasks", { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                todoistFetch();
+              };
+
+              const updateTask = async (taskId, updates) => {
+                if (!todoistKey) return;
+                await fetch(`https://api.todoist.com/rest/v2/tasks/${taskId}`, { method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" }, body: JSON.stringify(updates) });
+                todoistFetch();
+              };
+
+              const renderTask = (task) => {
+                const isOverdue = task.due && task.due.date < today;
+                const isToday = task.due && task.due.date === today;
+                const dueLabel = !task.due ? null : isToday ? "Today" : isOverdue ? (() => { const d = Math.ceil((new Date() - new Date(task.due.date + "T23:59:59")) / 86400000); return `${d}d overdue`; })() : task.due.string || (() => { const d = new Date(task.due.date + "T12:00:00"); return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); })();
+                return (
+                  <div key={task.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 16px", borderBottom: "1px solid var(--calLine)", background: isOverdue ? "#e854540a" : "transparent", transition: "background 0.1s" }} onMouseEnter={e => { if (!isOverdue) e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => { e.currentTarget.style.background = isOverdue ? "#e854540a" : "transparent"; }}>
+                    {/* Priority circle / check */}
+                    <div onClick={() => todoistClose(task.id)} style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s", flexShrink: 0, marginTop: 2 }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} title="Complete task">
+                      <span style={{ fontSize: 11, opacity: 0.3 }}>✓</span>
+                    </div>
+                    {/* Task content */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500, lineHeight: 1.4 }}>{task.content}</div>
+                      {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 3, lineHeight: 1.4 }}>{task.description.slice(0, 120)}{task.description.length > 120 ? "..." : ""}</div>}
+                      <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                        {dueLabel && <span style={{ fontSize: 10, fontWeight: 600, color: isOverdue ? "#e85454" : isToday ? "#ff6b4a" : "var(--textFaint)", display: "flex", alignItems: "center", gap: 3 }}>{isOverdue ? "⚠" : isToday ? "📅" : "📅"} {dueLabel}</span>}
+                        {task.priority > 1 && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: priColors[task.priority] + "18", color: priColors[task.priority] }}>{priLabels[task.priority]}</span>}
+                        {task.comment_count > 0 && <span style={{ fontSize: 10, color: "var(--textGhost)", display: "flex", alignItems: "center", gap: 2 }}>💬 {task.comment_count}</span>}
+                        {task.labels?.length > 0 && task.labels.map(l => <span key={l} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "var(--bgHover)", color: "var(--textFaint)", fontWeight: 600 }}>@{l}</span>)}
+                      </div>
+                    </div>
+                    {/* Quick actions */}
+                    <div style={{ display: "flex", gap: 2, flexShrink: 0 }}>
+                      {/* Due date quick-set */}
+                      <input type="date" value={task.due?.date || ""} onChange={e => updateTask(task.id, e.target.value ? { due_date: e.target.value } : { due_string: "no date" })} style={{ width: 18, height: 18, opacity: 0.3, cursor: "pointer", background: "none", border: "none", padding: 0 }} title="Set due date" />
+                      {/* Priority cycle */}
+                      <button onClick={() => { const next = task.priority >= 4 ? 1 : task.priority + 1; updateTask(task.id, { priority: next }); }} style={{ background: "none", border: "none", color: priColors[task.priority] || "var(--textGhost)", cursor: "pointer", fontSize: 11, padding: "2px 4px", opacity: 0.5 }} title={`Priority: ${priLabels[task.priority] || "Normal"} (click to cycle)`}>⚑</button>
+                      <button onClick={() => todoistDelete(task.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13, padding: "2px 4px", opacity: 0.4 }} title="Delete">×</button>
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <div style={{ animation: "fadeUp 0.3s ease" }}>
+
+                  {!todoistKey ? (
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 48, textAlign: "center" }}>
+                      <div style={{ fontSize: 40, marginBottom: 14 }}>✅</div>
+                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Connect Todoist</div>
+                      <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6, marginBottom: 4 }}>Go to the <span style={{ color: "#ff6b4a", fontWeight: 600, cursor: "pointer" }} onClick={() => setActiveTab("todoist")}>Todoist tab</span> in the top bar to connect your API token first.</div>
+                    </div>
+                  ) : !tpId ? (
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 48, textAlign: "center" }}>
+                      <div style={{ fontSize: 40, marginBottom: 14 }}>✅</div>
+                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Create Todoist Project</div>
+                      <div style={{ fontSize: 13, color: "var(--textFaint)", lineHeight: 1.6, marginBottom: 6 }}>Set up a Todoist project for this event to start tracking tasks.</div>
+                      <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 20, fontFamily: "'JetBrains Mono', monospace" }}>Project will be named: {project.code || project.name}</div>
+                      {(project.producers?.length > 0 || project.managers?.length > 0 || (project.staff || []).length > 0) && (
+                        <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20 }}>
+                          Team members with emails on file will be auto-invited as collaborators.
+                        </div>
+                      )}
+                      <button onClick={createTodoistProject} style={{ padding: "12px 28px", background: "#e44232", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700, letterSpacing: 0.3 }}>Create Project</button>
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Todoist-style header */}
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, padding: "0 2px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span style={{ fontSize: 17, fontWeight: 700, fontFamily: "'Instrument Sans'", color: "var(--text)" }}>{project.code}</span>
+                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{projTasks.length} task{projTasks.length !== 1 ? "s" : ""}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                          <button onClick={() => todoistFetch()} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, color: "var(--textMuted)", fontWeight: 600 }}>↻</button>
+                          <button onClick={() => syncTodoistCollaborators(project)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 11, color: "var(--textMuted)", fontWeight: 600 }} title="Sync team as collaborators">👥 Sync Team</button>
+                          <a href={`https://todoist.com/app/project/${tpId}`} target="_blank" rel="noopener noreferrer" style={{ padding: "5px 12px", background: "#e44232", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 600, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 4 }}>Open in Todoist ↗</a>
+                        </div>
+                      </div>
+
+                      {/* Quick stats row */}
+                      <div style={{ display: "flex", gap: 16, marginBottom: 16, padding: "8px 0", borderBottom: "1px solid var(--borderSub)" }}>
+                        <span style={{ fontSize: 11, color: "var(--textFaint)" }}>{projTasks.length} open</span>
+                        {overdue.length > 0 && <span style={{ fontSize: 11, color: "#e85454", fontWeight: 600 }}>⚠ {overdue.length} overdue</span>}
+                        {dueToday.length > 0 && <span style={{ fontSize: 11, color: "#ff6b4a", fontWeight: 600 }}>{dueToday.length} due today</span>}
+                        {upcoming.length > 0 && <span style={{ fontSize: 11, color: "var(--textMuted)" }}>{upcoming.length} upcoming</span>}
+                        {noDue.length > 0 && <span style={{ fontSize: 11, color: "var(--textGhost)" }}>{noDue.length} no date</span>}
+                      </div>
+
+                      {/* Add task — Todoist-style inline */}
+                      <div style={{ marginBottom: 20 }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <div style={{ width: 20, height: 20, borderRadius: "50%", border: "2px dashed var(--borderSub)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            <span style={{ fontSize: 14, color: "var(--textGhost)" }}>+</span>
+                          </div>
+                          <input id="projTodoistInput" placeholder="Add a task..." onKeyDown={async (e) => {
+                            if (e.key === "Enter" && e.target.value.trim()) {
+                              const content = e.target.value.trim();
+                              const dueDateEl = document.getElementById("projTodoistDue");
+                              const priEl = document.getElementById("projTodoistPri");
+                              const dueDate = dueDateEl?.value || null;
+                              const pri = parseInt(priEl?.value || "1");
+                              e.target.value = "";
+                              if (dueDateEl) dueDateEl.value = "";
+                              if (priEl) priEl.value = "1";
+                              await addTaskToProject(content, dueDate, pri);
+                            }
+                          }} style={{ flex: 1, padding: "10px 0", background: "transparent", border: "none", borderBottom: "1px solid var(--borderSub)", color: "var(--text)", fontSize: 14, outline: "none", fontFamily: "'DM Sans'" }} />
+                        </div>
+                        <div style={{ display: "flex", gap: 8, marginTop: 8, marginLeft: 30, alignItems: "center" }}>
+                          <input id="projTodoistDue" type="date" style={{ padding: "4px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }} />
+                          <select id="projTodoistPri" defaultValue="1" style={{ padding: "4px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none" }}>
+                            <option value="1">Normal</option>
+                            <option value="2">Medium</option>
+                            <option value="3">High</option>
+                            <option value="4">Urgent</option>
+                          </select>
+                          <button onClick={async () => {
+                            const inp = document.getElementById("projTodoistInput");
+                            const dueDateEl = document.getElementById("projTodoistDue");
+                            const priEl = document.getElementById("projTodoistPri");
+                            if (!inp?.value.trim()) return;
+                            const content = inp.value.trim();
+                            const dueDate = dueDateEl?.value || null;
+                            const pri = parseInt(priEl?.value || "1");
+                            inp.value = ""; if (dueDateEl) dueDateEl.value = ""; if (priEl) priEl.value = "1";
+                            await addTaskToProject(content, dueDate, pri);
+                          }} style={{ padding: "5px 14px", background: "#e44232", border: "none", borderRadius: 6, color: "#fff", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>Add Task</button>
+                        </div>
+                      </div>
+
+                      {/* Task sections */}
+                      <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                        {/* Overdue section */}
+                        {overdue.length > 0 && (
+                          <div>
+                            <div style={{ padding: "8px 16px", background: "#e854540a", borderBottom: "1px solid #e8545420", fontSize: 11, fontWeight: 700, color: "#e85454", display: "flex", alignItems: "center", gap: 6 }}>⚠ Overdue <span style={{ fontWeight: 400, fontSize: 10 }}>({overdue.length})</span></div>
+                            {overdue.sort((a, b) => (a.due?.date || "").localeCompare(b.due?.date || "")).map(renderTask)}
+                          </div>
+                        )}
+                        {/* Due today section */}
+                        {dueToday.length > 0 && (
+                          <div>
+                            <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid #ff6b4a20", fontSize: 11, fontWeight: 700, color: "#ff6b4a", display: "flex", alignItems: "center", gap: 6 }}>📅 Today <span style={{ fontWeight: 400, fontSize: 10 }}>({dueToday.length})</span></div>
+                            {dueToday.map(renderTask)}
+                          </div>
+                        )}
+                        {/* Upcoming section */}
+                        {upcoming.length > 0 && (
+                          <div>
+                            <div style={{ padding: "8px 16px", background: "var(--bgSub)", borderBottom: "1px solid var(--borderSub)", fontSize: 11, fontWeight: 700, color: "var(--textMuted)", display: "flex", alignItems: "center", gap: 6 }}>📋 Upcoming <span style={{ fontWeight: 400, fontSize: 10 }}>({upcoming.length})</span></div>
+                            {upcoming.sort((a, b) => (a.due?.date || "").localeCompare(b.due?.date || "")).map(renderTask)}
+                          </div>
+                        )}
+                        {/* No date section */}
+                        {noDue.length > 0 && (
+                          <div>
+                            <div style={{ padding: "8px 16px", background: "var(--bgSub)", borderBottom: "1px solid var(--borderSub)", fontSize: 11, fontWeight: 700, color: "var(--textGhost)", display: "flex", alignItems: "center", gap: 6 }}>📌 No Date <span style={{ fontWeight: 400, fontSize: 10 }}>({noDue.length})</span></div>
+                            {noDue.map(renderTask)}
+                          </div>
+                        )}
+                        {projTasks.length === 0 && (
+                          <div style={{ padding: 40, textAlign: "center" }}>
+                            <div style={{ fontSize: 32, marginBottom: 10 }}>🎯</div>
+                            <div style={{ fontSize: 14, color: "var(--textMuted)", fontWeight: 500 }}>All clear! Add a task above to get started.</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ═══ WORK BACK ═══ */}
             {activeTab === "workback" && (
