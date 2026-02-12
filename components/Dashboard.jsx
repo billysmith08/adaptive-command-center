@@ -1490,7 +1490,7 @@ export default function Dashboard({ user, onLogout }) {
   const [selectedClientIds, setSelectedClientIds] = useState(new Set());
   const [showAddClient, setShowAddClient] = useState(false);
   const [clientSearch, setClientSearch] = useState("");
-  const emptyClient = { name: "", code: "", attributes: [], address: "", city: "", state: "", zip: "", country: "", website: "", email: "", phone: "", billingContact: "", billingEmail: "", billingEmailSame: false, billingAddress: "", billingAddressSame: false, contactNames: [], projects: [], notes: "" };
+  const emptyClient = { name: "", code: "", attributes: [], address: "", city: "", state: "", zip: "", country: "", website: "", contactName: "", contactEmail: "", contactPhone: "", contactAddress: "", billingContact: "", billingEmail: "", billingPhone: "", billingAddress: "", billingNameSame: false, billingEmailSame: false, billingPhoneSame: false, billingAddressSame: false, contactNames: [], projects: [], notes: "" };
   const [clientForm, setClientForm] = useState({ ...emptyClient });
   const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
   const CLIENT_ATTRIBUTES = [...new Set(["Agency", "Artist", "Audio", "Backline", "Brand", "CAD", "Candles", "Corporate", "Creative Director", "Drawings", "Experiential", "Fabrication & Scenic", "Furniture Rentals", "Individual", "LD", "Lighting", "Management", "PR", "Photo Booth", "Producer", "Production General", "Production Manager", "Promoter", "Record Label", "Site Operations", "Sponsorship", "Video", "AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Floral", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"])].sort();
@@ -1656,6 +1656,29 @@ export default function Dashboard({ user, onLogout }) {
   const todoistDelete = async (id) => {
     await fetch(`https://api.todoist.com/rest/v2/tasks/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${todoistKey}` } });
     setTodoistTasks(prev => prev.filter(t => t.id !== id));
+  };
+  const todoistCreateProject = async (projectCode) => {
+    if (!todoistKey || !projectCode) return null;
+    try {
+      const res = await fetch("https://api.todoist.com/rest/v2/projects", {
+        method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: projectCode })
+      });
+      if (res.ok) {
+        const proj = await res.json();
+        await todoistFetch();
+        return proj.id;
+      }
+    } catch (e) { console.error("Todoist create:", e); }
+    return null;
+  };
+  const todoistAddTaskToProject = async (content, projectId) => {
+    if (!todoistKey || !content || !projectId) return;
+    await fetch("https://api.todoist.com/rest/v2/tasks", {
+      method: "POST", headers: { Authorization: `Bearer ${todoistKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ content, project_id: projectId })
+    });
+    await todoistFetch();
   };
   const searchTimerRef = useRef(null);
   const contactPopoverRef = useRef(null);
@@ -1849,10 +1872,11 @@ export default function Dashboard({ user, onLogout }) {
           name, code, attributes: attrs,
           address: address || [street, city, state, zip, country].filter(Boolean).join(", "),
           city, state, zip, country,
-          website, email, phone,
-          billingContact, billingEmail: email, billingEmailSame: true,
+          website, contactName: billingContact, contactEmail: email, contactPhone: phone,
+          contactAddress: address || [street, city, state, zip, country].filter(Boolean).join(", "),
+          billingContact, billingEmail: email, billingPhone: phone,
           billingAddress: address || [street, city, state, zip, country].filter(Boolean).join(", "),
-          billingAddressSame: true,
+          billingNameSame: true, billingEmailSame: true, billingPhoneSame: true, billingAddressSame: true,
           contactNames, projects: clientProjects,
           location, notes: "", source: "csv"
         });
@@ -1904,33 +1928,53 @@ export default function Dashboard({ user, onLogout }) {
   // ─── SAVE / EDIT CLIENT ────────────────────────────────────────
   const submitClient = () => {
     if (!clientForm.name) return;
-    if (clientForm.billingEmailSame) clientForm.billingEmail = clientForm.email;
-    if (clientForm.billingAddressSame) clientForm.billingAddress = clientForm.address;
-    if (clientForm.id) {
-      // Edit existing
-      setClients(prev => prev.map(c => c.id === clientForm.id ? { ...clientForm } : c));
-      // Mirror: update matching Global Partners contact
+    const form = { ...clientForm };
+    if (form.billingNameSame) form.billingContact = form.contactName;
+    if (form.billingEmailSame) form.billingEmail = form.contactEmail;
+    if (form.billingPhoneSame) form.billingPhone = form.contactPhone;
+    if (form.billingAddressSame) form.billingAddress = form.contactAddress;
+    if (form.id) {
+      setClients(prev => prev.map(c => c.id === form.id ? { ...form } : c));
+      // Mirror: update matching Global Partners contacts
       setContacts(prev => prev.map(c => {
-        if (c.company === clientForm.name && c.position === "Billing Contact") {
-          return { ...c, email: clientForm.billingEmail, phone: clientForm.phone, address: clientForm.billingAddress };
+        if (c.company === form.name && c.position === "Billing Contact") {
+          return { ...c, name: form.billingContact, email: form.billingEmail, phone: form.billingPhone, address: form.billingAddress };
+        }
+        if (c.company === form.name && c.position === "Client Contact") {
+          return { ...c, name: form.contactName, email: form.contactEmail, phone: form.contactPhone, address: form.contactAddress };
         }
         return c;
       }));
     } else {
-      const newClient = { ...clientForm, id: `cl_${Date.now()}` };
+      const newClient = { ...form, id: `cl_${Date.now()}` };
       setClients(prev => [...prev, newClient]);
-      // Auto-create billing contact in Global Partners
-      if (clientForm.billingContact) {
-        const bc = {
-          id: `ct_${Date.now()}_b`, name: clientForm.billingContact,
-          firstName: clientForm.billingContact.split(" ")[0] || "", lastName: clientForm.billingContact.split(" ").slice(1).join(" ") || "",
-          email: clientForm.billingEmail || clientForm.email || "", phone: clientForm.phone || "",
-          company: clientForm.name, position: "Billing Contact", contactType: "Client",
-          department: "", address: clientForm.billingAddress || "", resourceType: "", vendorName: clientForm.name,
-          notes: `Billing contact for ${clientForm.name}`, source: "client"
+      // Auto-create client contact in Global Partners
+      if (form.contactName) {
+        const cc = {
+          id: `ct_${Date.now()}_cc`, name: form.contactName,
+          firstName: form.contactName.split(" ")[0] || "", lastName: form.contactName.split(" ").slice(1).join(" ") || "",
+          email: form.contactEmail || "", phone: form.contactPhone || "",
+          company: form.name, position: "Client Contact", contactType: "Client",
+          department: "", address: form.contactAddress || "", resourceType: "", vendorName: form.name,
+          notes: `Client contact for ${form.name}`, source: "client"
         };
         setContacts(prev => {
-          if (prev.some(c => c.name.toLowerCase() === bc.name.toLowerCase() && c.company === clientForm.name)) return prev;
+          if (prev.some(c => c.name.toLowerCase() === cc.name.toLowerCase() && c.company === form.name)) return prev;
+          return [...prev, cc];
+        });
+      }
+      // Auto-create billing contact in Global Partners (if different)
+      if (form.billingContact && form.billingContact !== form.contactName) {
+        const bc = {
+          id: `ct_${Date.now()}_bc`, name: form.billingContact,
+          firstName: form.billingContact.split(" ")[0] || "", lastName: form.billingContact.split(" ").slice(1).join(" ") || "",
+          email: form.billingEmail || "", phone: form.billingPhone || "",
+          company: form.name, position: "Billing Contact", contactType: "Client",
+          department: "", address: form.billingAddress || "", resourceType: "", vendorName: form.name,
+          notes: `Billing contact for ${form.name}`, source: "client"
+        };
+        setContacts(prev => {
+          if (prev.some(c => c.name.toLowerCase() === bc.name.toLowerCase() && c.company === form.name)) return prev;
           return [...prev, bc];
         });
       }
@@ -1939,7 +1983,7 @@ export default function Dashboard({ user, onLogout }) {
     setShowAddClient(false);
   };
 
-  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", contactType: "", notes: "", source: "manual" };
+  const emptyContact = { name: "", vendorName: "", firstName: "", lastName: "", phone: "", email: "", company: "", position: "", department: "", address: "", resourceType: "", contactType: "", clientAssociation: "", notes: "", source: "manual" };
   const [contactForm, setContactForm] = useState({ ...emptyContact });
   const updateCF = (k, v) => setContactForm(p => ({ ...p, [k]: v }));
   const submitContact = () => {
@@ -1955,17 +1999,14 @@ export default function Dashboard({ user, onLogout }) {
     setContactPopover({ contact, x: rect?.left || 200, y: (rect?.bottom || 200) + 6 });
   };
 
-  // Project code generator: YY-MMDD_MMDD-CLIENT-PROJECT-LOCATION
+  // Project code generator: YY-CLIENT-PROJECT-LOCATION
   const generateProjectCode = (p) => {
     const clean = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
     const yr = p.eventDates?.start ? p.eventDates.start.slice(2, 4) : new Date().getFullYear().toString().slice(2);
-    const sd = p.eventDates?.start ? p.eventDates.start.slice(5, 7) + p.eventDates.start.slice(8, 10) : "0000";
-    const ed = p.eventDates?.end ? p.eventDates.end.slice(5, 7) + p.eventDates.end.slice(8, 10) : "";
-    const dates = sd === ed || !ed ? sd : `${sd}_${ed}`;
     const client = clean(p.client).slice(0, 8) || "CLIENT";
     const proj = clean(p.name).slice(0, 14) || "PROJECT";
     const loc = clean(p.location?.split(",")[0]).slice(0, 8) || "TBD";
-    return `${yr}-${dates}-${client}-${proj}-${loc}`;
+    return `${yr}-${client}-${proj}-${loc}`;
   };
 
   const emptyProject = { name: "", client: "", location: "", why: "", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, budget: 0, spent: 0, services: [] };
@@ -2602,6 +2643,7 @@ export default function Dashboard({ user, onLogout }) {
   const allTabs = [
     { id: "overview", label: "Overview", icon: "◉" },
     { id: "budget", label: "Budget", icon: "$" },
+    { id: "todoist", label: "Todoist", icon: "✅" },
     { id: "workback", label: "Work Back", icon: "◄" },
     { id: "ros", label: "Run of Show", icon: "▶" },
     { id: "drive", label: "Drive", icon: "◫" },
@@ -2717,11 +2759,6 @@ export default function Dashboard({ user, onLogout }) {
           {canSeeSection("globalContacts") && (
             <button onClick={() => setActiveTab("clients")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "clients" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
               🏢 Clients {clients.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{clients.length}</span>}
-            </button>
-          )}
-          {canSeeSection("todoist") && (
-            <button onClick={() => { setActiveTab("todoist"); if (!todoistTasks.length && todoistKey) todoistFetch(); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "todoist" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
-              ✅ Todoist {todoistTasks.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{todoistTasks.length}</span>}
             </button>
           )}
         </div>
@@ -2855,7 +2892,7 @@ export default function Dashboard({ user, onLogout }) {
                       const sw = swipeState[p.id];
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
-                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" || activeTab === "todoist" ) setActiveTab("overview");
+                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" ) setActiveTab("overview");
                     }}
                     style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
@@ -3225,7 +3262,7 @@ export default function Dashboard({ user, onLogout }) {
                             {c.department && <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{c.department}</div>}
                           </div>
                         </div>
-                        <span style={{ fontSize: 9 }}>{c.contactType ? <span style={{ padding: "2px 7px", background: c.contactType === "Client" ? "#3da5db10" : c.contactType === "Vendor" ? "#4ecb7110" : "#9b6dff10", border: `1px solid ${c.contactType === "Client" ? "#3da5db20" : c.contactType === "Vendor" ? "#4ecb7120" : "#9b6dff20"}`, borderRadius: 3, fontSize: 9, fontWeight: 600, color: c.contactType === "Client" ? "#3da5db" : c.contactType === "Vendor" ? "#4ecb71" : "#9b6dff", whiteSpace: "nowrap" }}>{c.contactType}</span> : "—"}</span>
+                        <span style={{ fontSize: 9 }}>{c.contactType ? <span style={{ padding: "2px 7px", background: c.contactType === "Client" ? "#3da5db10" : c.contactType === "Vendor" ? "#4ecb7110" : "#9b6dff10", border: `1px solid ${c.contactType === "Client" ? "#3da5db20" : c.contactType === "Vendor" ? "#4ecb7120" : "#9b6dff20"}`, borderRadius: 3, fontSize: 9, fontWeight: 600, color: c.contactType === "Client" ? "#3da5db" : c.contactType === "Vendor" ? "#4ecb71" : "#9b6dff", whiteSpace: "nowrap" }}>{c.contactType}</span> : "—"}{(c.clientAssociation || clients.some(cl => cl.name.toLowerCase() === (c.company || "").toLowerCase())) && <span style={{ marginLeft: 3, fontSize: 8, color: "#3da5db" }} title={`Linked: ${c.clientAssociation || clients.find(cl => cl.name.toLowerCase() === (c.company || "").toLowerCase())?.name}`}>🔗</span>}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 10 }}>{c.resourceType ? <span style={{ padding: "2px 7px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 3, fontSize: 9, fontWeight: 600, color: "#3da5db", whiteSpace: "nowrap" }}>{c.resourceType}</span> : "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.position || "—"}</span>
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
@@ -3281,7 +3318,7 @@ export default function Dashboard({ user, onLogout }) {
                               </div>
                             )}
                           </div>
-                          <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
+                          <button onClick={() => { setContactForm({ ...c, clientAssociation: c.clientAssociation || (clients.find(cl => cl.name.toLowerCase() === (c.company || c.vendorName || "").toLowerCase())?.name || "") }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => downloadVCard(c)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) setContacts(prev => prev.filter(x => x.id !== c.id)); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
@@ -3410,12 +3447,12 @@ export default function Dashboard({ user, onLogout }) {
                     )}
                     <div style={{ overflowX: "auto" }}>
                     <div style={{ minWidth: 1400 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 180px 130px 160px 110px 130px 130px auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
                       <span><input type="checkbox" checked={clients.length > 0 && selectedClientIds.size === clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase())); setSelectedClientIds(new Set(visible.map(c => c.id))); } else { setSelectedClientIds(new Set()); } }} style={{ cursor: "pointer" }} /></span>
-                      <span>COMPANY NAME</span><span>CODE</span><span>ATTRIBUTES</span><span>ADDRESS</span><span>WEBSITE</span><span>EMAIL</span><span>PHONE</span><span>BILLING CONTACT</span><span>BILLING EMAIL</span><span>ACTIONS</span>
+                      <span>COMPANY NAME</span><span>CODE</span><span>ATTRIBUTES</span><span>CONTACT</span><span>EMAIL</span><span>PHONE</span><span>BILLING CONTACT</span><span>BILLING EMAIL</span><span>ACTIONS</span>
                     </div>
                     {clients.filter(c => !clientSearch || c.name.toLowerCase().includes(clientSearch.toLowerCase()) || (c.code || "").toLowerCase().includes(clientSearch.toLowerCase()) || (c.attributes || []).join(" ").toLowerCase().includes(clientSearch.toLowerCase()) || (c.billingContact || "").toLowerCase().includes(clientSearch.toLowerCase())).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 180px 130px 160px 110px 130px 130px auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent" }}>
+                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: "36px 170px 80px 130px 140px 170px 110px 140px 170px auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedClientIds.has(c.id) ? "#ff6b4a08" : "transparent" }}>
                         <span><input type="checkbox" checked={selectedClientIds.has(c.id)} onChange={(e) => { const next = new Set(selectedClientIds); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedClientIds(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #3da5db20, #3da5db10)", border: "1px solid #3da5db30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#3da5db", flexShrink: 0 }}>
@@ -3425,10 +3462,9 @@ export default function Dashboard({ user, onLogout }) {
                         </div>
                         <span style={{ color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 600 }}>{c.code || "—"}</span>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 2 }}>{(c.attributes || []).slice(0, 2).map(a => <span key={a} style={{ padding: "1px 5px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 600, color: "#9b6dff", whiteSpace: "nowrap" }}>{a}</span>)}{(c.attributes || []).length > 2 && <span style={{ fontSize: 8, color: "var(--textFaint)" }}>+{c.attributes.length - 2}</span>}</div>
-                        <span onClick={(e) => c.address && copyToClipboard(c.address, "Address", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.address ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.address}>{c.address || "—"}</span>
-                        <span style={{ fontSize: 10 }}>{c.website ? <a href={c.website.startsWith("http") ? c.website : `https://${c.website}`} target="_blank" rel="noopener noreferrer" style={{ color: "#3da5db", textDecoration: "none" }} title={c.website}>{c.website.replace(/^https?:\/\/(www\.)?/, "").slice(0, 18)}</a> : "—"}</span>
-                        <span onClick={(e) => c.email && copyToClipboard(c.email, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.email}>{c.email || "—"}</span>
-                        <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.phone || "—"}</span>
+                        <span style={{ color: "var(--textMuted)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.contactName}>{c.contactName || "—"}</span>
+                        <span onClick={(e) => (c.contactEmail) && copyToClipboard(c.contactEmail, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.contactEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.contactEmail}>{c.contactEmail || "—"}</span>
+                        <span onClick={(e) => (c.contactPhone) && copyToClipboard(c.contactPhone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.contactPhone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.contactPhone || "—"}</span>
                         <span style={{ color: "var(--textMuted)", fontSize: 10, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingContact}>{c.billingContact || "—"}</span>
                         <span onClick={(e) => c.billingEmail && copyToClipboard(c.billingEmail, "Billing Email", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.billingEmail ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.billingEmail}>{c.billingEmail || "—"}</span>
                         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -3444,8 +3480,8 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             )}
 
-            {/* ═══ TODOIST ═══ */}
-            {activeTab === "todoist" && (
+            {/* ═══ TODOIST (GLOBAL) ═══ */}
+            {activeTab === "todoist" && !project && (
               <div style={{ animation: "fadeUp 0.3s ease", maxWidth: 900 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div>
@@ -3719,6 +3755,122 @@ export default function Dashboard({ user, onLogout }) {
 
             {/* ═══ BUDGET ═══ */}
             {activeTab === "budget" && <div style={{ animation: "fadeUp 0.3s ease", textAlign: "center", padding: 60 }}><div style={{ fontSize: 40, marginBottom: 16 }}>📊</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Saturation Budget Integration</div><div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>This tab pulls directly from Saturation. Role-based access coming.</div><a href="https://app.saturation.io/weareadptv" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", padding: "10px 20px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 8, color: "#ff6b4a", fontWeight: 600, fontSize: 13, textDecoration: "none" }}>Open in Saturation →</a></div>}
+
+            {/* ═══ TODOIST (PER-PROJECT) ═══ */}
+            {activeTab === "todoist" && project && (() => {
+              const projCode = project.code || generateProjectCode(project);
+              const linkedTodoistId = project.todoistProjectId;
+              const linkedProject = linkedTodoistId ? todoistProjects.find(p => p.id === linkedTodoistId) : null;
+              const projectTasks = linkedTodoistId ? todoistTasks.filter(t => t.project_id === linkedTodoistId) : [];
+              const today = new Date().toISOString().split("T")[0];
+              return (
+                <div style={{ animation: "fadeUp 0.3s ease", maxWidth: 900 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>TASK MANAGEMENT</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Todoist — {project.name}</div>
+                    </div>
+                    {linkedProject && <button onClick={() => todoistFetch()} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>↻ Refresh</button>}
+                  </div>
+
+                  {!todoistKey ? (
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 40, textAlign: "center" }}>
+                      <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Connect Todoist First</div>
+                      <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>Your Todoist API key is configured in Settings.</div>
+                    </div>
+                  ) : !linkedProject ? (
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 50, textAlign: "center" }}>
+                      <div style={{ fontSize: 48, marginBottom: 16 }}>✅</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, fontFamily: "'Instrument Sans'" }}>No Todoist project linked</div>
+                      <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 8, lineHeight: 1.6 }}>Create a Todoist project for this event to manage tasks.</div>
+                      <div style={{ fontSize: 12, color: "var(--textMuted)", marginBottom: 24 }}>Project will be named: <span style={{ fontWeight: 700, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{projCode}</span></div>
+                      <button onClick={async () => {
+                        const newId = await todoistCreateProject(projCode);
+                        if (newId) {
+                          updateProject("todoistProjectId", newId);
+                          setClipboardToast({ text: `Created Todoist project: ${projCode}`, x: window.innerWidth / 2, y: 60 });
+                          setTimeout(() => setClipboardToast(null), 3000);
+                        }
+                      }} style={{ padding: "14px 32px", background: "#ff6b4a", border: "none", borderRadius: 10, color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 14px rgba(255,107,74,0.3)", transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.transform = "translateY(-1px)"} onMouseLeave={e => e.currentTarget.style.transform = "none"}>
+                        🚀 Start Todoist Project
+                      </button>
+                      {todoistProjects.filter(p => !p.inbox_project).length > 0 && (
+                        <div style={{ marginTop: 24, borderTop: "1px solid var(--borderSub)", paddingTop: 16 }}>
+                          <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 8 }}>Or link to an existing Todoist project:</div>
+                          <select onChange={e => { if (e.target.value) { updateProject("todoistProjectId", e.target.value); setClipboardToast({ text: "Linked to Todoist project", x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 3000); } }} style={{ padding: "8px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none", minWidth: 240 }}>
+                            <option value="">Select existing project...</option>
+                            {todoistProjects.filter(p => !p.inbox_project).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Project info bar */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20, padding: "10px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8 }}>
+                        <span style={{ fontSize: 14 }}>✅</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{linkedProject.name}</span>
+                        <span style={{ fontSize: 10, color: "var(--textFaint)" }}>{projectTasks.length} task{projectTasks.length !== 1 ? "s" : ""}</span>
+                        <div style={{ flex: 1 }} />
+                        <button onClick={() => { updateProject("todoistProjectId", null); }} style={{ padding: "4px 10px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>Unlink</button>
+                      </div>
+
+                      {/* Add task */}
+                      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                        <input placeholder={`Add task to ${linkedProject.name}...`} value={todoistNewTask} onChange={e => setTodoistNewTask(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && todoistNewTask.trim()) { todoistAddTaskToProject(todoistNewTask.trim(), linkedTodoistId); setTodoistNewTask(""); } }} style={{ flex: 1, padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                        <button onClick={() => { if (todoistNewTask.trim()) { todoistAddTaskToProject(todoistNewTask.trim(), linkedTodoistId); setTodoistNewTask(""); } }} disabled={!todoistNewTask.trim()} style={{ padding: "10px 20px", background: todoistNewTask.trim() ? "#ff6b4a" : "var(--bgInput)", border: "none", borderRadius: 8, color: todoistNewTask.trim() ? "#fff" : "var(--textGhost)", cursor: todoistNewTask.trim() ? "pointer" : "default", fontSize: 13, fontWeight: 700 }}>+ Add</button>
+                      </div>
+
+                      {/* Task list */}
+                      {todoistLoading ? (
+                        <div style={{ textAlign: "center", padding: 40, color: "var(--textFaint)" }}>Loading tasks...</div>
+                      ) : projectTasks.length === 0 ? (
+                        <div style={{ textAlign: "center", padding: 40, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, color: "var(--textGhost)" }}>
+                          No tasks yet — add one above!
+                        </div>
+                      ) : (
+                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "32px 1fr 100px 50px", padding: "8px 12px", borderBottom: "1px solid var(--borderSub)", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span></span><span>TASK</span><span>DUE</span><span></span></div>
+                          {projectTasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(task => {
+                            const isOverdue = task.due && task.due.date < today;
+                            const isToday = task.due && task.due.date === today;
+                            const priColors = { 1: "var(--textMuted)", 2: "#3da5db", 3: "#dba94e", 4: "#ff6b4a" };
+                            return (
+                              <div key={task.id} style={{ display: "grid", gridTemplateColumns: "32px 1fr 100px 50px", padding: "10px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center" }}>
+                                <div onClick={() => todoistClose(task.id)} style={{ width: 18, height: 18, borderRadius: "50%", border: `2px solid ${priColors[task.priority] || "var(--textGhost)"}`, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#4ecb7140"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                  <span style={{ fontSize: 10, opacity: 0.4 }}>✓</span>
+                                </div>
+                                <div>
+                                  <div style={{ fontSize: 13, color: "var(--text)", fontWeight: 500 }}>{task.content}</div>
+                                  {task.description && <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 2 }}>{task.description.slice(0, 80)}</div>}
+                                </div>
+                                <div style={{ fontSize: 10, color: isOverdue ? "#ff4a6b" : isToday ? "#ff6b4a" : "var(--textMuted)", fontWeight: isOverdue || isToday ? 600 : 400 }}>
+                                  {task.due ? (isToday ? "Today" : task.due.string || task.due.date) : ""}
+                                </div>
+                                <button onClick={() => todoistDelete(task.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 13 }} title="Delete">×</button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Summary */}
+                      <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TASKS</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{projectTasks.length}</div>
+                        </div>
+                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
+                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: projectTasks.filter(t => t.due && t.due.date < today).length > 0 ? "#ff4a6b" : "var(--text)" }}>{projectTasks.filter(t => t.due && t.due.date < today).length}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ═══ WORK BACK ═══ */}
             {activeTab === "workback" && (
@@ -5021,7 +5173,7 @@ export default function Dashboard({ user, onLogout }) {
             </div>
             <div style={{ padding: "8px 18px 12px", display: "flex", justifyContent: "space-between" }}>
               <div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => { setContactForm({ ...c }); setShowAddContact(true); setContactPopover(null); }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
+                <button onClick={() => { setContactForm({ ...c, clientAssociation: c.clientAssociation || (clients.find(cl => cl.name.toLowerCase() === (c.company || c.vendorName || "").toLowerCase())?.name || "") }); setShowAddContact(true); setContactPopover(null); }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>
                 <button onClick={() => downloadVCard(c)} style={{ padding: "5px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇 Save</button>
               </div>
               <button onClick={() => setContactPopover(null)} style={{ padding: "5px 12px", background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 10 }}>Close</button>
@@ -5033,23 +5185,24 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD / EDIT CONTACT MODAL ═══ */}
       {/* ═══ ADD/EDIT CLIENT MODAL ═══ */}
       {showAddClient && (
-        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.2s ease" }} onClick={e => { if (e.target === e.currentTarget) setShowAddClient(false); }}>
-          <div style={{ background: "var(--bgHover)", borderRadius: 14, width: 600, maxHeight: "85vh", display: "flex", flexDirection: "column", border: "1px solid var(--borderActive)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
-            <div style={{ padding: "20px 28px 14px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.2s ease", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddClient(false); }}>
+          <div style={{ background: "var(--bgInput)", borderRadius: 16, width: 620, maxHeight: "90vh", display: "flex", flexDirection: "column", border: "1px solid var(--borderActive)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ padding: "22px 30px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{clientForm.id ? "Edit Client" : "Add Client"}</div>
               <button onClick={() => setShowAddClient(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18 }}>✕</button>
             </div>
-            <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 14, marginBottom: 14 }}>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY NAME *</label><input value={clientForm.name} onChange={e => updateCLF("name", e.target.value)} placeholder="e.g. Guess, GT's Living Foods..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY CODE</label><input value={clientForm.code} onChange={e => updateCLF("code", e.target.value.toUpperCase())} placeholder="e.g. GUESS" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", fontFamily: "'JetBrains Mono', monospace" }} /></div>
+            <div style={{ padding: "24px 30px 28px", overflowY: "auto", flex: 1 }}>
+              {/* Company Info */}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16, marginBottom: 20 }}>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>COMPANY NAME *</label><input value={clientForm.name} onChange={e => updateCLF("name", e.target.value)} placeholder="e.g. Guess, GT's Living Foods..." style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>COMPANY CODE</label><input value={clientForm.code} onChange={e => updateCLF("code", e.target.value.toUpperCase())} placeholder="e.g. GUESS" style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none", fontFamily: "'JetBrains Mono', monospace" }} /></div>
               </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ATTRIBUTES</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "8px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, minHeight: 36 }}>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>ATTRIBUTES</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, minHeight: 40 }}>
                   {(clientForm.attributes || []).map(a => (
-                    <span key={a} style={{ padding: "2px 8px", background: "#9b6dff15", border: "1px solid #9b6dff30", borderRadius: 4, fontSize: 10, fontWeight: 600, color: "#9b6dff", display: "flex", alignItems: "center", gap: 4 }}>
-                      {a} <span onClick={() => updateCLF("attributes", clientForm.attributes.filter(x => x !== a))} style={{ cursor: "pointer", fontSize: 8, opacity: 0.7 }}>✕</span>
+                    <span key={a} style={{ padding: "3px 10px", background: "#9b6dff15", border: "1px solid #9b6dff30", borderRadius: 5, fontSize: 10, fontWeight: 600, color: "#9b6dff", display: "flex", alignItems: "center", gap: 5 }}>
+                      {a} <span onClick={() => updateCLF("attributes", clientForm.attributes.filter(x => x !== a))} style={{ cursor: "pointer", fontSize: 9, opacity: 0.7 }}>✕</span>
                     </span>
                   ))}
                   <select value="" onChange={e => { if (e.target.value && !(clientForm.attributes || []).includes(e.target.value)) updateCLF("attributes", [...(clientForm.attributes || []), e.target.value]); e.target.value = ""; }} style={{ background: "transparent", border: "none", color: "var(--textFaint)", fontSize: 10, outline: "none", cursor: "pointer" }}>
@@ -5058,52 +5211,82 @@ export default function Dashboard({ user, onLogout }) {
                   </select>
                 </div>
               </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
-                <input value={clientForm.address} onChange={e => updateCLF("address", e.target.value)} placeholder="Full address..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>WEBSITE</label><input value={clientForm.website} onChange={e => updateCLF("website", e.target.value)} placeholder="https://..." style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>COMPANY ADDRESS</label><input value={clientForm.address} onChange={e => updateCLF("address", e.target.value)} placeholder="Full address..." style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>WEBSITE</label><input value={clientForm.website} onChange={e => updateCLF("website", e.target.value)} placeholder="https://..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
-                <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={clientForm.email} onChange={e => updateCLF("email", e.target.value)} placeholder="info@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
-              </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label>
-                <input value={clientForm.phone} onChange={e => updateCLF("phone", e.target.value)} placeholder="+1 (555) 123-4567" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
-              </div>
-              <div style={{ borderTop: "1px solid var(--borderSub)", paddingTop: 14, marginBottom: 14 }}>
-                <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>BILLING INFORMATION</div>
-                <div style={{ marginBottom: 14 }}>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>BILLING CONTACT NAME</label>
-                  <input value={clientForm.billingContact} onChange={e => updateCLF("billingContact", e.target.value)} placeholder="Jane Smith" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+
+              {/* Client Contact Section */}
+              <div style={{ borderTop: "1px solid var(--borderSub)", paddingTop: 18, marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: "#3da5db", fontWeight: 700, letterSpacing: 1, marginBottom: 14 }}>CLIENT CONTACT</div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>CONTACT NAME</label>
+                  <input value={clientForm.contactName} onChange={e => updateCLF("contactName", e.target.value)} placeholder="Jane Smith" style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />
                 </div>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING EMAIL</label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer" }}>
-                      <input type="checkbox" checked={clientForm.billingEmailSame} onChange={e => updateCLF("billingEmailSame", e.target.checked)} /> Same as client email
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>EMAIL</label><input value={clientForm.contactEmail} onChange={e => updateCLF("contactEmail", e.target.value)} placeholder="jane@company.com" style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>PHONE</label><input value={clientForm.contactPhone} onChange={e => updateCLF("contactPhone", e.target.value)} placeholder="+1 (555) 123-4567" style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>ADDRESS</label>
+                  <input value={clientForm.contactAddress} onChange={e => updateCLF("contactAddress", e.target.value)} placeholder="Contact address..." style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                </div>
+              </div>
+
+              {/* Billing Section */}
+              <div style={{ borderTop: "1px solid var(--borderSub)", paddingTop: 18, marginBottom: 20 }}>
+                <div style={{ fontSize: 10, color: "#dba94e", fontWeight: 700, letterSpacing: 1, marginBottom: 14 }}>BILLING INFORMATION</div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING CONTACT NAME</label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer", userSelect: "none" }}>
+                      <input type="checkbox" checked={clientForm.billingNameSame} onChange={e => updateCLF("billingNameSame", e.target.checked)} /> Same as client contact
                     </label>
                   </div>
-                  {!clientForm.billingEmailSame && <input value={clientForm.billingEmail} onChange={e => updateCLF("billingEmail", e.target.value)} placeholder="billing@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />}
-                  {clientForm.billingEmailSame && <div style={{ padding: "9px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.email || "—"}</div>}
+                  {!clientForm.billingNameSame && <input value={clientForm.billingContact} onChange={e => updateCLF("billingContact", e.target.value)} placeholder="Billing contact name..." style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />}
+                  {clientForm.billingNameSame && <div style={{ padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.contactName || "—"}</div>}
                 </div>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING EMAIL</label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer", userSelect: "none" }}>
+                        <input type="checkbox" checked={clientForm.billingEmailSame} onChange={e => updateCLF("billingEmailSame", e.target.checked)} /> Same
+                      </label>
+                    </div>
+                    {!clientForm.billingEmailSame && <input value={clientForm.billingEmail} onChange={e => updateCLF("billingEmail", e.target.value)} placeholder="billing@company.com" style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />}
+                    {clientForm.billingEmailSame && <div style={{ padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.contactEmail || "—"}</div>}
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING PHONE</label>
+                      <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer", userSelect: "none" }}>
+                        <input type="checkbox" checked={clientForm.billingPhoneSame} onChange={e => updateCLF("billingPhoneSame", e.target.checked)} /> Same
+                      </label>
+                    </div>
+                    {!clientForm.billingPhoneSame && <input value={clientForm.billingPhone} onChange={e => updateCLF("billingPhone", e.target.value)} placeholder="+1 (555) 123-4567" style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />}
+                    {clientForm.billingPhoneSame && <div style={{ padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.contactPhone || "—"}</div>}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                     <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600 }}>BILLING ADDRESS</label>
-                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer" }}>
-                      <input type="checkbox" checked={clientForm.billingAddressSame} onChange={e => updateCLF("billingAddressSame", e.target.checked)} /> Same as client address
+                    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: "var(--textFaint)", cursor: "pointer", userSelect: "none" }}>
+                      <input type="checkbox" checked={clientForm.billingAddressSame} onChange={e => updateCLF("billingAddressSame", e.target.checked)} /> Same as client contact
                     </label>
                   </div>
-                  {!clientForm.billingAddressSame && <input value={clientForm.billingAddress} onChange={e => updateCLF("billingAddress", e.target.value)} placeholder="Billing address..." style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />}
-                  {clientForm.billingAddressSame && <div style={{ padding: "9px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.address || "—"}</div>}
+                  {!clientForm.billingAddressSame && <input value={clientForm.billingAddress} onChange={e => updateCLF("billingAddress", e.target.value)} placeholder="Billing address..." style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }} />}
+                  {clientForm.billingAddressSame && <div style={{ padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", fontSize: 12 }}>{clientForm.contactAddress || "—"}</div>}
                 </div>
               </div>
-              <div style={{ marginBottom: 14 }}>
-                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>NOTES</label>
-                <textarea value={clientForm.notes} onChange={e => updateCLF("notes", e.target.value)} placeholder="Any notes..." rows={3} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 6 }}>NOTES</label>
+                <textarea value={clientForm.notes} onChange={e => updateCLF("notes", e.target.value)} placeholder="Any notes..." rows={3} style={{ width: "100%", padding: "10px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
               </div>
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-                <button onClick={() => setShowAddClient(false)} style={{ padding: "10px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
-                <button onClick={submitClient} disabled={!clientForm.name} style={{ padding: "10px 24px", background: clientForm.name ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: clientForm.name ? "#fff" : "var(--textGhost)", cursor: clientForm.name ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700 }}>{clientForm.id ? "Save Changes" : "Add Client"}</button>
+              <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+                <button onClick={() => setShowAddClient(false)} style={{ padding: "11px 22px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                <button onClick={submitClient} disabled={!clientForm.name} style={{ padding: "11px 26px", background: clientForm.name ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: clientForm.name ? "#fff" : "var(--textGhost)", cursor: clientForm.name ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700 }}>{clientForm.id ? "Save Changes" : "Add Client"}</button>
               </div>
             </div>
           </div>
@@ -5161,6 +5344,27 @@ export default function Dashboard({ user, onLogout }) {
                   </select>
                 </div>
               </div>
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>CLIENT ASSOCIATION</label>
+                {(() => {
+                  const autoMatch = !contactForm.clientAssociation && contactForm.company ? clients.find(cl => cl.name.toLowerCase() === (contactForm.company || "").toLowerCase() || cl.name.toLowerCase() === (contactForm.vendorName || "").toLowerCase()) : null;
+                  const effectiveValue = contactForm.clientAssociation || (autoMatch ? autoMatch.name : "");
+                  return (
+                    <>
+                      <select value={effectiveValue} onChange={e => updateCF("clientAssociation", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: effectiveValue ? "1px solid #3da5db40" : "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
+                        <option value="">None — not linked to a client</option>
+                        {clients.map(cl => <option key={cl.id} value={cl.name}>{cl.name}{cl.code ? ` (${cl.code})` : ""}</option>)}
+                      </select>
+                      {effectiveValue && (
+                        <div style={{ marginTop: 4, fontSize: 9, color: "#3da5db", display: "flex", alignItems: "center", gap: 4 }}>
+                          <span>🔗</span> {autoMatch && !contactForm.clientAssociation ? "Auto-matched" : "Linked"} to client: <span style={{ fontWeight: 700 }}>{effectiveValue}</span>
+                          {autoMatch && !contactForm.clientAssociation && <button onClick={() => updateCF("clientAssociation", autoMatch.name)} style={{ background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 4, padding: "1px 6px", color: "#3da5db", fontSize: 8, fontWeight: 700, cursor: "pointer", marginLeft: 4 }}>Confirm</button>}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><PhoneWithCode value={contactForm.phone} onChange={v => updateCF("phone", v)} /></div>
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>EMAIL</label><input value={contactForm.email} onChange={e => updateCF("email", e.target.value)} placeholder="name@company.com" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} /></div>
@@ -5213,7 +5417,7 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ fontSize: 15, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a", letterSpacing: 0.5 }}>
                 {generateProjectCode(newProjectForm) || "YY-MMDD_MMDD-CLIENT-PROJECT-LOC"}
               </div>
-              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Format: YEAR-EVENTSTART_END-CLIENT-PROJECT-LOCATION</div>
+              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4 }}>Format: YEAR-CLIENT-PROJECT-LOCATION</div>
             </div>
 
             <div style={{ padding: "20px 28px 24px" }}>
