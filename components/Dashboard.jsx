@@ -3784,6 +3784,28 @@ export default function Dashboard({ user, onLogout }) {
                         ))}
                       </div>
 
+                      {/* Summary stats - top */}
+                      {todoistKey && adptvProjects.length > 0 && (
+                        <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TOTAL TASKS</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{adptvTasks.length}</div>
+                          </div>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DUE TODAY</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{adptvTasks.filter(t => t.due?.date === today).length}</div>
+                          </div>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "#ff4a6b", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff4a6b" }}>{adptvTasks.filter(t => t.due?.date && t.due.date < today).length}</div>
+                          </div>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>PROJECTS</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{adptvProjects.length}</div>
+                          </div>
+                        </div>
+                      )}
+
                       {!todoistKey ? (
                         <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, padding: 40, textAlign: "center" }}>
                           <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
@@ -3879,25 +3901,6 @@ export default function Dashboard({ user, onLogout }) {
                               </div>
                             );
                           })}
-                          {/* Summary stats */}
-                          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-                            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TOTAL TASKS</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{adptvTasks.length}</div>
-                            </div>
-                            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DUE TODAY</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{adptvTasks.filter(t => t.due?.date === today).length}</div>
-                            </div>
-                            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                              <div style={{ fontSize: 9, color: "#ff4a6b", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff4a6b" }}>{adptvTasks.filter(t => t.due?.date && t.due.date < today).length}</div>
-                            </div>
-                            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                              <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>PROJECTS</div>
-                              <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{adptvProjects.length}</div>
-                            </div>
-                          </div>
                         </div>
                       )}
                     </div>
@@ -4652,6 +4655,28 @@ export default function Dashboard({ user, onLogout }) {
                         <button onClick={() => { if (todoistNewTask.trim()) { todoistAddTaskToProject(todoistNewTask.trim(), linkedTodoistId); setTodoistNewTask(""); } }} disabled={!todoistNewTask.trim()} style={{ padding: "10px 20px", background: todoistNewTask.trim() ? "#ff6b4a" : "var(--bgInput)", border: "none", borderRadius: 8, color: todoistNewTask.trim() ? "#fff" : "var(--textGhost)", cursor: todoistNewTask.trim() ? "pointer" : "default", fontSize: 13, fontWeight: 700 }}>+ Add</button>
                       </div>
 
+                      {/* Summary stats - top */}
+                      {projectTasks.length > 0 && (
+                        <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TASKS</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{projectTasks.length}</div>
+                          </div>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>DUE TODAY</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#ff6b4a" }}>{projectTasks.filter(t => t.due?.date === today).length}</div>
+                          </div>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: projectTasks.filter(t => t.due?.date && t.due.date < today).length > 0 ? "#ff4a6b" : "var(--text)" }}>{projectTasks.filter(t => t.due?.date && t.due.date < today).length}</div>
+                          </div>
+                          <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>SECTIONS</div>
+                            <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{todoistSections.filter(s => s.project_id === linkedTodoistId).length}</div>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Task list */}
                       {todoistLoading ? (
                         <div style={{ textAlign: "center", padding: 40, color: "var(--textFaint)" }}>Loading tasks...</div>
@@ -4815,18 +4840,6 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
                         );
                       })()}
-
-                      {/* Summary */}
-                      <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>TASKS</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{projectTasks.length}</div>
-                        </div>
-                        <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 16px", flex: 1, textAlign: "center" }}>
-                          <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 4 }}>OVERDUE</div>
-                          <div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: projectTasks.filter(t => t.due && t.due.date < today).length > 0 ? "#ff4a6b" : "var(--text)" }}>{projectTasks.filter(t => t.due && t.due.date < today).length}</div>
-                        </div>
-                      </div>
                     </div>
                   )}
                 </div>
