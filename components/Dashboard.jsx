@@ -1466,27 +1466,35 @@ function DashboardInner({ user, onLogout }) {
   const saveTimeoutRef = useRef(null);
 
   // ─── LOCALSTORAGE PERSISTENCE ───────────────────────────────────
-  const LS_VERSION = "v14L";
-  const loadLS = (key, fallback) => {
-    if (typeof window === 'undefined') return fallback;
+  const LS_VERSION = "v14L2";
+  // One-time version migration on mount
+  if (typeof window !== 'undefined') {
     try {
-      // Version migration: clear old data on version change
       const ver = localStorage.getItem('acc-version');
       if (ver !== LS_VERSION) {
-        // Keep theme, clear everything else
         const theme = localStorage.getItem('acc-theme');
         const keys = [];
         for (let i = 0; i < localStorage.length; i++) {
           const k = localStorage.key(i);
-          if (k && k.startsWith('acc-') && k !== 'acc-theme') keys.push(k);
+          if (k && k.startsWith('acc-')) keys.push(k);
         }
-        keys.forEach(k => localStorage.removeItem(k));
+        keys.forEach(function(k) { localStorage.removeItem(k); });
         localStorage.setItem('acc-version', LS_VERSION);
         if (theme) localStorage.setItem('acc-theme', theme);
-        return fallback;
       }
+    } catch (e) { /* ignore */ }
+  }
+  const loadLS = (key, fallback) => {
+    if (typeof window === 'undefined') return fallback;
+    try {
       const v = localStorage.getItem('acc-' + key);
-      return v ? JSON.parse(v) : fallback;
+      if (!v) return fallback;
+      const parsed = JSON.parse(v);
+      // If fallback is an array, ensure parsed is also an array
+      if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+      // If fallback is an object (not array), ensure parsed is an object
+      if (fallback && typeof fallback === 'object' && !Array.isArray(fallback) && (typeof parsed !== 'object' || Array.isArray(parsed))) return fallback;
+      return parsed;
     } catch (e) { return fallback; }
   };
   const saveLS = (key, value) => {
@@ -2352,7 +2360,7 @@ function DashboardInner({ user, onLogout }) {
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, dataLoaded]);
 
-  const project = projects.find(p => p.id === activeProjectId) || projects[0];
+  const project = (projects || []).find(p => p.id === activeProjectId) || (projects || [])[0] || { id: "p1", name: "Loading...", code: "", date: "", status: "", type: "", notes: "", driveFolder: "", driveFolderId: "", color: "#ff6b4a" };
   const updateProject = (key, val) => {
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
     if (["status", "location", "client", "name"].includes(key)) {
