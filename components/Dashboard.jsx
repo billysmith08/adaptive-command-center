@@ -1564,17 +1564,20 @@ export default function Dashboard({ user, onLogout }) {
     if (ownerEmails.includes(email)) return { role: "owner", projectAccess: "all", hiddenSections: [] };
     return p || { role: "editor", projectAccess: "all", hiddenSections: [] };
   };
-  const currentUserPerms = getUserPerms(user?.email);
+  const [editingUserPerms, setEditingUserPerms] = useState(null); // email being configured
+  const [previewingAs, setPreviewingAs] = useState(null); // email being previewed
+  const currentUserPerms = previewingAs ? getUserPerms(previewingAs) : getUserPerms(user?.email);
   const canSeeProject = (projectId) => {
-    if (currentUserPerms.role === "owner" || currentUserPerms.role === "admin") return true;
+    if (!previewingAs && (currentUserPerms.role === "owner" || currentUserPerms.role === "admin")) return true;
+    if (previewingAs && (getUserPerms(previewingAs).role === "owner" || getUserPerms(previewingAs).role === "admin")) return true;
     if (currentUserPerms.projectAccess === "all") return true;
     return (currentUserPerms.projectAccess || []).includes(projectId);
   };
   const canSeeSection = (sectionKey) => {
-    if (currentUserPerms.role === "owner" || currentUserPerms.role === "admin") return true;
+    if (!previewingAs && (currentUserPerms.role === "owner" || currentUserPerms.role === "admin")) return true;
+    if (previewingAs && (getUserPerms(previewingAs).role === "owner" || getUserPerms(previewingAs).role === "admin")) return true;
     return !(currentUserPerms.hiddenSections || []).includes(sectionKey);
   };
-  const [editingUserPerms, setEditingUserPerms] = useState(null); // email being configured
   
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
@@ -1922,12 +1925,38 @@ export default function Dashboard({ user, onLogout }) {
 
     if (editingVendorId) {
       // EDIT existing vendor
+      const oldVendor = vendors.find(v => v.id === editingVendorId);
       setVendors(prev => prev.map(v => v.id !== editingVendorId ? v : {
         ...v, name, type: vendorForm.resourceType || v.type,
         email: vendorForm.email, contact: contactName,
         phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
         deptId: vendorForm.dept, address: finalAddress,
       }));
+      // Sync changes to matching Global Contacts
+      if (oldVendor) {
+        setContacts(prev => prev.map(c => {
+          // Match by old vendor name, old contact name, or company
+          const oldName = (oldVendor.name || '').toLowerCase();
+          const oldContact = (oldVendor.contact || '').toLowerCase();
+          const cName = (c.name || '').toLowerCase();
+          const cCompany = (c.company || '').toLowerCase();
+          const isMatch = cName === oldName || cName === oldContact || cCompany === oldName;
+          if (!isMatch) return c;
+          // Update the matching contact with new vendor info
+          return {
+            ...c,
+            name: cName === oldContact ? contactName : (cName === oldName ? name : c.name),
+            phone: vendorForm.phone || c.phone,
+            email: vendorForm.email || c.email,
+            company: vendorForm.company || c.company,
+            position: vendorForm.title || c.position,
+            address: finalAddress || c.address,
+            department: vendorForm.dept || c.department,
+            resourceType: vendorForm.resourceType || c.resourceType,
+            vendorName: name,
+          };
+        }));
+      }
       logActivity("vendor", `edited "${name}"`, project?.name);
       setEditingVendorId(null);
       setVendorForm({ ...emptyVendorForm });
@@ -2406,6 +2435,23 @@ export default function Dashboard({ user, onLogout }) {
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(${darkMode ? "0.6" : "0"}); cursor: pointer; }
       `}</style>
 
+      {/* PREVIEW MODE BANNER */}
+      {previewingAs && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14, padding: "8px 24px", background: "linear-gradient(90deg, #3da5db18, #3da5db08)", borderBottom: "2px solid #3da5db40", position: "sticky", top: 0, zIndex: 10000 }}>
+          <span style={{ fontSize: 11, color: "#3da5db", fontWeight: 700, letterSpacing: 0.5 }}>👁 PREVIEWING AS</span>
+          <span style={{ fontSize: 12, color: "#3da5db", fontFamily: "'JetBrains Mono', monospace", fontWeight: 600 }}>{previewingAs}</span>
+          <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "#3da5db15", color: "#3da5db", fontWeight: 700, textTransform: "uppercase" }}>{getUserPerms(previewingAs).role}</span>
+          <span style={{ color: "var(--textGhost)", fontSize: 10 }}>·</span>
+          <span style={{ fontSize: 10, color: "var(--textFaint)" }}>
+            {getUserPerms(previewingAs).projectAccess === "all" ? "All projects" : `${(getUserPerms(previewingAs).projectAccess || []).length} projects`}
+            {(getUserPerms(previewingAs).hiddenSections || []).length > 0 && ` · ${(getUserPerms(previewingAs).hiddenSections || []).length} sections hidden`}
+          </span>
+          <button onClick={() => setPreviewingAs(null)} style={{ padding: "4px 14px", background: "#3da5db", border: "none", borderRadius: 5, color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer", letterSpacing: 0.3, marginLeft: 6 }}>
+            ✕ Exit Preview
+          </button>
+        </div>
+      )}
+
       {/* TOP BAR */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -2434,7 +2480,7 @@ export default function Dashboard({ user, onLogout }) {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Settings gear (admin only) */}
-          {canSeeSection("settings") && isAdmin && (
+          {(canSeeSection("settings") || previewingAs) && isAdmin && (
             <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title="Settings">
               <span style={{ fontSize: 12 }}>⚙️</span>
               <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>SETTINGS</span>
@@ -2616,7 +2662,7 @@ export default function Dashboard({ user, onLogout }) {
                     <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={22} fontWeight={700} color="var(--text)" /></h1>
                     <select value={project.projectType || ""} onChange={e => updateProject("projectType", e.target.value)} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, fontWeight: 700, cursor: "pointer", outline: "none", appearance: "auto", background: (PT_COLORS[project.projectType] || "var(--textMuted)") + "15", border: `1px solid ${(PT_COLORS[project.projectType] || "var(--textMuted)")}30`, color: PT_COLORS[project.projectType] || "var(--textMuted)", letterSpacing: 0.5 }}>
                       <option value="">No Type</option>
-                      {PROJECT_TYPES.slice().sort().map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
+                      {[...new Set([...PROJECT_TYPES, ...(appSettings.projectTypes || [])])].filter(Boolean).sort().map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
                     </select>
                   </div>
                 </div>
@@ -3106,7 +3152,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STATUS</div>
-                    <Dropdown value={project.status} options={STATUSES} onChange={v => updateProject("status", v)} colors={STATUS_COLORS} width="100%" />
+                    <Dropdown value={project.status} options={[...new Set([...STATUSES, ...(appSettings.statuses || [])])].filter(Boolean)} onChange={v => updateProject("status", v)} colors={{...STATUS_COLORS, ...Object.fromEntries((appSettings.statuses || []).filter(s => !STATUS_COLORS[s]).map(s => [s, { bg: "#9b6dff10", text: "#9b6dff", dot: "#9b6dff" }]))}} width="100%" />
                   </div>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>EVENT DATES</div>
@@ -3301,7 +3347,7 @@ export default function Dashboard({ user, onLogout }) {
                         {overdueLabel && <div style={{ fontSize: 8, fontWeight: 700, color: overdueLabel.color, marginTop: 2 }}>{overdueLabel.text}</div>}
                       </div>
                       <EditableText value={wb.task} onChange={v => updateWB(wb.id, "task", v)} fontSize={12} color={wb.isEvent ? "#ff6b4a" : "var(--text)"} fontWeight={wb.isEvent ? 700 : 500} placeholder="Task name..." />
-                      <MultiDropdown values={wb.depts} options={DEPT_OPTIONS} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
+                      <MultiDropdown values={wb.depts} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
                       <Dropdown value={wb.owner} options={eventContactNames} onChange={v => updateWB(wb.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                       <Dropdown value={wb.status} options={WB_STATUSES} onChange={v => updateWB(wb.id, "status", v)} colors={Object.fromEntries(WB_STATUSES.map(s => [s, { bg: WB_STATUS_STYLES[s].bg, text: WB_STATUS_STYLES[s].text, dot: WB_STATUS_STYLES[s].text }]))} width="100%" />
                       <button onClick={() => setWorkback(p => p.filter(w => w.id !== wb.id))} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
@@ -3344,7 +3390,7 @@ export default function Dashboard({ user, onLogout }) {
                           <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "65px 1.6fr 0.7fr 1fr 0.9fr 0.7fr 0.7fr 1fr 30px", padding: "6px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isS ? "var(--bgCard)" : isW ? "var(--bgInput)" : "transparent" }}>
                             <EditableText value={entry.time} onChange={v => updateROS(entry.id, "time", v)} fontSize={10} color={isS ? "#ff6b4a" : "var(--textMuted)"} placeholder="Time" />
                             <EditableText value={entry.item} onChange={v => updateROS(entry.id, "item", v)} fontSize={11} color={isS ? "#ff6b4a" : "var(--textSub)"} fontWeight={isS ? 700 : 500} placeholder="Item..." />
-                            <Dropdown value={entry.dept} options={DEPT_OPTIONS} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
+                            <Dropdown value={entry.dept} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
                             <MultiDropdown values={entry.vendors} options={vendors.map(v => v.id)} onChange={v => updateROS(entry.id, "vendors", v)} colorMap={Object.fromEntries(vendors.map(v => [v.id, DEPT_COLORS[v.deptId] || "var(--textMuted)"]))} renderLabel={id => { const v = vendors.find(x => x.id === id); return v ? v.name.split(" ")[0] : id; }} />
                             <EditableText value={entry.location} onChange={v => updateROS(entry.id, "location", v)} fontSize={10} color="var(--textMuted)" placeholder="Location" />
                             <Dropdown value={entry.contact} options={eventContactNames} onChange={v => updateROS(entry.id, "contact", v)} width="100%" allowBlank blankLabel="—" />
@@ -3668,7 +3714,7 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts, roles, depts..." style={{ padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 220 }} />
-                        <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={DEPT_OPTIONS} projectRoles={appSettings.projectRoles} onCreateContact={(c) => {
+                        <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} projectRoles={appSettings.projectRoles} onCreateContact={(c) => {
                           setContacts(prev => {
                             if (prev.find(x => x.name.toLowerCase() === c.name.toLowerCase())) return prev;
                             return [...prev, { ...c, id: c.id || `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }];
@@ -3720,7 +3766,7 @@ export default function Dashboard({ user, onLogout }) {
                                 ) : (
                                   <select value={person.dept || ""} onChange={e => changePersonDept(person, e.target.value)} style={{ padding: "3px 4px", background: dc ? `${dc}15` : "var(--bgInput)", border: `1px solid ${dc ? dc + "30" : "var(--borderSub)"}`, borderRadius: 4, color: dc || "var(--textFaint)", fontSize: 8, fontWeight: 600, cursor: "pointer", outline: "none", appearance: "auto", maxWidth: 90 }}>
                                     <option value="">None</option>
-                                    {DEPT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                                    {[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort().map(d => <option key={d} value={d}>{d}</option>)}
                                   </select>
                                 )}
                               </div>
@@ -3903,6 +3949,11 @@ export default function Dashboard({ user, onLogout }) {
                             )}
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                            {!isThisOwner && (
+                              <button onClick={() => { setPreviewingAs(email); setShowSettings(false); }} style={{ padding: "3px 8px", background: "none", border: "1px solid var(--borderSub)", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>
+                                👁 Preview
+                              </button>
+                            )}
                             {!isThisOwner && (
                               <button onClick={() => setEditingUserPerms(isExpanded ? null : email)} style={{ padding: "3px 8px", background: "none", border: `1px solid ${isExpanded ? "var(--borderActive)" : "var(--borderSub)"}`, borderRadius: 4, color: isExpanded ? "#dba94e" : "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>
                                 {isExpanded ? "▾ Close" : "⚙ Access"}
@@ -4273,71 +4324,71 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Statuses</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {appSettings.statuses.map((s, i) => (
-                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                      {(appSettings.statuses || []).filter(Boolean).map((s, i) => (
+                        <span key={s + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {s}
-                          <button onClick={() => { setAppSettings(prev => ({ ...prev, statuses: prev.statuses.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, statuses: prev.statuses.filter(v => v !== s) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
                     <input placeholder="Add status + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
-                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, statuses: [...prev.statuses, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { const v = e.target.value.trim(); setAppSettings(prev => ({ ...prev, statuses: [...(prev.statuses || []).filter(Boolean), v] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
                   {/* Project Types */}
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Types</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {appSettings.projectTypes.map((t, i) => (
-                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                      {(appSettings.projectTypes || []).filter(Boolean).map((t, i) => (
+                        <span key={t + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {t}
-                          <button onClick={() => { setAppSettings(prev => ({ ...prev, projectTypes: prev.projectTypes.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, projectTypes: prev.projectTypes.filter(v => v !== t) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
                     <input placeholder="Add project type + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
-                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, projectTypes: [...prev.projectTypes, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { const v = e.target.value.trim(); setAppSettings(prev => ({ ...prev, projectTypes: [...(prev.projectTypes || []).filter(Boolean), v] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
                   {/* Departments */}
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Departments</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {appSettings.departments.map((d, i) => (
-                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                      {(appSettings.departments || []).filter(Boolean).map((d, i) => (
+                        <span key={d + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {d}
-                          <button onClick={() => { setAppSettings(prev => ({ ...prev, departments: prev.departments.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, departments: prev.departments.filter(v => v !== d) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
                     <input placeholder="Add department + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
-                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, departments: [...prev.departments, e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { const v = e.target.value.trim(); setAppSettings(prev => ({ ...prev, departments: [...(prev.departments || []).filter(Boolean), v] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
                   {/* Resource Types */}
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Resource Types</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
                       {(appSettings.resourceTypes || []).filter(Boolean).slice().sort().map((rt, i) => (
-                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                        <span key={rt + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {rt}
                           <button onClick={() => { setAppSettings(prev => ({ ...prev, resourceTypes: prev.resourceTypes.filter(v => v !== rt) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
                     <input placeholder="Add resource type + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
-                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, resourceTypes: [...(prev.resourceTypes || []), e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { const v = e.target.value.trim(); setAppSettings(prev => ({ ...prev, resourceTypes: [...(prev.resourceTypes || []).filter(Boolean), v] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
                   {/* Project Roles */}
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Roles</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {(appSettings.projectRoles || []).map((r, i) => (
-                        <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
+                      {(appSettings.projectRoles || []).filter(Boolean).map((r, i) => (
+                        <span key={r + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {r}
-                          <button onClick={() => { setAppSettings(prev => ({ ...prev, projectRoles: prev.projectRoles.filter((_, j) => j !== i) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
+                          <button onClick={() => { setAppSettings(prev => ({ ...prev, projectRoles: prev.projectRoles.filter(v => v !== r) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
                         </span>
                       ))}
                     </div>
                     <input placeholder="Add role + Enter" style={{ padding: "6px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textSub)", fontSize: 11, outline: "none", width: 200 }}
-                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { setAppSettings(prev => ({ ...prev, projectRoles: [...(prev.projectRoles || []), e.target.value.trim()] })); setSettingsDirty(true); e.target.value = ""; } }} />
+                      onKeyDown={(e) => { if (e.key === "Enter" && e.target.value.trim()) { const v = e.target.value.trim(); setAppSettings(prev => ({ ...prev, projectRoles: [...(prev.projectRoles || []).filter(Boolean), v] })); setSettingsDirty(true); e.target.value = ""; } }} />
                   </div>
                 </div>
               )}
@@ -4597,7 +4648,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label>
                   <select value={contactForm.department} onChange={e => updateCF("department", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
                     <option value="">Select...</option>
-                    {DEPT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                    {[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort().map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                 </div>
               </div>
@@ -4692,7 +4743,7 @@ export default function Dashboard({ user, onLogout }) {
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 4 }}>PROJECT TYPE</label>
                   <select value={newProjectForm.projectType || ""} onChange={e => updateNPF("projectType", e.target.value)} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: `1px solid ${(PT_COLORS[newProjectForm.projectType] || "var(--borderSub)")}40`, borderRadius: 7, color: PT_COLORS[newProjectForm.projectType] || "var(--text)", fontSize: 12, fontWeight: 600, outline: "none" }}>
                     <option value="">Select type...</option>
-                    {PROJECT_TYPES.slice().sort().map(t => <option key={t} value={t}>{t}</option>)}
+                    {[...new Set([...PROJECT_TYPES, ...(appSettings.projectTypes || [])])].filter(Boolean).sort().map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
@@ -5016,7 +5067,7 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ marginBottom: 24 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Department</label>
                 <select value={vendorForm.dept} onChange={e => updateVF("dept", e.target.value)} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", appearance: "auto" }}>
-                  {DEPT_OPTIONS.map(d => <option key={d} value={d}>{d}</option>)}
+                  {[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort().map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
 
