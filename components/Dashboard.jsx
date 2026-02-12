@@ -1479,8 +1479,8 @@ export default function Dashboard({ user, onLogout }) {
     textSize: "adptv_textSize",
     version: "adptv_version",
   };
-  const lsGet = (key, fallback) => { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } };
-  const lsSave = (key, value) => { try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.warn("localStorage save failed:", key, e); } };
+  const lsGet = (key, fallback) => { try { if (typeof window === 'undefined') return fallback; const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; } };
+  const lsSave = (key, value) => { try { if (typeof window === 'undefined') return; localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.warn("localStorage save failed:", key, e); } };
   
   const [projects, setProjects] = useState(() => {
     const saved = lsGet(LS_KEYS.projects, null);
@@ -1496,7 +1496,7 @@ export default function Dashboard({ user, onLogout }) {
       const newProjects = defaults.filter(d => !savedIds.has(d.id));
       return [...merged, ...newProjects];
     }
-    return initProjects;
+    return initProjects();
   });
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
