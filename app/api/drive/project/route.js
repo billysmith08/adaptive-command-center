@@ -97,6 +97,10 @@ export async function POST(request) {
       return handleEnsure(body);
     }
 
+    if (action === 'scan-vendors') {
+      return handleScanVendors(body);
+    }
+
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   } catch (err) {
     console.error('Drive project error:', err);
@@ -267,5 +271,143 @@ async function handleUpload(request) {
       size: res.data.size ? parseInt(res.data.size) : null,
       modified: res.data.modifiedTime,
     },
+  });
+}
+
+// ─── Classify a file by name into a doc type ───
+function classifyFile(fileName) {
+  const lower = fileName.toLowerCase();
+  if (/inv|invoice/.test(lower)) return 'invoice';
+  if (/w[\-\s]?9/.test(lower)) return 'w9';
+  if (/coi|cert.*ins|insurance|workers?\s*comp/.test(lower)) return 'coi';
+  if (/contract|agreement|sow|scope/.test(lower)) return 'contract';
+  if (/bank|ach|routing|wire/.test(lower)) return 'banking';
+  return null; // unclassified
+}
+
+// ─── Scan project ADMIN/VENDORS for vendor docs ───
+async function handleScanVendors(body) {
+  const { projectFolderId } = body;
+  if (!projectFolderId) {
+    return NextResponse.json({ error: 'Missing projectFolderId' }, { status: 400 });
+  }
+
+  const drive = getDriveClient(true);
+  const sharedDrive = await findSharedDrive(drive);
+  if (!sharedDrive) {
+    return NextResponse.json({ error: `Shared drive "${SHARED_DRIVE_NAME}" not found` }, { status: 404 });
+  }
+  const driveId = sharedDrive.id;
+
+  // Navigate to ADMIN/VENDORS inside the project folder
+  const adminFolder = await findFolderInParent(drive, driveId, projectFolderId, 'ADMIN');
+  if (!adminFolder) {
+    return NextResponse.json({ success: true, vendors: {}, message: 'No ADMIN folder found' });
+  }
+  const vendorsFolder = await findFolderInParent(drive, driveId, adminFolder.id, 'VENDORS');
+  if (!vendorsFolder) {
+    return NextResponse.json({ success: true, vendors: {}, message: 'No VENDORS folder found' });
+  }
+
+  // Scan VENDORS folder — could be flat (VENDORS/VendorName/files) or nested (VENDORS/Category/VendorName/files)
+  const vendors = {};
+
+  async function scanFolder(parentId, depth) {
+    const res = await drive.files.list({
+      q: `'${parentId}' in parents and trashed=false`,
+      fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
+      orderBy: 'name',
+      pageSize: 200,
+      ...SD,
+      corpora: 'drive',
+      driveId,
+    });
+    const items = res.data.files || [];
+    const subfolders = items.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+    const files = items.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+
+    if (files.length > 0) {
+      // This folder contains files — it's a vendor folder
+      const vendorName = items.length > 0 ? null : null; // We use the folder name from the caller
+      return { hasFiles: true, files };
+    }
+
+    // Only subfolders — recurse into them (category or vendor folders)
+    if (subfolders.length > 0 && depth < 3) {
+      for (const sub of subfolders) {
+        // Check if this subfolder has files (= vendor) or more folders (= category)
+        const innerRes = await drive.files.list({
+          q: `'${sub.id}' in parents and trashed=false`,
+          fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
+          orderBy: 'name',
+          pageSize: 100,
+          ...SD,
+          corpora: 'drive',
+          driveId,
+        });
+        const innerItems = innerRes.data.files || [];
+        const innerFiles = innerItems.filter(f => f.mimeType !== 'application/vnd.google-apps.folder');
+        const innerFolders = innerItems.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+
+        if (innerFiles.length > 0) {
+          // This subfolder has files — it's a vendor folder
+          const vendorDocs = {};
+          for (const file of innerFiles) {
+            const docType = classifyFile(file.name);
+            if (docType) {
+              if (!vendorDocs[docType]) {
+                vendorDocs[docType] = { done: true, file: file.name, link: file.webViewLink, modified: file.modifiedTime };
+              }
+            } else {
+              // Unclassified files — store as "other"
+              if (!vendorDocs.other) vendorDocs.other = [];
+              vendorDocs.other.push({ name: file.name, link: file.webViewLink });
+            }
+          }
+          vendors[sub.name] = { docs: vendorDocs, fileCount: innerFiles.length, folderId: sub.id };
+        }
+
+        // If it has more folders, recurse (category folder like "Operations")
+        if (innerFolders.length > 0 && depth < 2) {
+          for (const innerSub of innerFolders) {
+            const deepRes = await drive.files.list({
+              q: `'${innerSub.id}' in parents and trashed=false and mimeType!='application/vnd.google-apps.folder'`,
+              fields: 'files(id, name, mimeType, webViewLink, modifiedTime)',
+              orderBy: 'name',
+              pageSize: 50,
+              ...SD,
+              corpora: 'drive',
+              driveId,
+            });
+            const deepFiles = deepRes.data.files || [];
+            if (deepFiles.length > 0) {
+              const vendorDocs = {};
+              for (const file of deepFiles) {
+                const docType = classifyFile(file.name);
+                if (docType) {
+                  if (!vendorDocs[docType]) {
+                    vendorDocs[docType] = { done: true, file: file.name, link: file.webViewLink, modified: file.modifiedTime };
+                  }
+                } else {
+                  if (!vendorDocs.other) vendorDocs.other = [];
+                  vendorDocs.other.push({ name: file.name, link: file.webViewLink });
+                }
+              }
+              vendors[innerSub.name] = { docs: vendorDocs, fileCount: deepFiles.length, folderId: innerSub.id };
+            }
+          }
+        }
+      }
+    }
+    return { hasFiles: false };
+  }
+
+  await scanFolder(vendorsFolder.id, 0);
+
+  return NextResponse.json({
+    success: true,
+    vendors,
+    vendorCount: Object.keys(vendors).length,
+    scannedAt: new Date().toISOString(),
   });
 }
