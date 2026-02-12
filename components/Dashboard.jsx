@@ -1466,7 +1466,7 @@ function DashboardInner({ user, onLogout }) {
   const saveTimeoutRef = useRef(null);
 
   // ─── LOCALSTORAGE PERSISTENCE ───────────────────────────────────
-  const LS_VERSION = "v14L2";
+  const LS_VERSION = "v14L3_FIXED"; // Bumped to clear corrupted data
   // One-time version migration on mount
   if (typeof window !== 'undefined') {
     try {
@@ -1519,7 +1519,11 @@ function DashboardInner({ user, onLogout }) {
 
   const defaultContacts = [...systemContacts, ...expandCSVContacts()];
 
-  const [projects, setProjects] = useState(() => loadLS('projects', initProjects));
+  const [projects, setProjects] = useState(() => {
+    const loaded = loadLS('projects', initProjects);
+    // Immediate validation: if loaded data is not an array, use default
+    return Array.isArray(loaded) ? loaded : initProjects;
+  });
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('acc-theme');
@@ -1691,7 +1695,7 @@ function DashboardInner({ user, onLogout }) {
   const [assignContactPopover, setAssignContactPopover] = useState(null); // { contactId, selectedProject, selectedRole }
   const [contacts, setContacts] = useState(() => {
     const saved = loadLS('contacts', null);
-    if (!saved) return defaultContacts;
+    if (!saved || !Array.isArray(saved)) return defaultContacts;
     // Migration: if saved contacts exist but no CSV contacts, merge them in
     const hasCSV = saved.some(c => c.id && c.id.startsWith('ct_csv_'));
     if (!hasCSV) return [...saved, ...expandCSVContacts()];
@@ -2361,9 +2365,14 @@ function DashboardInner({ user, onLogout }) {
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
   }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, dataLoaded]);
 
-  const project = (projects || []).find(p => p.id === activeProjectId) || (projects || [])[0] || { id: "p1", name: "Loading...", code: "", date: "", status: "", type: "", notes: "", driveFolder: "", driveFolderId: "", color: "#ff6b4a" };
+  // Defensive guard: ensure projects is always an array to prevent crashes
+  const safeProjects = Array.isArray(projects) ? projects : [];
+  const project = safeProjects.find(p => p.id === activeProjectId) || safeProjects[0] || { id: "p1", name: "Loading...", code: "", date: "", status: "", type: "", notes: "", driveFolder: "", driveFolderId: "", color: "#ff6b4a" };
   const updateProject = (key, val) => {
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
+    setProjects(prev => {
+      const safePrev = Array.isArray(prev) ? prev : [];
+      return safePrev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p);
+    });
     if (["status", "location", "client", "name"].includes(key)) {
       logActivity("updated", `${key} → "${val}"`, project?.name);
     }
