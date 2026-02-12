@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { createClient } from "@/lib/supabase-browser";
 import { useEditor, EditorContent } from "@tiptap/react";
