@@ -1466,13 +1466,15 @@ export default function Dashboard({ user, onLogout }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
   const [forceSaveCounter, setForceSaveCounter] = useState(0);
-  const saveTimeoutRef = useRef(null);
-  
   // ─── LOCAL STORAGE PERSISTENCE (post-mount hydration for SSR safety) ──
   const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", progress: "adptv_progress", comments: "adptv_comments", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
   const lsHydrated = useRef(false);
-  const pendingSaveRef = useRef(null); // holds the state object for beforeunload flush
-  const remoteSyncRef = useRef(0); // timestamp of last remote sync — prevents save loops
+  // Per-slice sync guards: { projects: timestamp, contacts: timestamp, ... }
+  const remoteSyncTimes = useRef({});
+  // Per-slice debounce timers
+  const sliceTimers = useRef({});
+  // Slice keys
+  const SLICE_KEYS = ['projects', 'contacts', 'clients', 'projectVendors', 'projectWorkback', 'projectProgress', 'projectComments', 'projectROS', 'rosDayDates', 'activityLog'];
   
   const [projects, setProjects] = useState(initProjects);
   const [darkMode, setDarkMode] = useState(() => {
@@ -2812,107 +2814,133 @@ export default function Dashboard({ user, onLogout }) {
     if (!user) return;
     (async () => {
       try {
-        const { data, error } = await supabase
+        // Fetch ALL rows from shared_state
+        const { data: allRows, error } = await supabase
           .from('shared_state')
-          .select('state, updated_at')
-          .eq('id', 'shared')
-          .single();
+          .select('id, state, updated_at');
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
-        if (data?.state) {
-          // Always use Supabase as source of truth for multi-user sync
-          remoteSyncRef.current = Date.now();
-          try { localStorage.setItem(LS_KEYS.updatedAt, data.updated_at || new Date().toISOString()); } catch {}
-          const s = data.state;
-          // Sanitize projects: ensure all array fields are actually arrays
+        
+        const rowMap = {};
+        (allRows || []).forEach(r => { rowMap[r.id] = r; });
+        
+        // Check if we have individual slice rows or just the old 'shared' blob
+        const hasSlices = SLICE_KEYS.some(k => rowMap[k]);
+        const hasShared = rowMap['shared']?.state;
+        
+        // Mark all as remote so initial load doesn't trigger saves
+        SLICE_KEYS.forEach(k => { remoteSyncTimes.current[k] = Date.now(); });
+        
+        if (hasSlices) {
+          // ─── LOAD FROM INDIVIDUAL SLICE ROWS ────────────────────
+          console.log('Loading from per-slice rows');
+          const s = {};
+          SLICE_KEYS.forEach(k => { s[k] = rowMap[k]?.state; });
+          
           if (s.projects && Array.isArray(s.projects)) {
             const clientNameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
-            setProjects(s.projects.map(p => ({
-              ...p,
-              client: clientNameMap[p.client] || p.client,
-              producers: Array.isArray(p.producers) ? p.producers : [],
-              managers: Array.isArray(p.managers) ? p.managers : [],
-              staff: Array.isArray(p.staff) ? p.staff : [],
-              pocs: Array.isArray(p.pocs) ? p.pocs : [],
-              clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [],
-              billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [],
-              services: Array.isArray(p.services) ? p.services : [],
-              subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
-              contactOrder: Array.isArray(p.contactOrder) ? p.contactOrder : [],
-              parentId: p.parentId || null,
-            })));
+            setProjects(s.projects.map(p => ({ ...p, client: clientNameMap[p.client] || p.client, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], contactOrder: Array.isArray(p.contactOrder) ? p.contactOrder : [], parentId: p.parentId || null })));
           }
-          // Sanitize per-project maps: ensure each project's list is an array
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => {
-              safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({
-                ...v,
-                compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } },
-              })) : [];
-            });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback && typeof s.projectWorkback === 'object') {
-            const safe = {};
-            Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; });
-            setProjectWorkback(safe);
+            const safe = {}; Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; }); setProjectWorkback(safe);
           }
           if (s.projectProgress && typeof s.projectProgress === 'object') {
-            const safe = {};
-            Object.keys(s.projectProgress).forEach(k => {
-              const v = s.projectProgress[k];
-              safe[k] = { rows: Array.isArray(v?.rows) ? v.rows : [], locations: Array.isArray(v?.locations) ? v.locations : [] };
-            });
-            setProjectProgress(safe);
+            const safe = {}; Object.keys(s.projectProgress).forEach(k => { const v = s.projectProgress[k]; safe[k] = { rows: Array.isArray(v?.rows) ? v.rows : [], locations: Array.isArray(v?.locations) ? v.locations : [] }; }); setProjectProgress(safe);
           }
           if (s.projectComments && typeof s.projectComments === 'object') {
-            const safe = {};
-            Object.keys(s.projectComments).forEach(k => { safe[k] = Array.isArray(s.projectComments[k]) ? s.projectComments[k] : []; });
-            setProjectComments(safe);
+            const safe = {}; Object.keys(s.projectComments).forEach(k => { safe[k] = Array.isArray(s.projectComments[k]) ? s.projectComments[k] : []; }); setProjectComments(safe);
           }
           if (s.projectROS && typeof s.projectROS === 'object') {
-            const safe = {};
-            Object.keys(s.projectROS).forEach(k => {
-              safe[k] = Array.isArray(s.projectROS[k]) ? s.projectROS[k].map(r => ({ ...r, vendors: Array.isArray(r.vendors) ? r.vendors : [] })) : [];
-            });
-            setProjectROS(safe);
+            const safe = {}; Object.keys(s.projectROS).forEach(k => { safe[k] = Array.isArray(s.projectROS[k]) ? s.projectROS[k].map(r => ({ ...r, vendors: Array.isArray(r.vendors) ? r.vendors : [] })) : []; }); setProjectROS(safe);
           }
           if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
           if (s.clients && Array.isArray(s.clients)) {
-            // Migrate client names to match Drive folders
             const nameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
             const migrated = s.clients.map(c => ({ ...c, name: nameMap[c.name] || c.name }));
-            // Deduplicate by name (keep first occurrence)
-            const seen = new Set();
-            const deduped = migrated.filter(c => { const k = c.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-            setClients(deduped);
+            const seen = new Set(); setClients(migrated.filter(c => { const k = c.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }));
           }
+        } else if (hasShared) {
+          // ─── MIGRATE FROM OLD 'shared' BLOB ────────────────────
+          console.log('Migrating from shared blob to per-slice rows...');
+          const s = rowMap['shared'].state;
+          
+          // Apply to React state (same sanitization as before)
+          if (s.projects && Array.isArray(s.projects)) {
+            const clientNameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
+            setProjects(s.projects.map(p => ({ ...p, client: clientNameMap[p.client] || p.client, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], contactOrder: Array.isArray(p.contactOrder) ? p.contactOrder : [], parentId: p.parentId || null })));
+          }
+          if (s.projectVendors && typeof s.projectVendors === 'object') {
+            const safe = {};
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
+            setProjectVendors(safe);
+          }
+          if (s.projectWorkback) { const safe = {}; Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; }); setProjectWorkback(safe); }
+          if (s.projectProgress) { const safe = {}; Object.keys(s.projectProgress).forEach(k => { const v = s.projectProgress[k]; safe[k] = { rows: Array.isArray(v?.rows) ? v.rows : [], locations: Array.isArray(v?.locations) ? v.locations : [] }; }); setProjectProgress(safe); }
+          if (s.projectComments) { const safe = {}; Object.keys(s.projectComments).forEach(k => { safe[k] = Array.isArray(s.projectComments[k]) ? s.projectComments[k] : []; }); setProjectComments(safe); }
+          if (s.projectROS) { const safe = {}; Object.keys(s.projectROS).forEach(k => { safe[k] = Array.isArray(s.projectROS[k]) ? s.projectROS[k].map(r => ({ ...r, vendors: Array.isArray(r.vendors) ? r.vendors : [] })) : []; }); setProjectROS(safe); }
+          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
+          if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
+          if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
+          if (s.clients && Array.isArray(s.clients)) {
+            const nameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
+            const migrated = s.clients.map(c => ({ ...c, name: nameMap[c.name] || c.name }));
+            const seen = new Set(); setClients(migrated.filter(c => { const k = c.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }));
+          }
+          
+          // Write individual slice rows to Supabase (migration)
+          const now = new Date().toISOString();
+          const sliceData = {
+            projects: s.projects || [],
+            contacts: s.contacts || [],
+            clients: s.clients || [],
+            projectVendors: s.projectVendors || {},
+            projectWorkback: s.projectWorkback || {},
+            projectProgress: s.projectProgress || {},
+            projectComments: s.projectComments || {},
+            projectROS: s.projectROS || {},
+            rosDayDates: s.rosDayDates || {},
+            activityLog: s.activityLog || [],
+          };
+          const upserts = Object.entries(sliceData).map(([key, data]) => ({
+            id: key, state: data, updated_at: now, updated_by: user.id
+          }));
+          const { error: migError } = await supabase.from('shared_state').upsert(upserts, { onConflict: 'id' });
+          if (migError) console.error('Migration error:', migError);
+          else console.log('Migration complete: split shared blob into', SLICE_KEYS.length, 'slice rows');
         }
-        // ONE-TIME MERGE: Recover any contacts/clients/projects from localStorage that aren't in Supabase
-        // This handles data that was saved locally but never synced
+        
+        // ONE-TIME MERGE: Recover from localStorage
         try {
           const lsContacts = JSON.parse(localStorage.getItem(LS_KEYS.contacts) || "[]");
           const lsClients = JSON.parse(localStorage.getItem(LS_KEYS.clients) || "[]");
           const lsProjects = JSON.parse(localStorage.getItem(LS_KEYS.projects) || "[]");
-          const sbContactIds = new Set((s.contacts || []).map(c => c.id));
-          const sbClientIds = new Set((s.clients || []).map(c => c.id || c.name));
-          const sbProjectIds = new Set((s.projects || []).map(p => p.id));
+          const src = hasSlices ? {} : (hasShared ? rowMap['shared'].state : {});
+          const currentContacts = (hasSlices ? rowMap['contacts']?.state : src.contacts) || [];
+          const currentClients = (hasSlices ? rowMap['clients']?.state : src.clients) || [];
+          const currentProjects = (hasSlices ? rowMap['projects']?.state : src.projects) || [];
+          const sbContactIds = new Set(currentContacts.map(c => c.id));
+          const sbClientIds = new Set(currentClients.map(c => c.id || c.name));
+          const sbProjectIds = new Set(currentProjects.map(p => p.id));
           const missingContacts = lsContacts.filter(c => c.id && !sbContactIds.has(c.id));
           const missingClients = lsClients.filter(c => !sbClientIds.has(c.id || c.name));
           const missingProjects = lsProjects.filter(p => p.id && !sbProjectIds.has(p.id));
           if (missingContacts.length > 0 || missingClients.length > 0 || missingProjects.length > 0) {
-            console.log(`Recovery merge: +${missingContacts.length} contacts, +${missingClients.length} clients, +${missingProjects.length} projects from localStorage`);
+            console.log(`Recovery merge: +${missingContacts.length} contacts, +${missingClients.length} clients, +${missingProjects.length} projects`);
             if (missingContacts.length > 0) setContacts(prev => [...prev, ...missingContacts]);
             if (missingClients.length > 0) setClients(prev => [...prev, ...missingClients]);
             if (missingProjects.length > 0) setProjects(prev => [...prev, ...missingProjects.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null }))]);
-            // Mark as user edit so it saves to Supabase
-            remoteSyncRef.current = 0;
+            // Allow these merges to save (clear remote guard)
+            ['contacts', 'clients', 'projects'].forEach(k => { remoteSyncTimes.current[k] = 0; });
           }
         } catch (e) { console.warn('Recovery merge failed:', e); }
+        
         setDataLoaded(true);
-        // Sync compliance with Drive
         syncDriveCompliance();
       } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
     })();
@@ -2971,146 +2999,130 @@ export default function Dashboard({ user, onLogout }) {
     return () => clearInterval(interval);
   }, [user, dataLoaded]);
 
-  const saveToSupabase = useCallback(async (state) => {
+  // ─── PER-SLICE SAVE ──────────────────────────────────────────────
+  const sanitizeProjectsArr = (arr) => arr.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null }));
+
+  const saveSlice = useCallback(async (key, data) => {
     if (!user) return;
     setSaveStatus("saving");
     try {
       const now = new Date().toISOString();
       const { error } = await supabase
         .from('shared_state')
-        .update({ state, updated_at: now, updated_by: user.id })
-        .eq('id', 'shared');
+        .upsert({ id: key, state: data, updated_at: now, updated_by: user.id }, { onConflict: 'id' });
       if (error) {
-        console.error('Save error:', error);
+        console.error(`Save error (${key}):`, error);
         setSaveStatus("error");
-        // Retry once after 3 seconds
-        setTimeout(() => {
-          if (pendingSaveRef.current) {
-            console.log('Retrying save...');
-            saveToSupabase(pendingSaveRef.current);
-          }
-        }, 3000);
-      }
-      else {
+      } else {
         setSaveStatus("saved");
-        // Stamp localStorage so it matches Supabase
         try { localStorage.setItem(LS_KEYS.updatedAt, now); } catch {}
-        pendingSaveRef.current = null;
       }
     } catch (e) {
-      console.error('Save failed:', e);
+      console.error(`Save failed (${key}):`, e);
       setSaveStatus("error");
-      // Retry once after 3 seconds
-      setTimeout(() => {
-        if (pendingSaveRef.current) saveToSupabase(pendingSaveRef.current);
-      }, 3000);
     }
   }, [user, supabase]);
 
-  useEffect(() => {
-    if (!dataLoaded) return;
-    // Skip saves triggered by incoming remote sync (prevents overwrite loops)
-    if (Date.now() - remoteSyncRef.current < 3000) {
-      console.log('Skipping save — triggered by remote sync');
-      return;
-    }
-    const stateToSave = { projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients };
-    pendingSaveRef.current = stateToSave;
-    setSaveStatus("saving");
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    const delay = forceSaveCounter > 0 ? 50 : 800; // Immediate on Cmd+S
-    saveTimeoutRef.current = setTimeout(() => {
-      saveToSupabase(stateToSave);
-    }, delay);
-    return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients, dataLoaded, forceSaveCounter]);
+  // Helper: create a debounced save effect for a slice
+  const useSliceSave = (key, data) => {
+    useEffect(() => {
+      if (!dataLoaded) return;
+      // Skip if this state change was caused by incoming remote data
+      if (Date.now() - (remoteSyncTimes.current[key] || 0) < 3000) return;
+      if (sliceTimers.current[key]) clearTimeout(sliceTimers.current[key]);
+      const delay = forceSaveCounter > 0 ? 50 : 800;
+      sliceTimers.current[key] = setTimeout(() => saveSlice(key, data), delay);
+      return () => { if (sliceTimers.current[key]) clearTimeout(sliceTimers.current[key]); };
+    }, [data, dataLoaded, forceSaveCounter]);
+  };
 
-  // Flush pending save on tab close / navigate away
+  // Individual per-slice save effects
+  useSliceSave('projects', projects);
+  useSliceSave('contacts', contacts);
+  useSliceSave('clients', clients);
+  useSliceSave('projectVendors', projectVendors);
+  useSliceSave('projectWorkback', projectWorkback);
+  useSliceSave('projectProgress', projectProgress);
+  useSliceSave('projectComments', projectComments);
+  useSliceSave('projectROS', projectROS);
+  useSliceSave('rosDayDates', rosDayDates);
+  useSliceSave('activityLog', activityLog);
+
+  // Flush all pending saves on tab close
   useEffect(() => {
     const handleBeforeUnload = () => {
-      if (pendingSaveRef.current && user) {
-        // Use sendBeacon for reliable save on tab close
-        const payload = JSON.stringify({
-          state: pendingSaveRef.current,
-          updated_at: new Date().toISOString(),
-          updated_by: user.id
-        });
-        // Try sendBeacon first (most reliable for unload)
-        const beaconUrl = `${window.location.origin}/api/save-state`;
-        try { navigator.sendBeacon(beaconUrl, new Blob([payload], { type: 'application/json' })); } catch {}
-        // Also try synchronous XHR as fallback
+      if (!user) return;
+      const now = new Date().toISOString();
+      // Cancel pending timers and save immediately via sendBeacon
+      SLICE_KEYS.forEach(key => {
+        if (sliceTimers.current[key]) clearTimeout(sliceTimers.current[key]);
+      });
+      const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog };
+      Object.entries(slices).forEach(([key, data]) => {
         try {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', beaconUrl, false); // synchronous
-          xhr.setRequestHeader('Content-Type', 'application/json');
-          xhr.send(payload);
+          const payload = JSON.stringify({ key, state: data, updated_at: now, updated_by: user.id });
+          navigator.sendBeacon(`${window.location.origin}/api/save-state`, new Blob([payload], { type: 'application/json' }));
         } catch {}
-        pendingSaveRef.current = null;
-      }
+      });
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [user]);
+  }, [user, projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog]);
 
-  // ─── REALTIME SYNC ─────────────────────────────────────────────
-  const lastSyncRef = useRef(null);
+  // ─── REALTIME SYNC (per-slice) ──────────────────────────────────
+  const applyRemoteSlice = useCallback((key, data) => {
+    remoteSyncTimes.current[key] = Date.now();
+    if (key === 'projects' && Array.isArray(data)) setProjects(sanitizeProjectsArr(data));
+    else if (key === 'contacts' && Array.isArray(data)) setContacts(data);
+    else if (key === 'clients' && Array.isArray(data)) setClients(data);
+    else if (key === 'projectVendors' && data) setProjectVendors(data);
+    else if (key === 'projectWorkback' && data) setProjectWorkback(data);
+    else if (key === 'projectProgress' && data) setProjectProgress(data);
+    else if (key === 'projectComments' && data) setProjectComments(data);
+    else if (key === 'projectROS' && data) setProjectROS(data);
+    else if (key === 'rosDayDates' && data) setRosDayDates(data);
+    else if (key === 'activityLog' && Array.isArray(data)) setActivityLog(data);
+  }, []);
+
   useEffect(() => {
     if (!user || !supabase) return;
-    // Realtime channel for instant sync
+    // Listen to ALL rows in shared_state, route by id
     const channel = supabase.channel('shared-state-sync')
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'shared_state', filter: 'id=eq.shared' }, (payload) => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shared_state' }, (payload) => {
         const updatedBy = payload.new?.updated_by;
         if (updatedBy === user.id) return;
-        console.log('Realtime: received update from another user');
-        const s = payload.new?.state;
-        if (!s) return;
-        remoteSyncRef.current = Date.now();
-        if (s.projects && Array.isArray(s.projects)) setProjects(s.projects.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null })));
-        if (s.projectVendors) setProjectVendors(s.projectVendors);
-        if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
-        if (s.projectProgress) setProjectProgress(s.projectProgress);
-        if (s.projectComments) setProjectComments(s.projectComments);
-        if (s.projectROS) setProjectROS(s.projectROS);
-        if (s.rosDayDates) setRosDayDates(s.rosDayDates);
-        if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
-        if (s.clients && Array.isArray(s.clients)) setClients(s.clients);
-        if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
-        try { localStorage.setItem(LS_KEYS.updatedAt, payload.new?.updated_at || new Date().toISOString()); } catch {}
-        lastSyncRef.current = new Date().toISOString();
-        setClipboardToast({ text: "🔄 Synced changes from team", x: window.innerWidth / 2, y: 60 });
+        const key = payload.new?.id;
+        if (!key || key === 'shared' || !SLICE_KEYS.includes(key)) return;
+        console.log(`Realtime: ${key} updated by another user`);
+        applyRemoteSlice(key, payload.new?.state);
+        setClipboardToast({ text: `🔄 Synced ${key} from team`, x: window.innerWidth / 2, y: 60 });
         setTimeout(() => setClipboardToast(null), 2500);
       })
       .subscribe();
-    // Polling fallback every 30s (in case realtime isn't enabled on table)
+    // Polling fallback: check all slices every 8s
+    const sliceTimestamps = {};
     const pollInterval = setInterval(async () => {
       try {
-        const { data } = await supabase.from('shared_state').select('updated_at, updated_by').eq('id', 'shared').single();
+        const { data } = await supabase.from('shared_state').select('id, updated_at, updated_by').in('id', SLICE_KEYS);
         if (!data) return;
-        const localTs = localStorage.getItem(LS_KEYS.updatedAt);
-        if (data.updated_by !== user.id && data.updated_at && (!localTs || new Date(data.updated_at) > new Date(localTs))) {
-          console.log('Poll: detected newer remote state, fetching...');
-          const { data: full } = await supabase.from('shared_state').select('state, updated_at').eq('id', 'shared').single();
-          if (!full?.state) return;
-          remoteSyncRef.current = Date.now();
-          const s = full.state;
-          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null })));
-          if (s.projectVendors) setProjectVendors(s.projectVendors);
-          if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
-          if (s.projectProgress) setProjectProgress(s.projectProgress);
-          if (s.projectComments) setProjectComments(s.projectComments);
-          if (s.projectROS) setProjectROS(s.projectROS);
-          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
-          if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
-          if (s.clients && Array.isArray(s.clients)) setClients(s.clients);
-          if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
-          try { localStorage.setItem(LS_KEYS.updatedAt, full.updated_at); } catch {}
-          setClipboardToast({ text: "🔄 Synced changes from team", x: window.innerWidth / 2, y: 60 });
+        const changed = data.filter(row => row.updated_by !== user.id && row.updated_at && (!sliceTimestamps[row.id] || new Date(row.updated_at) > new Date(sliceTimestamps[row.id])));
+        if (changed.length === 0) return;
+        // Fetch full state for changed slices
+        const changedIds = changed.map(r => r.id);
+        const { data: full } = await supabase.from('shared_state').select('id, state, updated_at').in('id', changedIds);
+        if (!full) return;
+        full.forEach(row => {
+          applyRemoteSlice(row.id, row.state);
+          sliceTimestamps[row.id] = row.updated_at;
+        });
+        if (full.length > 0) {
+          setClipboardToast({ text: `🔄 Synced ${full.length} change${full.length > 1 ? 's' : ''} from team`, x: window.innerWidth / 2, y: 60 });
           setTimeout(() => setClipboardToast(null), 2500);
         }
       } catch (e) { console.warn('Sync poll error:', e); }
     }, 8000);
     return () => { supabase.removeChannel(channel); clearInterval(pollInterval); };
-  }, [user, supabase]);
+  }, [user, supabase, applyRemoteSlice]);
 
   const _rawProject = projects.find(p => p.id === activeProjectId) || projects[0];
   const project = _rawProject ? {
@@ -3846,7 +3858,7 @@ export default function Dashboard({ user, onLogout }) {
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast saved: ${(() => { try { return localStorage.getItem(LS_KEYS.updatedAt) || "never"; } catch { return "unknown"; } })()}`} onClick={() => { const stateToSave = { projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients }; pendingSaveRef.current = stateToSave; saveToSupabase(stateToSave); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ SYNCED"}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast saved: ${(() => { try { return localStorage.getItem(LS_KEYS.updatedAt) || "never"; } catch { return "unknown"; } })()}`} onClick={() => { const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog }; Object.entries(slices).forEach(([key, data]) => saveSlice(key, data)); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ SYNCED"}</span></div>
           <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
           {user && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{user.email}</span>}
           {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
