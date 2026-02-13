@@ -3045,6 +3045,49 @@ export default function Dashboard({ user, onLogout }) {
     });
   }, [dataLoaded]);
 
+  // ─── SYNC CLIENT CONTACTS → GLOBAL PARTNERS (once per session) ──
+  const clientSyncDone = useRef(false);
+  useEffect(() => {
+    if (!dataLoaded || clients.length === 0 || clientSyncDone.current) return;
+    clientSyncDone.current = true;
+    // Load dismissed contacts (ones user manually deleted — never re-add)
+    const dismissed = new Set(JSON.parse(localStorage.getItem("adptv_dismissed_contacts") || "[]"));
+    setContacts(prev => {
+      const existingNames = new Set(prev.map(c => c.name.toLowerCase().trim()));
+      const toAdd = [];
+      clients.forEach(cl => {
+        const companyName = cl.name || "";
+        const companyLower = companyName.toLowerCase().trim();
+        const candidates = [];
+        if (cl.contactName?.trim()) candidates.push({ name: cl.contactName, email: cl.contactEmail, phone: cl.contactPhone, address: cl.contactAddress, position: "Client Contact" });
+        if (cl.billingContact?.trim() && cl.billingContact !== cl.contactName) candidates.push({ name: cl.billingContact, email: cl.billingEmail, phone: cl.billingPhone, address: cl.billingAddress, position: "Billing Contact" });
+        (cl.contactNames || []).forEach(cn => {
+          if (cn?.trim() && cn !== cl.contactName && cn !== cl.billingContact) candidates.push({ name: cn, email: "", phone: "", address: "", position: "Contact" });
+        });
+        candidates.forEach(ct => {
+          const nameLower = ct.name.toLowerCase().trim();
+          if (nameLower === companyLower) return; // skip name=company
+          if (existingNames.has(nameLower)) return; // already exists
+          const dismissKey = nameLower + "|||" + companyLower;
+          if (dismissed.has(dismissKey)) return; // user deleted this before
+          existingNames.add(nameLower);
+          toAdd.push({
+            id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
+            name: ct.name, firstName: ct.name.split(" ")[0] || "", lastName: ct.name.split(" ").slice(1).join(" ") || "",
+            email: ct.email || "", phone: ct.phone || "", company: companyName,
+            position: ct.position, contactType: "Client", department: "", address: ct.address || "",
+            resourceType: "", vendorName: companyName, notes: "", source: "client"
+          });
+        });
+      });
+      if (toAdd.length > 0) {
+        console.log(`Client→Partner sync: adding ${toAdd.length} missing contacts to Global Partners`);
+        return [...prev, ...toAdd];
+      }
+      return prev;
+    });
+  }, [dataLoaded, clients]);
+
   // Auto-sync Drive compliance every 60 seconds
   useEffect(() => {
     if (!user || !dataLoaded) return;
@@ -4432,7 +4475,7 @@ export default function Dashboard({ user, onLogout }) {
                     {selectedContacts.size > 0 && (
                       <div style={{ padding: "8px 16px", background: "#ff6b4a08", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={{ fontSize: 11, fontWeight: 600, color: "#ff6b4a" }}>{selectedContacts.size} selected</span>
-                        <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { pushUndo("Delete contacts"); setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
+                        <button onClick={() => { if (confirm(`Delete ${selectedContacts.size} selected contact(s)?`)) { pushUndo("Delete contacts"); const toDelete = contacts.filter(c => selectedContacts.has(c.id)); const dismissed = new Set(JSON.parse(localStorage.getItem("adptv_dismissed_contacts") || "[]")); toDelete.forEach(c => { if (c.company) dismissed.add(c.name.toLowerCase().trim() + "|||" + c.company.toLowerCase().trim()); }); localStorage.setItem("adptv_dismissed_contacts", JSON.stringify([...dismissed])); setContacts(prev => prev.filter(c => !selectedContacts.has(c.id))); setSelectedContacts(new Set()); } }} style={{ padding: "4px 12px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>🗑 Delete Selected</button>
                         <button onClick={() => setSelectedContacts(new Set())} style={{ padding: "4px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕ Clear</button>
                       </div>
                     )}
@@ -4531,7 +4574,7 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
                           <button onClick={() => { setContactForm({ ...c, clientAssociation: c.clientAssociation || (clients.find(cl => cl.name.toLowerCase() === (c.company || c.vendorName || "").toLowerCase())?.name || "") }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => downloadVCard(c)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
-                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) { pushUndo("Delete contact"); setContacts(prev => prev.filter(x => x.id !== c.id)); } }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
+                          <button onClick={() => { if (confirm(`Remove ${c.name}?`)) { pushUndo("Delete contact"); if (c.company) { const dismissed = new Set(JSON.parse(localStorage.getItem("adptv_dismissed_contacts") || "[]")); dismissed.add(c.name.toLowerCase().trim() + "|||" + c.company.toLowerCase().trim()); localStorage.setItem("adptv_dismissed_contacts", JSON.stringify([...dismissed])); } setContacts(prev => prev.filter(x => x.id !== c.id)); } }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
                         </div>
                         {(() => {
                           const contactVendorName = c.vendorName || c.company || c.name;
