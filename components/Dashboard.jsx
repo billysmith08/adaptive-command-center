@@ -5869,11 +5869,94 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                   </div>
                 )}
+
+                {/* ═══ SATURATION BUDGET EMBED ═══ */}
+                <div style={{ marginTop: 22 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>SATURATION BUDGET</span>
+                      {project.saturationUrl && <a href={project.saturationUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, color: "#ff6b4a", textDecoration: "none", fontWeight: 600 }}>Open in Saturation ↗</a>}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {!project.saturationUrl && <span style={{ fontSize: 9, color: "var(--textGhost)" }}>Paste your Saturation project URL to embed the budget</span>}
+                      <button onClick={() => {
+                        const current = project.saturationUrl || "";
+                        const url = prompt("Saturation project URL:\n\nExample: https://app.saturation.io/weareadptv/26-04100413-guessjeans-coach26-indio/budget", current || `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+                        if (url !== null) updateProject("saturationUrl", url.trim());
+                      }} style={{ padding: "4px 10px", background: project.saturationUrl ? "var(--bgCard)" : "#ff6b4a15", border: `1px solid ${project.saturationUrl ? "var(--borderSub)" : "#ff6b4a30"}`, borderRadius: 6, color: project.saturationUrl ? "var(--textMuted)" : "#ff6b4a", cursor: "pointer", fontSize: 9, fontWeight: 700 }}>
+                        {project.saturationUrl ? "✏ Edit URL" : "🔗 Link Saturation"}
+                      </button>
+                    </div>
+                  </div>
+                  {project.saturationUrl ? (() => {
+                    const embedUrl = project.saturationUrl.includes("/budget") ? project.saturationUrl : project.saturationUrl.replace(/\/$/, "") + "/budget";
+                    return (
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden", position: "relative" }}>
+                        <iframe
+                          src={embedUrl}
+                          style={{ width: "100%", height: 600, border: "none", borderRadius: 12 }}
+                          title="Saturation Budget"
+                          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                        />
+                        <div id="saturation-fallback" style={{ display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, textAlign: "center" }}>
+                          <div style={{ fontSize: 28, marginBottom: 12 }}>🔒</div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>Saturation blocked the embed</div>
+                          <div style={{ fontSize: 11, color: "var(--textFaint)", marginBottom: 16 }}>Some apps don't allow embedding. Open it directly instead.</div>
+                          <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "10px 20px", background: "#ff6b4a", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, textDecoration: "none" }}>Open in Saturation →</a>
+                        </div>
+                      </div>
+                    );
+                  })() : (
+                    <div style={{ background: "var(--bgInput)", border: "2px dashed var(--borderSub)", borderRadius: 12, padding: "40px 20px", textAlign: "center" }}>
+                      <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--textMuted)", marginBottom: 4 }}>No Saturation project linked</div>
+                      <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 16 }}>Link this project to Saturation to see the live budget here.</div>
+                      <button onClick={() => {
+                        const url = prompt("Paste the Saturation project URL:\n\nExample: https://app.saturation.io/weareadptv/26-04100413-guessjeans-coach26-indio/budget", `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+                        if (url && url.trim()) updateProject("saturationUrl", url.trim());
+                      }} style={{ padding: "8px 20px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>🔗 Link Saturation Project</button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* ═══ BUDGET ═══ */}
-            {activeTab === "budget" && <div style={{ animation: "fadeUp 0.3s ease", textAlign: "center", padding: 60 }}><div style={{ fontSize: 40, marginBottom: 16 }}>📊</div><div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Saturation Budget Integration</div><div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>This tab pulls directly from Saturation. Role-based access coming.</div><a href="https://app.saturation.io/weareadptv" target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", padding: "10px 20px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 8, color: "#ff6b4a", fontWeight: 600, fontSize: 13, textDecoration: "none" }}>Open in Saturation →</a></div>}
+            {/* ═══ BUDGET (full Saturation embed) ═══ */}
+            {activeTab === "budget" && (() => {
+              const satUrl = project.saturationUrl;
+              const embedUrl = satUrl ? (satUrl.includes("/budget") ? satUrl : satUrl.replace(/\/$/, "") + "/budget") : null;
+              return (
+                <div style={{ animation: "fadeUp 0.3s ease" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Saturation Budget</span>
+                      {embedUrl && <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#ff6b4a", textDecoration: "none", fontWeight: 600 }}>Open in Saturation ↗</a>}
+                    </div>
+                    <button onClick={() => {
+                      const url = prompt("Saturation project URL:", satUrl || `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+                      if (url !== null) updateProject("saturationUrl", url.trim());
+                    }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+                      {satUrl ? "✏ Edit URL" : "🔗 Link Saturation"}
+                    </button>
+                  </div>
+                  {embedUrl ? (
+                    <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden" }}>
+                      <iframe src={embedUrl} style={{ width: "100%", height: "calc(100vh - 200px)", border: "none", borderRadius: 12 }} title="Saturation Budget" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" />
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: "center", padding: 60 }}>
+                      <div style={{ fontSize: 40, marginBottom: 16 }}>📊</div>
+                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Link Saturation to view the budget</div>
+                      <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>Paste the Saturation URL for this project to embed the live budget.</div>
+                      <button onClick={() => {
+                        const url = prompt("Paste the Saturation project URL:", `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+                        if (url && url.trim()) updateProject("saturationUrl", url.trim());
+                      }} style={{ display: "inline-flex", padding: "10px 20px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🔗 Link Saturation Project</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* ═══ TODOIST (PER-PROJECT) ═══ */}
             {activeTab === "todoist" && project && (() => {
