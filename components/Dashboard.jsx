@@ -3012,26 +3012,27 @@ export default function Dashboard({ user, onLogout }) {
     const toAdd = [];
     clients.forEach(cl => {
       const companyName = cl.name || "";
-      // Primary contact
-      if (cl.contactName && cl.contactName.trim()) {
-        const key = cl.contactName.toLowerCase() + "|||" + companyName.toLowerCase();
+      const companyLower = companyName.toLowerCase();
+      // Primary contact (skip if name = company name)
+      if (cl.contactName && cl.contactName.trim() && cl.contactName.toLowerCase() !== companyLower) {
+        const key = cl.contactName.toLowerCase() + "|||" + companyLower;
         if (!contactsByKey.has(key)) {
           toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cl.contactName, firstName: cl.contactName.split(" ")[0] || "", lastName: cl.contactName.split(" ").slice(1).join(" ") || "", email: cl.contactEmail || "", phone: cl.contactPhone || "", company: companyName, position: "Client Contact", contactType: "Client", department: "", address: cl.contactAddress || "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
           contactsByKey.set(key, true);
         }
       }
-      // Billing contact
-      if (cl.billingContact && cl.billingContact.trim() && cl.billingContact !== cl.contactName) {
-        const key = cl.billingContact.toLowerCase() + "|||" + companyName.toLowerCase();
+      // Billing contact (skip if name = company name)
+      if (cl.billingContact && cl.billingContact.trim() && cl.billingContact !== cl.contactName && cl.billingContact.toLowerCase() !== companyLower) {
+        const key = cl.billingContact.toLowerCase() + "|||" + companyLower;
         if (!contactsByKey.has(key)) {
           toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cl.billingContact, firstName: cl.billingContact.split(" ")[0] || "", lastName: cl.billingContact.split(" ").slice(1).join(" ") || "", email: cl.billingEmail || "", phone: cl.billingPhone || "", company: companyName, position: "Billing Contact", contactType: "Client", department: "", address: cl.billingAddress || "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
           contactsByKey.set(key, true);
         }
       }
-      // Additional contact names
+      // Additional contact names (skip if name = company name)
       (cl.contactNames || []).forEach(cn => {
-        if (cn && cn.trim() && cn !== cl.contactName && cn !== cl.billingContact) {
-          const key = cn.toLowerCase() + "|||" + companyName.toLowerCase();
+        if (cn && cn.trim() && cn !== cl.contactName && cn !== cl.billingContact && cn.toLowerCase() !== companyLower) {
+          const key = cn.toLowerCase() + "|||" + companyLower;
           if (!contactsByKey.has(key)) {
             toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cn, firstName: cn.split(" ")[0] || "", lastName: cn.split(" ").slice(1).join(" ") || "", email: "", phone: "", company: companyName, position: "Contact", contactType: "Client", department: "", address: "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
             contactsByKey.set(key, true);
@@ -3043,7 +3044,35 @@ export default function Dashboard({ user, onLogout }) {
       console.log(`Client→Partner sync: adding ${toAdd.length} contacts to Global Partners`);
       setContacts(prev => [...prev, ...toAdd]);
     }
+    // Cleanup: remove contacts where person name = company name (e.g. "Cloonee Touring LLC" as a person under "Cloonee Touring LLC")
+    setContacts(prev => {
+      const cleaned = prev.filter(c => {
+        if (!c.company || !c.name) return true;
+        return c.name.toLowerCase() !== c.company.toLowerCase();
+      });
+      if (cleaned.length < prev.length) console.log(`Cleanup: removed ${prev.length - cleaned.length} contacts where name = company`);
+      return cleaned.length < prev.length ? cleaned : prev;
+    });
   }, [clients, dataLoaded]);
+
+  // ─── SYNC GLOBAL PARTNERS → CLIENTS (reverse) ──────────────────
+  // When a contact has a company matching a client, auto-fill the client's contactName/email/phone if empty
+  useEffect(() => {
+    if (!dataLoaded || contacts.length === 0 || clients.length === 0) return;
+    let changed = false;
+    const updated = clients.map(cl => {
+      if (cl.contactName) return cl; // already has a primary contact
+      // Find first matching contact in Global Partners
+      const match = contacts.find(ct => ct.company && ct.company.toLowerCase() === cl.name.toLowerCase());
+      if (!match) return cl;
+      changed = true;
+      return { ...cl, contactName: match.name || "", contactEmail: match.email || cl.contactEmail || "", contactPhone: match.phone || cl.contactPhone || "", contactAddress: match.address || cl.contactAddress || "" };
+    });
+    if (changed) {
+      console.log('Partner→Client sync: populated empty client contacts from Global Partners');
+      setClients(updated);
+    }
+  }, [contacts, dataLoaded]);
 
   // Auto-sync Drive compliance every 60 seconds
   useEffect(() => {
@@ -4656,7 +4685,7 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
                           <div style={{ overflow: "hidden" }}>
                             <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={c.name}>{c.name}</div>
-                            {c.contactName && <div style={{ fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contactName}</div>}
+                            {(c.contactName || linkedContacts[0]?.name) && <div style={{ fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.contactName || linkedContacts[0]?.name}</div>}
                           </div>
                           {linkedContacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 6px", background: "#3da5db15", border: "1px solid #3da5db25", borderRadius: 10, color: "#3da5db", fontWeight: 700, flexShrink: 0 }}>{linkedContacts.length} {isExpanded ? "▴" : "▾"}</span>}
                           {linkedContacts.length === 0 && (c.contactName || c.billingContact || (c.contactNames || []).length > 0) && <span style={{ fontSize: 9, padding: "1px 6px", background: "#ff6b4a10", border: "1px solid #ff6b4a20", borderRadius: 10, color: "#ff6b4a", fontWeight: 700, flexShrink: 0 }}>{(c.contactName ? 1 : 0) + (c.billingContact && c.billingContact !== c.contactName ? 1 : 0) + (c.contactNames || []).filter(n => n && n !== c.contactName && n !== c.billingContact).length} {isExpanded ? "▴" : "▾"}</span>}
@@ -4680,17 +4709,19 @@ export default function Dashboard({ user, onLogout }) {
                           {(() => {
                             // Build combined list: client's own contacts + linked partners
                             const allContacts = [];
-                            // Add client's primary contact if exists
-                            if (c.contactName) allContacts.push({ id: "_primary_" + c.id, name: c.contactName, email: c.contactEmail, phone: c.contactPhone, position: "Client Contact", _source: "client" });
-                            // Add billing contact if different from primary
-                            if (c.billingContact && c.billingContact !== c.contactName) allContacts.push({ id: "_billing_" + c.id, name: c.billingContact, email: c.billingEmail, phone: c.billingPhone, position: "Billing Contact", _source: "client" });
-                            // Add additional contact names from CSV
+                            const companyNameLower = c.name.toLowerCase();
+                            // Add client's primary contact if exists (skip if name = company name)
+                            if (c.contactName && c.contactName.toLowerCase() !== companyNameLower) allContacts.push({ id: "_primary_" + c.id, name: c.contactName, email: c.contactEmail, phone: c.contactPhone, position: "Client Contact", _source: "client" });
+                            // Add billing contact if different from primary (skip if name = company name)
+                            if (c.billingContact && c.billingContact !== c.contactName && c.billingContact.toLowerCase() !== companyNameLower) allContacts.push({ id: "_billing_" + c.id, name: c.billingContact, email: c.billingEmail, phone: c.billingPhone, position: "Billing Contact", _source: "client" });
+                            // Add additional contact names from CSV (skip if name = company name)
                             (c.contactNames || []).forEach((cn, ci) => {
-                              if (cn && cn !== c.contactName && cn !== c.billingContact) allContacts.push({ id: "_cn_" + c.id + "_" + ci, name: cn, email: "", phone: "", position: "Contact", _source: "client" });
+                              if (cn && cn !== c.contactName && cn !== c.billingContact && cn.toLowerCase() !== companyNameLower) allContacts.push({ id: "_cn_" + c.id + "_" + ci, name: cn, email: "", phone: "", position: "Contact", _source: "client" });
                             });
-                            // Add linked Global Partners (deduplicate by name)
+                            // Add linked Global Partners (deduplicate by name, skip if name = company name)
                             const existingNames = new Set(allContacts.map(x => x.name.toLowerCase()));
                             linkedContacts.forEach(ct => {
+                              if (ct.name.toLowerCase() === companyNameLower) return;
                               if (!existingNames.has(ct.name.toLowerCase())) {
                                 allContacts.push({ ...ct, _source: "partner" });
                                 existingNames.add(ct.name.toLowerCase());
