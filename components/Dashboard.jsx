@@ -5896,7 +5896,7 @@ export default function Dashboard({ user, onLogout }) {
                           src={embedUrl}
                           style={{ width: "100%", height: 600, border: "none", borderRadius: 12 }}
                           title="Saturation Budget"
-                          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                         
                         />
                         <div id="saturation-fallback" style={{ display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, textAlign: "center" }}>
                           <div style={{ fontSize: 28, marginBottom: 12 }}>🔒</div>
@@ -5941,7 +5941,7 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   {embedUrl ? (
                     <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden" }}>
-                      <iframe src={embedUrl} style={{ width: "100%", height: "calc(100vh - 200px)", border: "none", borderRadius: 12 }} title="Saturation Budget" sandbox="allow-scripts allow-same-origin allow-popups allow-forms" />
+                      <iframe src={embedUrl} style={{ width: "100%", height: "calc(100vh - 200px)", border: "none", borderRadius: 12 }} title="Saturation Budget" />
                     </div>
                   ) : (
                     <div style={{ textAlign: "center", padding: 60 }}>
@@ -8935,7 +8935,7 @@ export default function Dashboard({ user, onLogout }) {
                   style={{ width: "100%", flex: 1, border: "none" }}
                   title={docPreview.fileName}
                   allow="autoplay"
-                  sandbox="allow-scripts allow-same-origin allow-popups"
+                 
                 />
               ) : (
                 /* No Drive link — show clear status, not a fake preview */
