@@ -1498,6 +1498,7 @@ export default function Dashboard({ user, onLogout }) {
   const lsHydrated = useRef(false);
   // Per-slice sync guards: { projects: timestamp, contacts: timestamp, ... }
   const remoteSyncTimes = useRef({});
+  const profileCheckDone = useRef(false);
   // Per-slice debounce timers
   const sliceTimers = useRef({});
   // Slice keys
@@ -4048,15 +4049,17 @@ export default function Dashboard({ user, onLogout }) {
     return () => { clearTimeout(retrackTimer); supabase.removeChannel(channel); };
   }, [dataLoaded, user, isUserAuthorized, supabase, JSON.stringify((appSettings.userProfiles || {})[user?.email])]);
 
-  // ─── FIRST-LOGIN PROFILE CHECK ──────────────────────────────────
+  // ─── FIRST-LOGIN PROFILE CHECK (runs once per session) ───────────
   useEffect(() => {
     if (!dataLoaded || !user?.email || !isUserAuthorized) return;
-    const profiles = appSettings.userProfiles || {};
-    if (!profiles[user.email]) {
-      // First time this user logs in — show profile setup
+    if (profileCheckDone.current) return; // only check once per session
+    profileCheckDone.current = true;
+    const profile = (appSettings.userProfiles || {})[user.email];
+    if (!profile || !profile.setupAt) {
+      // No profile or never completed setup — show welcome modal
       setShowProfileSetup(true);
     }
-  }, [dataLoaded, user, isUserAuthorized, appSettings.userProfiles]);
+  }, [dataLoaded, user, isUserAuthorized]);
 
   // ─── SAVE USER PROFILE ──────────────────────────────────────────
   const saveUserProfile = async (profileData) => {
@@ -8382,7 +8385,7 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 </div>
                 <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid var(--borderSub)" }}>
-                  {existingProfile.firstName && <button onClick={() => setShowProfileSetup(false)} style={{ padding: "10px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Skip</button>}
+                  <button onClick={() => setShowProfileSetup(false)} style={{ padding: "10px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Skip for now</button>
                   <button disabled={!canSave} onClick={() => saveUserProfile(pf)} style={{ padding: "10px 28px", background: canSave ? "#ff6b4a" : "#ff6b4a40", border: "none", borderRadius: 8, color: "#fff", cursor: canSave ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700, opacity: canSave ? 1 : 0.5 }}>Save Profile</button>
                 </div>
               </div>
