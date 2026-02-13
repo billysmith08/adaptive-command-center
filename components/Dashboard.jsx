@@ -928,7 +928,7 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
         <span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8 }}>{label}</span>
         <div style={{ display: "flex", gap: 6 }}>
           <PocPullDropdown contacts={contacts} existingPocs={items} searchLabel={searchLabel} onSelect={(c) => {
-            onUpdate([...(items || []), { name: c.name, phone: c.phone || "", email: c.email || "", address: c.notes?.match(/(?:Home|Office|Address):\s*([^\n·]+)/i)?.[1]?.trim() || "", fromContacts: true }]);
+            onUpdate([...(items || []), { name: c.name, phone: c.phone || "", email: c.email || "", address: c.address || c.notes?.match(/(?:Home|Office|Address):\s*([^\n·]+)/i)?.[1]?.trim() || "", fromContacts: true }]);
           }} />
           <button onClick={() => onUpdate([...(items || []), { name: "", phone: "", email: "", address: "", fromContacts: false }])} style={{ padding: "3px 8px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 4, color: "#ff6b4a", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>+ Add</button>
         </div>
@@ -1628,6 +1628,8 @@ export default function Dashboard({ user, onLogout }) {
   
   const [search, setSearch] = useState("");
   const [sidebarStatusFilter, setSidebarStatusFilter] = useState("");
+  const [sidebarDateFilter, setSidebarDateFilter] = useState(""); // "upcoming", "past", "this-month", "this-quarter", ""
+  const [collapseSubProjects, setCollapseSubProjects] = useState(false);
   const [sidebarW, setSidebarW] = useState(280);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -2501,12 +2503,15 @@ export default function Dashboard({ user, onLogout }) {
 
   // Project code generator: YY-CLIENT-PROJECT-LOCATION
   const generateProjectCode = (p) => {
-    const clean = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12);
+    const clean = (s) => (s || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const yr = p.eventDates?.start ? p.eventDates.start.slice(2, 4) : new Date().getFullYear().toString().slice(2);
-    const client = clean(p.client).slice(0, 8) || "CLIENT";
-    const proj = clean(p.name).slice(0, 14) || "PROJECT";
+    const mo = p.eventDates?.start ? p.eventDates.start.slice(5, 7) : String(new Date().getMonth() + 1).padStart(2, "0");
+    // Use client's company code if available, otherwise abbreviate client name
+    const clientObj = clients.find(cl => cl.name?.toLowerCase() === (p.client || "").toLowerCase());
+    const clientCode = clean(clientObj?.code || p.client).slice(0, 10) || "CLIENT";
+    const proj = clean(p.name).slice(0, 20) || "PROJECT";
     const loc = clean(p.location?.split(",")[0]).slice(0, 8) || "TBD";
-    return `${yr}-${client}-${proj}-${loc}`;
+    return `${yr}-${mo}-${clientCode}-${proj}-${loc}`;
   };
 
   const emptyProject = { name: "", client: "", location: "", why: "", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, budget: 0, spent: 0, services: [] };
@@ -3002,49 +3007,9 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
 
-  // ─── SYNC CLIENT CONTACTS → GLOBAL PARTNERS ─────────────────────
-  // Ensures all client contact names, billing contacts, and additional contacts
-  // are also present in the Global Partners (contacts) list
+  // ─── ONE-TIME CLEANUP: remove contacts where person name = company name ──
   useEffect(() => {
-    if (!dataLoaded || clients.length === 0) return;
-    const contactsByKey = new Map();
-    contacts.forEach(c => contactsByKey.set((c.name || "").toLowerCase() + "|||" + (c.company || "").toLowerCase(), c));
-    const toAdd = [];
-    clients.forEach(cl => {
-      const companyName = cl.name || "";
-      const companyLower = companyName.toLowerCase();
-      // Primary contact (skip if name = company name)
-      if (cl.contactName && cl.contactName.trim() && cl.contactName.toLowerCase() !== companyLower) {
-        const key = cl.contactName.toLowerCase() + "|||" + companyLower;
-        if (!contactsByKey.has(key)) {
-          toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cl.contactName, firstName: cl.contactName.split(" ")[0] || "", lastName: cl.contactName.split(" ").slice(1).join(" ") || "", email: cl.contactEmail || "", phone: cl.contactPhone || "", company: companyName, position: "Client Contact", contactType: "Client", department: "", address: cl.contactAddress || "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
-          contactsByKey.set(key, true);
-        }
-      }
-      // Billing contact (skip if name = company name)
-      if (cl.billingContact && cl.billingContact.trim() && cl.billingContact !== cl.contactName && cl.billingContact.toLowerCase() !== companyLower) {
-        const key = cl.billingContact.toLowerCase() + "|||" + companyLower;
-        if (!contactsByKey.has(key)) {
-          toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cl.billingContact, firstName: cl.billingContact.split(" ")[0] || "", lastName: cl.billingContact.split(" ").slice(1).join(" ") || "", email: cl.billingEmail || "", phone: cl.billingPhone || "", company: companyName, position: "Billing Contact", contactType: "Client", department: "", address: cl.billingAddress || "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
-          contactsByKey.set(key, true);
-        }
-      }
-      // Additional contact names (skip if name = company name)
-      (cl.contactNames || []).forEach(cn => {
-        if (cn && cn.trim() && cn !== cl.contactName && cn !== cl.billingContact && cn.toLowerCase() !== companyLower) {
-          const key = cn.toLowerCase() + "|||" + companyLower;
-          if (!contactsByKey.has(key)) {
-            toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cn, firstName: cn.split(" ")[0] || "", lastName: cn.split(" ").slice(1).join(" ") || "", email: "", phone: "", company: companyName, position: "Contact", contactType: "Client", department: "", address: "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
-            contactsByKey.set(key, true);
-          }
-        }
-      });
-    });
-    if (toAdd.length > 0) {
-      console.log(`Client→Partner sync: adding ${toAdd.length} contacts to Global Partners`);
-      setContacts(prev => [...prev, ...toAdd]);
-    }
-    // Cleanup: remove contacts where person name = company name (e.g. "Cloonee Touring LLC" as a person under "Cloonee Touring LLC")
+    if (!dataLoaded) return;
     setContacts(prev => {
       const cleaned = prev.filter(c => {
         if (!c.company || !c.name) return true;
@@ -3053,26 +3018,7 @@ export default function Dashboard({ user, onLogout }) {
       if (cleaned.length < prev.length) console.log(`Cleanup: removed ${prev.length - cleaned.length} contacts where name = company`);
       return cleaned.length < prev.length ? cleaned : prev;
     });
-  }, [clients, dataLoaded]);
-
-  // ─── SYNC GLOBAL PARTNERS → CLIENTS (reverse) ──────────────────
-  // When a contact has a company matching a client, auto-fill the client's contactName/email/phone if empty
-  useEffect(() => {
-    if (!dataLoaded || contacts.length === 0 || clients.length === 0) return;
-    let changed = false;
-    const updated = clients.map(cl => {
-      if (cl.contactName) return cl; // already has a primary contact
-      // Find first matching contact in Global Partners
-      const match = contacts.find(ct => ct.company && ct.company.toLowerCase() === cl.name.toLowerCase());
-      if (!match) return cl;
-      changed = true;
-      return { ...cl, contactName: match.name || "", contactEmail: match.email || cl.contactEmail || "", contactPhone: match.phone || cl.contactPhone || "", contactAddress: match.address || cl.contactAddress || "" };
-    });
-    if (changed) {
-      console.log('Partner→Client sync: populated empty client contacts from Global Partners');
-      setClients(updated);
-    }
-  }, [contacts, dataLoaded]);
+  }, [dataLoaded]);
 
   // Auto-sync Drive compliance every 60 seconds
   useEffect(() => {
@@ -3710,10 +3656,25 @@ export default function Dashboard({ user, onLogout }) {
   const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
   const filteredProjects = (() => {
+    const today = new Date().toISOString().slice(0, 10);
+    const thisMonthStart = today.slice(0, 7) + "-01";
+    const thisMonthEnd = new Date(new Date(thisMonthStart).setMonth(new Date(thisMonthStart).getMonth() + 1) - 1).toISOString().slice(0, 10);
+    const q = Math.floor(new Date().getMonth() / 3);
+    const thisQStart = `${new Date().getFullYear()}-${String(q * 3 + 1).padStart(2, "0")}-01`;
+    const thisQEnd = new Date(new Date(thisQStart).setMonth(new Date(thisQStart).getMonth() + 3) - 1).toISOString().slice(0, 10);
     const visible = projects.filter(p => {
       if (!canSeeProject(p.id)) return false;
       if (!showArchived && p.archived) return false;
       if (sidebarStatusFilter && p.status !== sidebarStatusFilter) return false;
+      if (sidebarDateFilter) {
+        const ed = p.eventDates?.start || "";
+        if (!ed && sidebarDateFilter !== "no-date") return false;
+        if (sidebarDateFilter === "upcoming" && ed < today) return false;
+        if (sidebarDateFilter === "past" && ed >= today) return false;
+        if (sidebarDateFilter === "this-month" && (ed < thisMonthStart || ed > thisMonthEnd)) return false;
+        if (sidebarDateFilter === "this-quarter" && (ed < thisQStart || ed > thisQEnd)) return false;
+        if (sidebarDateFilter === "no-date" && ed) return false;
+      }
       return p.name.toLowerCase().includes(search.toLowerCase()) || (p.client || "").toLowerCase().includes(search.toLowerCase());
     });
     // Separate parents and children
@@ -3729,12 +3690,16 @@ export default function Dashboard({ user, onLogout }) {
     const ordered = [];
     parents.forEach(parent => {
       ordered.push(parent);
-      const subs = children.filter(c => c.parentId === parent.id);
-      subs.sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
-      subs.forEach(c => ordered.push(c));
+      if (!collapseSubProjects) {
+        const subs = children.filter(c => c.parentId === parent.id);
+        subs.sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
+        subs.forEach(c => ordered.push(c));
+      }
     });
     // Add orphan children (parent not visible / deleted)
-    children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
+    if (!collapseSubProjects) {
+      children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
+    }
     return ordered;
   })();
   const archivedCount = projects.filter(p => p.archived).length;
@@ -3967,10 +3932,23 @@ export default function Dashboard({ user, onLogout }) {
               <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'" }} />
               <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>
             </div>
-            <select value={sidebarStatusFilter} onChange={e => setSidebarStatusFilter(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: sidebarStatusFilter ? "#ff6b4a10" : "var(--bgCard)", border: `1px solid ${sidebarStatusFilter ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, color: sidebarStatusFilter ? "#ff6b4a" : "var(--textFaint)", fontSize: 10, fontWeight: 600, outline: "none", marginBottom: 8, cursor: "pointer" }}>
+            <select value={sidebarStatusFilter} onChange={e => setSidebarStatusFilter(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: sidebarStatusFilter ? "#ff6b4a10" : "var(--bgCard)", border: `1px solid ${sidebarStatusFilter ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, color: sidebarStatusFilter ? "#ff6b4a" : "var(--textFaint)", fontSize: 10, fontWeight: 600, outline: "none", marginBottom: 4, cursor: "pointer" }}>
               <option value="">All Statuses</option>
               {[...new Set(projects.map(p => p.status).filter(Boolean))].sort().map(s => <option key={s} value={s}>{s}</option>)}
             </select>
+            <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+              <select value={sidebarDateFilter} onChange={e => setSidebarDateFilter(e.target.value)} style={{ flex: 1, padding: "6px 10px", background: sidebarDateFilter ? "#3da5db10" : "var(--bgCard)", border: `1px solid ${sidebarDateFilter ? "#3da5db30" : "var(--borderSub)"}`, borderRadius: 7, color: sidebarDateFilter ? "#3da5db" : "var(--textFaint)", fontSize: 10, fontWeight: 600, outline: "none", cursor: "pointer" }}>
+                <option value="">All Dates</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="past">Past</option>
+                <option value="this-month">This Month</option>
+                <option value="this-quarter">This Quarter</option>
+                <option value="no-date">No Date</option>
+              </select>
+              <button onClick={() => setCollapseSubProjects(!collapseSubProjects)} style={{ padding: "6px 8px", background: collapseSubProjects ? "#9b6dff10" : "var(--bgCard)", border: `1px solid ${collapseSubProjects ? "#9b6dff30" : "var(--borderSub)"}`, borderRadius: 7, color: collapseSubProjects ? "#9b6dff" : "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600, whiteSpace: "nowrap" }} title={collapseSubProjects ? "Show sub-projects" : "Hide sub-projects"}>
+                {collapseSubProjects ? "▸ Subs" : "▾ Subs"}
+              </button>
+            </div>
             <button onClick={() => { setNewProjectForm({ ...emptyProject }); setShowAddProject(true); }} style={{ width: "100%", padding: "7px 12px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <span style={{ fontSize: 13 }}>+</span> New Project
             </button>
@@ -4951,7 +4929,7 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                   );
                 })()}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
+                <div style={{ display: "grid", gridTemplateColumns: project.parentId ? "1fr 1fr 1fr 1fr 1fr" : "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STATUS</div>
                     <Dropdown value={project.status} options={[...new Set([...STATUSES, ...(appSettings.statuses || [])])].filter(Boolean)} onChange={v => updateProject("status", v)} colors={{...STATUS_COLORS, ...Object.fromEntries((appSettings.statuses || []).filter(s => !STATUS_COLORS[s]).map(s => [s, { bg: "#9b6dff10", text: "#9b6dff", dot: "#9b6dff" }]))}} width="100%" />
@@ -5001,7 +4979,15 @@ export default function Dashboard({ user, onLogout }) {
                           }];
                         }
                       }
-                      return <ContactListBlock label="CLIENT" searchLabel="🔍 Search Clients" items={effectiveClientContacts} contacts={clients.map(cl => ({ id: cl.id, name: cl.name, phone: cl.contactPhone || cl.billingPhone || "", email: cl.contactEmail || cl.billingEmail || "", company: cl.name, position: "Client", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") }))} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
+                      return <ContactListBlock label="CLIENT" searchLabel="🔍 Search Clients" items={effectiveClientContacts} contacts={clients.flatMap(cl => {
+                        const result = [];
+                        // Add the contact person (not the company name)
+                        if (cl.contactName && cl.contactName.toLowerCase() !== cl.name.toLowerCase()) result.push({ id: cl.id + "_ct", name: cl.contactName, phone: cl.contactPhone || "", email: cl.contactEmail || "", company: cl.name, position: "Client Contact", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") });
+                        if (cl.billingContact && cl.billingContact !== cl.contactName && cl.billingContact.toLowerCase() !== cl.name.toLowerCase()) result.push({ id: cl.id + "_bl", name: cl.billingContact, phone: cl.billingPhone || "", email: cl.billingEmail || "", company: cl.name, position: "Billing Contact", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") });
+                        // Also add the company itself as fallback
+                        result.push({ id: cl.id, name: cl.name, phone: cl.contactPhone || cl.billingPhone || "", email: cl.contactEmail || cl.billingEmail || "", company: cl.name, position: "Client", address: [cl.address, cl.city, cl.state, cl.zip].filter(Boolean).join(", ") });
+                        return result;
+                      })} onViewContact={viewContact} copyToClipboard={copyToClipboard} showAddress onUpdateGlobalContact={updateGlobalContact} onUpdate={v => updateProject("clientContacts", v)} onSaveToGlobal={(poc, pi) => {
                       const exists = contacts.find(c => c.name.toLowerCase() === poc.name.toLowerCase());
                       if (!exists) { const names = poc.name.split(" "); setContacts(prev => [...prev, { id: `ct_${Date.now()}`, name: poc.name, firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: poc.phone, email: poc.email, company: project.client, position: "Client", department: "", address: poc.address || "", notes: `Client for ${project.name}`, source: "project" }]); }
                       const arr = [...(project.clientContacts || [])]; arr[pi] = { ...arr[pi], fromContacts: true }; updateProject("clientContacts", arr);
@@ -5718,6 +5704,21 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 10, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>
                       Path: ADPTV LLC → CLIENTS → [Client] → [Year] → [Project Code]
                     </div>
+                    <div style={{ marginTop: 16 }}>
+                      <button onClick={() => {
+                        const input = prompt("Or paste a Google Drive folder URL or folder ID to link directly:");
+                        if (!input) return;
+                        let folderId = input.trim();
+                        const urlMatch = folderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                        if (urlMatch) folderId = urlMatch[1];
+                        if (!folderId) return;
+                        const folderLink = "https://drive.google.com/drive/folders/" + folderId;
+                        setProjects(prev => prev.map(p => p.id === project.id ? { ...p, driveFolderId: folderId, driveFolderLink: folderLink, drivePath: "Linked folder" } : p));
+                        driveBrowse(folderId, project.code || project.name, true);
+                      }} style={{ padding: "8px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        🔗 Link Existing Folder
+                      </button>
+                    </div>
                   </div>
                 ) : !project.driveFolderId && !projDriveEnsuring ? (
                   /* Has client + code but no folder yet */
@@ -5733,6 +5734,21 @@ export default function Dashboard({ user, onLogout }) {
                     <button onClick={() => ensureProjectDrive(project).then(data => { if (data?.folderId) driveBrowse(data.folderId, project.code, true); })} style={{ padding: "10px 24px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                       📁 Create Folder Structure
                     </button>
+                    <div style={{ marginTop: 12 }}>
+                      <button onClick={() => {
+                        const input = prompt("Paste Google Drive folder URL or folder ID:");
+                        if (!input) return;
+                        let folderId = input.trim();
+                        const urlMatch = folderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                        if (urlMatch) folderId = urlMatch[1];
+                        if (!folderId) return;
+                        const folderLink = "https://drive.google.com/drive/folders/" + folderId;
+                        setProjects(prev => prev.map(p => p.id === project.id ? { ...p, driveFolderId: folderId, driveFolderLink: folderLink, drivePath: "Linked folder" } : p));
+                        driveBrowse(folderId, project.code || project.name, true);
+                      }} style={{ padding: "8px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textFaint)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        🔗 Link Existing Folder
+                      </button>
+                    </div>
                   </div>
                 ) : projDriveEnsuring ? (
                   <div style={{ textAlign: "center", padding: 60, color: "var(--textFaint)" }}>
@@ -5778,6 +5794,25 @@ export default function Dashboard({ user, onLogout }) {
                           </button>
                         </React.Fragment>
                       ))}
+                    </div>
+
+                    {/* Drive folder path + relink */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>📁 {project.drivePath || ("CLIENTS/" + project.client + "/2026/" + project.code)}</span>
+                      <button onClick={() => {
+                        const input = prompt("Paste Google Drive folder URL or folder ID:\n\n(e.g. https://drive.google.com/drive/folders/1abc... or just the folder ID)", project.driveFolderId || "");
+                        if (!input) return;
+                        let folderId = input.trim();
+                        const urlMatch = folderId.match(/folders\/([a-zA-Z0-9_-]+)/);
+                        if (urlMatch) folderId = urlMatch[1];
+                        if (!folderId) return;
+                        const folderLink = "https://drive.google.com/drive/folders/" + folderId;
+                        setProjects(prev => prev.map(p => p.id === project.id ? { ...p, driveFolderId: folderId, driveFolderLink: folderLink, drivePath: "Custom linked folder" } : p));
+                        driveBrowse(folderId, project.code || project.name, true);
+                      }} style={{ padding: "2px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600 }} title="Change Drive folder">✎ Relink</button>
+                      <button onClick={() => {
+                        setProjects(prev => prev.map(p => p.id === project.id ? { ...p, driveFolderId: undefined, driveFolderLink: undefined, drivePath: undefined } : p));
+                      }} style={{ padding: "2px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 4, color: "var(--textGhost)", cursor: "pointer", fontSize: 9, fontWeight: 600 }} title="Unlink Drive folder">✕ Unlink</button>
                     </div>
 
                     {/* File/folder list */}
