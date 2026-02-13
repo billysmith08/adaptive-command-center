@@ -1602,6 +1602,7 @@ export default function Dashboard({ user, onLogout }) {
   const deleteComment = (id) => setProjectComments(prev => ({ ...prev, [activeProjectId]: (prev[activeProjectId] || []).filter(c => c.id !== id) }));
   const [commentInput, setCommentInput] = useState("");
   const [notesCollapsed, setNotesCollapsed] = useState(false);
+  const [showCommentPanel, setShowCommentPanel] = useState(false);
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
   const [projectROS, setProjectROS] = useState({});
   const ros = projectROS[activeProjectId] || [];
@@ -2863,6 +2864,7 @@ export default function Dashboard({ user, onLogout }) {
               services: Array.isArray(p.services) ? p.services : [],
               subEvents: Array.isArray(p.subEvents) ? p.subEvents : [],
               contactOrder: Array.isArray(p.contactOrder) ? p.contactOrder : [],
+              parentId: p.parentId || null,
             })));
           }
           // Sanitize per-project maps: ensure each project's list is an array
@@ -3553,11 +3555,25 @@ export default function Dashboard({ user, onLogout }) {
   const compTotal = vendors.length * 5;
   const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
-  const filteredProjects = projects.filter(p => {
-    if (!canSeeProject(p.id)) return false;
-    if (!showArchived && p.archived) return false;
-    return p.name.toLowerCase().includes(search.toLowerCase()) || p.client.toLowerCase().includes(search.toLowerCase());
-  });
+  const filteredProjects = (() => {
+    const visible = projects.filter(p => {
+      if (!canSeeProject(p.id)) return false;
+      if (!showArchived && p.archived) return false;
+      return p.name.toLowerCase().includes(search.toLowerCase()) || (p.client || "").toLowerCase().includes(search.toLowerCase());
+    });
+    // Separate parents and children
+    const parents = visible.filter(p => !p.parentId);
+    const children = visible.filter(p => p.parentId);
+    // Build ordered list: parent, then its children
+    const ordered = [];
+    parents.forEach(parent => {
+      ordered.push(parent);
+      children.filter(c => c.parentId === parent.id).forEach(c => ordered.push(c));
+    });
+    // Add orphan children (parent not visible / deleted)
+    children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
+    return ordered;
+  })();
   const archivedCount = projects.filter(p => p.archived).length;
 
   const allTabs = [
@@ -3668,7 +3684,11 @@ export default function Dashboard({ user, onLogout }) {
       {/* TOP BAR */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s", flexShrink: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", background: "linear-gradient(135deg, #ff6b4a, #ff4a6b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Adaptive by Design</span>
+          {appSettings.branding?.logoDark || appSettings.branding?.logoLight ? (
+            <img src={darkMode ? (appSettings.branding.logoDark || appSettings.branding.logoLight) : (appSettings.branding.logoLight || appSettings.branding.logoDark)} alt="Logo" style={{ height: 26, objectFit: "contain" }} />
+          ) : (
+            <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", background: "linear-gradient(135deg, #ff6b4a, #ff4a6b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Adaptive by Design</span>
+          )}
           <div style={{ width: 1, height: 20, background: "var(--border)" }} />
           <span style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>COMMAND CENTER</span>
           <div style={{ width: 1, height: 16, background: "var(--border)" }} />
@@ -3800,8 +3820,12 @@ export default function Dashboard({ user, onLogout }) {
               const pct = p.budget > 0 ? (p.spent / p.budget) * 100 : 0;
               const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
               const swipe = swipeState[p.id] || { offsetX: 0 };
+              const isSubProject = !!p.parentId;
+              const hasSubProjects = projects.some(sp => sp.parentId === p.id && !sp.archived);
               return (
-                <div key={p.id} style={{ position: "relative", overflow: "hidden", marginBottom: 2, borderRadius: 8 }}>
+                <div key={p.id} style={{ position: "relative", overflow: "hidden", marginBottom: 2, borderRadius: 8, marginLeft: isSubProject ? 14 : 0 }}>
+                  {/* Sub-project connector line */}
+                  {isSubProject && <div style={{ position: "absolute", left: -8, top: 0, bottom: "50%", width: 8, borderLeft: "1px solid var(--borderSub)", borderBottom: "1px solid var(--borderSub)", borderRadius: "0 0 0 4px" }} />}
                   {/* Swipe action buttons revealed behind card (touch swipe) */}
                   {isAdmin && swipe.offsetX < -10 && (
                     <div style={{ position: "absolute", top: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 4, paddingRight: 8, borderRadius: 8, background: "var(--bgSub)" }}>
@@ -3827,7 +3851,7 @@ export default function Dashboard({ user, onLogout }) {
                     style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-                      <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>{p.client}{p.projectType && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: ptc + "15", color: ptc, border: `1px solid ${ptc}25`, fontWeight: 700, letterSpacing: 0.5 }}>{p.projectType.toUpperCase()}</span>}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>{isSubProject && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#dba94e15", color: "#dba94e", border: "1px solid #dba94e25", fontWeight: 700 }}>SUB</span>}{p.client}{p.projectType && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: ptc + "15", color: ptc, border: `1px solid ${ptc}25`, fontWeight: 700, letterSpacing: 0.5 }}>{p.projectType.toUpperCase()}</span>}</span>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                         {p.archived && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#9b6dff15", color: "#9b6dff", fontWeight: 700, letterSpacing: 0.5 }}>ARCHIVED</span>}
                         <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, background: sc.bg, color: sc.text }}><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: sc.dot, marginRight: 4 }} />{p.status}</span>
@@ -4323,6 +4347,16 @@ export default function Dashboard({ user, onLogout }) {
                           <button onClick={() => { setContactForm({ ...c, clientAssociation: c.clientAssociation || (clients.find(cl => cl.name.toLowerCase() === (c.company || c.vendorName || "").toLowerCase())?.name || "") }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => downloadVCard(c)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) { pushUndo("Delete contact"); setContacts(prev => prev.filter(x => x.id !== c.id)); } }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
+                          {/* Project assignments */}
+                          {(() => {
+                            const assignedProjects = projects.filter(p => {
+                              const all = [...(p.producers || []), ...(p.managers || []), ...(p.staff || []), ...(p.pocs || []).map(x => x.name), ...(p.clientContacts || []).map(x => x.name), ...(p.billingContacts || []).map(x => x.name)];
+                              const vendorMatch = (projectVendors[p.id] || []).some(v => v.name === c.company || v.name === c.vendorName || v.email === c.email || v.contact === c.name);
+                              return all.includes(c.name) || vendorMatch;
+                            });
+                            if (assignedProjects.length === 0) return null;
+                            return <div style={{ display: "flex", gap: 2, flexWrap: "wrap", maxWidth: 160 }}>{assignedProjects.slice(0, 3).map(p => <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ padding: "1px 5px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 7, fontWeight: 700, color: "#9b6dff", cursor: "pointer", whiteSpace: "nowrap", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }} title={p.name}>{p.name}</span>)}{assignedProjects.length > 3 && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>+{assignedProjects.length - 3}</span>}</div>;
+                          })()}
                         </div>
                         {/* DOCS column - functional upload buttons synced with vendor compliance */}
                         {(() => {
@@ -4693,6 +4727,54 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ OVERVIEW ═══ */}
             {activeTab === "overview" && (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
+                {/* Sub-project breadcrumb */}
+                {project.parentId && (() => {
+                  const parent = projects.find(p => p.id === project.parentId);
+                  return parent ? (
+                    <div style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                      <span onClick={() => { setActiveProjectId(parent.id); }} style={{ color: "#ff6b4a", cursor: "pointer", fontWeight: 600 }} onMouseEnter={e => e.currentTarget.style.textDecoration = "underline"} onMouseLeave={e => e.currentTarget.style.textDecoration = "none"}>{parent.name}</span>
+                      <span style={{ color: "var(--textGhost)" }}>›</span>
+                      <span style={{ color: "var(--textMuted)", fontWeight: 600 }}>{project.name}</span>
+                      <span style={{ fontSize: 7, padding: "2px 6px", borderRadius: 4, background: "#dba94e15", color: "#dba94e", border: "1px solid #dba94e25", fontWeight: 700, letterSpacing: 0.5, marginLeft: 4 }}>SUB-PROJECT</span>
+                    </div>
+                  ) : null;
+                })()}
+
+                {/* Sub-projects list for parent projects */}
+                {!project.parentId && (() => {
+                  const subs = projects.filter(sp => sp.parentId === project.id && !sp.archived);
+                  if (subs.length === 0) return null;
+                  return (
+                    <div style={{ marginBottom: 18, background: "var(--bgInput)", border: "1px solid #dba94e30", borderRadius: 10, padding: "14px 18px" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 9, color: "#dba94e", fontWeight: 700, letterSpacing: 1 }}>SUB-PROJECTS</div>
+                          <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, background: "#dba94e15", color: "#dba94e", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{subs.length}</span>
+                        </div>
+                        <button onClick={() => {
+                          const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                          const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: project.engagementDates || { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, subEvents: [] };
+                          setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview");
+                        }} style={{ padding: "4px 12px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 6, color: "#dba94e", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>+ Add Sub-Project</button>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {subs.map(sp => {
+                          const ssc = STATUS_COLORS[sp.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
+                          return (
+                            <div key={sp.id} onClick={() => { setActiveProjectId(sp.id); setActiveTab("overview"); }} style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, cursor: "pointer", transition: "all 0.15s", minWidth: 140, flex: "0 1 auto" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#dba94e50"; e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--borderSub)"; e.currentTarget.style.background = "var(--bgCard)"; }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>{sp.name}</div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 9 }}>
+                                <span style={{ padding: "1px 5px", borderRadius: 3, background: ssc.bg, color: ssc.text, fontWeight: 600 }}><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: ssc.dot, marginRight: 3 }} />{sp.status}</span>
+                                {sp.eventDates?.start && <span style={{ color: "var(--textGhost)" }}>{new Date(sp.eventDates.start + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>}
+                                {sp.budget > 0 && <span style={{ color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>${(sp.budget / 1000).toFixed(0)}k</span>}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STATUS</div>
@@ -4804,75 +4886,6 @@ export default function Dashboard({ user, onLogout }) {
                         })()}
                       </div>
                     )}
-                  </div>
-                </div>
-
-                {/* ── COMMENT FEED ── */}
-                <div style={{ marginTop: 16 }}>
-                  <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
-                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 12 }}>COMMENT FEED</div>
-                    {/* Comment input */}
-                    <div style={{ display: "flex", gap: 8, marginBottom: comments.length > 0 ? 14 : 0 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff6b4a10)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>
-                        {(user?.name || user?.email || "?").charAt(0).toUpperCase()}
-                      </div>
-                      <div style={{ flex: 1, display: "flex", gap: 6, alignItems: "flex-start" }}>
-                        <textarea value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(commentInput); setCommentInput(""); } }} placeholder="Add a comment... (Enter to post, Shift+Enter for new line)" rows={1} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", resize: "none", lineHeight: 1.5, minHeight: 36, maxHeight: 100 }} />
-                        <button onClick={() => { addComment(commentInput); setCommentInput(""); }} disabled={!commentInput.trim()} style={{ padding: "8px 14px", background: commentInput.trim() ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: commentInput.trim() ? "#fff" : "var(--textGhost)", cursor: commentInput.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 700, flexShrink: 0, transition: "all 0.15s" }}>Post</button>
-                      </div>
-                    </div>
-                    {/* Comment list */}
-                    {comments.length > 0 && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                        {[...comments].reverse().map((cmt, i) => {
-                          const ts = new Date(cmt.timestamp);
-                          const timeAgo = (() => {
-                            const diff = Date.now() - ts.getTime();
-                            const mins = Math.floor(diff / 60000);
-                            if (mins < 1) return "just now";
-                            if (mins < 60) return `${mins}m ago`;
-                            const hrs = Math.floor(mins / 60);
-                            if (hrs < 24) return `${hrs}h ago`;
-                            const days = Math.floor(hrs / 24);
-                            if (days < 7) return `${days}d ago`;
-                            return ts.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                          })();
-                          const initials = (cmt.author || "?").split(/[\s@]+/)[0].charAt(0).toUpperCase();
-                          return (
-                            <div key={cmt.id} style={{ display: "flex", gap: 8, padding: "10px 0", borderTop: i === 0 ? "none" : "1px solid var(--calLine)" }}>
-                              <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#3da5db15", border: "1px solid #3da5db25", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#3da5db", flexShrink: 0, marginTop: 2 }}>{initials}</div>
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{cmt.author}</span>
-                                  <span style={{ fontSize: 9, color: "var(--textGhost)" }}>{timeAgo}</span>
-                                  <button onClick={() => deleteComment(cmt.id)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 10, opacity: 0.5, padding: 2 }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.5}>×</button>
-                                </div>
-                                <div style={{ fontSize: 12, color: "var(--textSub)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cmt.text}</div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {comments.length === 0 && <div style={{ fontSize: 11, color: "var(--textGhost)", textAlign: "center", padding: "8px 0" }}>No comments yet — start the conversation</div>}
-                    {/* Notes-derived entries */}
-                    {(() => {
-                      const prNotes = (progress.rows || []).filter(r => r.notes && r.notes.trim()).map(r => ({ task: r.task, note: r.notes, dept: r.dept, status: r.status }));
-                      if (prNotes.length === 0) return null;
-                      return (
-                        <div style={{ marginTop: 12, borderTop: "1px solid var(--borderSub)", paddingTop: 10 }}>
-                          <div style={{ fontSize: 8, color: "var(--textGhost)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 6 }}>FROM PROGRESS REPORT</div>
-                          {prNotes.slice(0, 5).map((n, i) => (
-                            <div key={i} style={{ display: "flex", gap: 6, padding: "4px 0", fontSize: 10 }}>
-                              <span style={{ color: WB_STATUS_STYLES[n.status]?.text || "var(--textFaint)", fontSize: 8, fontWeight: 700, minWidth: 10 }}>●</span>
-                              <span style={{ color: "var(--textMuted)", fontWeight: 600 }}>{n.task}:</span>
-                              <span style={{ color: "var(--textFaint)" }}>{n.note}</span>
-                            </div>
-                          ))}
-                          {prNotes.length > 5 && <div style={{ fontSize: 9, color: "var(--textGhost)", padding: "2px 0 0 16px" }}>+{prNotes.length - 5} more...</div>}
-                        </div>
-                      );
-                    })()}
                   </div>
                 </div>
 
@@ -5222,7 +5235,13 @@ export default function Dashboard({ user, onLogout }) {
             })()}
 
             {/* ═══ WORK BACK ═══ */}
-            {activeTab === "workback" && (
+            {activeTab === "workback" && (() => {
+              // Auto-populate 10 empty rows on first visit
+              if (workback.length === 0) {
+                const emptyWBRows = Array.from({ length: 10 }, (_, i) => ({ id: `wb_init_${i}`, task: "", date: "", depts: [], status: "Not Started", owner: "" }));
+                setTimeout(() => setWorkback(emptyWBRows), 0);
+              }
+              return (
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <div><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PRE-PRODUCTION WORK BACK</div><div style={{ fontSize: 13, color: "var(--textMuted)" }}>Engagement: <span style={{ color: "var(--text)" }}>{fmtShort(project.engagementDates.start)}</span> → Event: <span style={{ color: "#ff6b4a" }}>{fmtShort(project.eventDates.start)}</span> → End: <span style={{ color: "var(--text)" }}>{fmtShort(project.engagementDates.end)}</span></div></div>
@@ -5271,10 +5290,16 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
                 </div>
               </div>
-            )}
+              );
+            })()}
 
             {/* ═══ PROGRESS REPORT ═══ */}
             {activeTab === "progress" && (() => {
+              // Auto-populate 20 empty rows on first visit
+              if ((progress.rows || []).length === 0) {
+                const emptyRows = Array.from({ length: 20 }, (_, i) => ({ id: `pr_init_${i}`, done: false, task: "", dept: "", location: "", responsible: "", status: "Not Started", notes: "" }));
+                setTimeout(() => setProgress(prev => ({ ...prev, rows: emptyRows })), 0);
+              }
               const prRows = progress.rows || [];
               const prLocs = progress.locations || [];
               const allDepts = [...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean);
@@ -6881,6 +6906,61 @@ export default function Dashboard({ user, onLogout }) {
                 <div>
                   <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20, lineHeight: 1.5 }}>Customize the appearance of your Command Center. Only visible to owners (Billy &amp; Clancy).</div>
 
+                  {/* Company Logo */}
+                  <div style={{ marginBottom: 24, padding: "16px 18px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>Company Logo</div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)" }}>Replaces "Adaptive by Design" in header · PNG with transparency recommended · Upload separate dark &amp; light versions</div>
+                      </div>
+                      {(appSettings.branding?.logoDark || appSettings.branding?.logoLight) && (
+                        <button onClick={async () => {
+                          setAppSettings(prev => ({ ...prev, branding: { ...prev.branding, logoDark: "", logoLight: "" } }));
+                        }} style={{ padding: "4px 10px", background: "#e8545412", border: "1px solid #e8545425", borderRadius: 5, color: "#e85454", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>✕ Remove Both</button>
+                      )}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      {/* Dark mode logo */}
+                      <div>
+                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, marginBottom: 6 }}>DARK MODE (light logo on dark bg)</div>
+                        {appSettings.branding?.logoDark ? (
+                          <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--borderSub)", background: "#1e1e1c", padding: 12, display: "flex", alignItems: "center", justifyContent: "center", height: 60 }}>
+                            <img src={appSettings.branding.logoDark} alt="Logo Dark" style={{ maxHeight: 40, maxWidth: "100%", objectFit: "contain" }} />
+                            <button onClick={() => setAppSettings(prev => ({ ...prev, branding: { ...prev.branding, logoDark: "" } }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.5)", border: "none", color: "#e85454", fontSize: 10, cursor: "pointer", borderRadius: 4, padding: "2px 5px" }}>✕</button>
+                          </div>
+                        ) : (
+                          <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 60, border: "2px dashed var(--borderSub)", borderRadius: 8, cursor: "pointer", color: "var(--textGhost)", fontSize: 10, gap: 2, background: "#1e1e1c" }}>
+                            <span>📷 Upload dark mode logo</span>
+                            <input type="file" accept="image/png,image/svg+xml,image/webp" style={{ display: "none" }} onChange={async (e) => {
+                              const file = e.target.files[0]; if (!file) return;
+                              if (file.size > 2 * 1024 * 1024) { alert("File too large. Under 2MB."); return; }
+                              const reader = new FileReader(); reader.onload = () => setAppSettings(prev => ({ ...prev, branding: { ...(prev.branding || {}), logoDark: reader.result } })); reader.readAsDataURL(file);
+                            }} />
+                          </label>
+                        )}
+                      </div>
+                      {/* Light mode logo */}
+                      <div>
+                        <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, marginBottom: 6 }}>LIGHT MODE (dark logo on light bg)</div>
+                        {appSettings.branding?.logoLight ? (
+                          <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--borderSub)", background: "#f5f0ea", padding: 12, display: "flex", alignItems: "center", justifyContent: "center", height: 60 }}>
+                            <img src={appSettings.branding.logoLight} alt="Logo Light" style={{ maxHeight: 40, maxWidth: "100%", objectFit: "contain" }} />
+                            <button onClick={() => setAppSettings(prev => ({ ...prev, branding: { ...prev.branding, logoLight: "" } }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(255,255,255,0.5)", border: "none", color: "#e85454", fontSize: 10, cursor: "pointer", borderRadius: 4, padding: "2px 5px" }}>✕</button>
+                          </div>
+                        ) : (
+                          <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 60, border: "2px dashed var(--borderSub)", borderRadius: 8, cursor: "pointer", color: "var(--textGhost)", fontSize: 10, gap: 2, background: "#f5f0ea" }}>
+                            <span>📷 Upload light mode logo</span>
+                            <input type="file" accept="image/png,image/svg+xml,image/webp" style={{ display: "none" }} onChange={async (e) => {
+                              const file = e.target.files[0]; if (!file) return;
+                              if (file.size > 2 * 1024 * 1024) { alert("File too large. Under 2MB."); return; }
+                              const reader = new FileReader(); reader.onload = () => setAppSettings(prev => ({ ...prev, branding: { ...(prev.branding || {}), logoLight: reader.result } })); reader.readAsDataURL(file);
+                            }} />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
                   {/* Login Background */}
                   <div style={{ marginBottom: 24, padding: "16px 18px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
@@ -6985,6 +7065,7 @@ export default function Dashboard({ user, onLogout }) {
           <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
             <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
             <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = { id: newId, name: src.name + " (Copy)", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: src.location || "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: { what: "", where: "", why: "" }, producers: [], managers: [], staff: [], clientContacts: [], pocContacts: [], billingContacts: [], notes: "", archived: false }; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate Project</button>
+            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: src.engagementDates || { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, subEvents: [] }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
           </div>
@@ -7799,6 +7880,98 @@ export default function Dashboard({ user, onLogout }) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ═══ FLOATING COMMENT PANEL (SLIDE-OUT DRAWER) ═══ */}
+      {activeProjectId && (
+        <>
+          {/* Toggle button */}
+          {!showCommentPanel && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
+            <button onClick={() => setShowCommentPanel(true)} style={{ position: "fixed", right: 0, top: "50%", transform: "translateY(-50%)", zIndex: 200, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRight: "none", borderRadius: "8px 0 0 8px", padding: "12px 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, boxShadow: "-2px 0 12px rgba(0,0,0,0.15)", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => { e.currentTarget.style.background = "var(--bgCard)"; }}>
+              <span style={{ fontSize: 14 }}>💬</span>
+              {(projectComments[activeProjectId] || []).length > 0 && (
+                <span style={{ fontSize: 8, fontWeight: 800, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{(projectComments[activeProjectId] || []).length}</span>
+              )}
+            </button>
+          )}
+          {/* Slide-out panel */}
+          <div style={{ position: "fixed", right: showCommentPanel ? 0 : -380, top: 0, bottom: 0, width: 370, zIndex: 300, background: "var(--bg)", borderLeft: "1px solid var(--borderSub)", boxShadow: showCommentPanel ? "-8px 0 30px rgba(0,0,0,0.25)" : "none", transition: "right 0.3s cubic-bezier(0.4,0,0.2,1)", display: "flex", flexDirection: "column" }}>
+            {/* Panel header */}
+            <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--topBar)", flexShrink: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 14 }}>💬</span>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Comments</div>
+                  <div style={{ fontSize: 9, color: "var(--textFaint)" }}>{projects.find(p => p.id === activeProjectId)?.name || "Project"}</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{(projectComments[activeProjectId] || []).length}</span>
+                <button onClick={() => setShowCommentPanel(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "2px 4px" }} onMouseEnter={e => e.currentTarget.style.color = "var(--text)"} onMouseLeave={e => e.currentTarget.style.color = "var(--textFaint)"}>×</button>
+              </div>
+            </div>
+            {/* Comment list */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
+              {(() => {
+                const cmts = projectComments[activeProjectId] || [];
+                if (cmts.length === 0) return (
+                  <div style={{ textAlign: "center", padding: "40px 20px", color: "var(--textGhost)" }}>
+                    <div style={{ fontSize: 28, marginBottom: 8 }}>💬</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: "var(--textFaint)", marginBottom: 4 }}>No comments yet</div>
+                    <div style={{ fontSize: 10 }}>Start the conversation below</div>
+                  </div>
+                );
+                return [...cmts].reverse().map((cmt, i) => {
+                  const ts = new Date(cmt.timestamp);
+                  const timeAgo = (() => { const diff = Date.now() - ts.getTime(); const mins = Math.floor(diff / 60000); if (mins < 1) return "just now"; if (mins < 60) return `${mins}m ago`; const hrs = Math.floor(mins / 60); if (hrs < 24) return `${hrs}h ago`; const days = Math.floor(hrs / 24); if (days < 7) return `${days}d ago`; return ts.toLocaleDateString("en-US", { month: "short", day: "numeric" }); })();
+                  const initials = (cmt.author || "?").split(/[\s@]+/)[0].charAt(0).toUpperCase();
+                  return (
+                    <div key={cmt.id} style={{ display: "flex", gap: 10, padding: "10px 0", borderBottom: "1px solid var(--calLine)" }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "#3da5db15", border: "1px solid #3da5db25", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#3da5db", flexShrink: 0 }}>{initials}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{cmt.author}</span>
+                          <span style={{ fontSize: 9, color: "var(--textGhost)" }}>{timeAgo}</span>
+                          <button onClick={() => deleteComment(cmt.id)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 12, opacity: 0.4, padding: 2 }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.4}>×</button>
+                        </div>
+                        <div style={{ fontSize: 12, color: "var(--textSub)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cmt.text}</div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+              {/* Progress report notes */}
+              {(() => {
+                const prog = projectProgress[activeProjectId] || { rows: [], locations: [] };
+                const prNotes = (prog.rows || []).filter(r => r.notes && r.notes.trim()).map(r => ({ task: r.task, note: r.notes, status: r.status }));
+                if (prNotes.length === 0) return null;
+                return (
+                  <div style={{ marginTop: 14, borderTop: "1px solid var(--borderSub)", paddingTop: 10 }}>
+                    <div style={{ fontSize: 8, color: "var(--textGhost)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 6 }}>FROM PROGRESS REPORT</div>
+                    {prNotes.slice(0, 5).map((n, i) => (
+                      <div key={i} style={{ display: "flex", gap: 6, padding: "4px 0", fontSize: 10 }}>
+                        <span style={{ color: WB_STATUS_STYLES[n.status]?.text || "var(--textFaint)", fontSize: 8, fontWeight: 700, minWidth: 10 }}>●</span>
+                        <span style={{ color: "var(--textMuted)", fontWeight: 600 }}>{n.task}:</span>
+                        <span style={{ color: "var(--textFaint)" }}>{n.note}</span>
+                      </div>
+                    ))}
+                    {prNotes.length > 5 && <div style={{ fontSize: 9, color: "var(--textGhost)", padding: "2px 0 0 16px" }}>+{prNotes.length - 5} more...</div>}
+                  </div>
+                );
+              })()}
+            </div>
+            {/* Input area */}
+            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--borderSub)", background: "var(--topBar)", flexShrink: 0 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff6b4a10)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>{(user?.name || user?.email || "?").charAt(0).toUpperCase()}</div>
+                <textarea value={commentInput} onChange={e => { setCommentInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px"; }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (commentInput.trim()) { addComment(commentInput); setCommentInput(""); e.target.style.height = "36px"; } } }} placeholder="Add a comment..." rows={1} style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", resize: "none", lineHeight: 1.5, minHeight: 36, maxHeight: 100 }} />
+                <button onClick={() => { if (commentInput.trim()) { addComment(commentInput); setCommentInput(""); } }} disabled={!commentInput.trim()} style={{ padding: "8px 14px", background: commentInput.trim() ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: commentInput.trim() ? "#fff" : "var(--textGhost)", cursor: commentInput.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 700, flexShrink: 0, transition: "all 0.15s", height: 36 }}>Post</button>
+              </div>
+            </div>
+          </div>
+          {/* Backdrop */}
+          {showCommentPanel && <div onClick={() => setShowCommentPanel(false)} style={{ position: "fixed", inset: 0, zIndex: 299, background: "rgba(0,0,0,0.15)" }} />}
+        </>
       )}
 
     </div>
