@@ -4298,16 +4298,16 @@ export default function Dashboard({ user, onLogout }) {
                         {/* PROJECTS cell */}
                         {(() => {
                           const cName = (c.name || "").trim();
-                          if (!cName) return <span style={{ fontSize: 10, color: "var(--textGhost)" }}>—</span>;
-                          const assignedProjects = projects.filter(p => {
+                          const assignedProjects = !cName ? [] : projects.filter(p => {
                             if (p.archived) return false;
                             const people = [...(p.producers || []), ...(p.managers || []), ...(p.staff || [])];
                             const contactPeople = [...(p.pocs || []).map(x => (x.name || "").trim()), ...(p.clientContacts || []).map(x => (x.name || "").trim()), ...(p.billingContacts || []).map(x => (x.name || "").trim())];
                             if (people.includes(cName) || contactPeople.includes(cName)) return true;
-                            const vMatch = (projectVendors[p.id] || []).some(v => (v.contact || "").trim() === cName);
-                            return vMatch;
+                            return (projectVendors[p.id] || []).some(v => (v.contact || "").trim() === cName);
                           });
-                          return <div style={{ display: "flex", gap: 3, flexWrap: "wrap", overflow: "hidden" }}>{assignedProjects.length === 0 ? <span style={{ fontSize: 10, color: "var(--textGhost)" }}>—</span> : <>{assignedProjects.slice(0, 3).map(p => <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ padding: "2px 6px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 700, color: "#9b6dff", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 100 }} title={p.name}>{p.name}</span>)}{assignedProjects.length > 3 && <span style={{ fontSize: 8, color: "var(--textGhost)" }}>+{assignedProjects.length - 3}</span>}</>}</div>;
+                          return assignedProjects.length === 0
+                            ? <span style={{ fontSize: 10, color: "var(--textGhost)" }}>—</span>
+                            : <div style={{ display: "flex", gap: 3, flexWrap: "wrap", overflow: "hidden" }}>{assignedProjects.slice(0, 3).map(p => <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ padding: "2px 6px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 700, color: "#9b6dff", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 100 }} title={p.name}>{p.name}</span>)}{assignedProjects.length > 3 && <span style={{ fontSize: 8, color: "var(--textGhost)" }}>+{assignedProjects.length - 3}</span>}</div>;
                         })()}
                         <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative", flexWrap: "nowrap", overflow: "visible" }}>
                           <div style={{ position: "relative" }}>
@@ -4438,6 +4438,7 @@ export default function Dashboard({ user, onLogout }) {
                         })()}
                       </div>
                     ))}
+                    </div>
                     </div>
                   </div>
                 )}
