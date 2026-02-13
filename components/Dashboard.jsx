@@ -3007,16 +3007,41 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
 
-  // ─── ONE-TIME CLEANUP: remove contacts where person name = company name ──
+  // ─── ONE-TIME CLEANUP: dedup contacts + remove name=company ──
   useEffect(() => {
     if (!dataLoaded) return;
     setContacts(prev => {
-      const cleaned = prev.filter(c => {
+      let changed = false;
+      // 1. Remove contacts where person name = company name
+      let cleaned = prev.filter(c => {
         if (!c.company || !c.name) return true;
-        return c.name.toLowerCase() !== c.company.toLowerCase();
+        if (c.name.toLowerCase().trim() === c.company.toLowerCase().trim()) { changed = true; return false; }
+        return true;
       });
-      if (cleaned.length < prev.length) console.log(`Cleanup: removed ${prev.length - cleaned.length} contacts where name = company`);
-      return cleaned.length < prev.length ? cleaned : prev;
+      // 2. Dedup: same name + same company (case-insensitive) → keep the one with more data
+      const seen = new Map();
+      const deduped = [];
+      cleaned.forEach(c => {
+        const key = (c.name || "").toLowerCase().trim() + "|||" + (c.company || "").toLowerCase().trim();
+        if (seen.has(key)) {
+          // Compare: keep the one with more filled fields
+          const existing = seen.get(key);
+          const scoreExisting = [existing.email, existing.phone, existing.address, existing.position].filter(Boolean).length;
+          const scoreNew = [c.email, c.phone, c.address, c.position].filter(Boolean).length;
+          if (scoreNew > scoreExisting) {
+            // Replace with richer record
+            const idx = deduped.indexOf(existing);
+            if (idx !== -1) deduped[idx] = { ...c, contactType: existing.contactType || c.contactType };
+            seen.set(key, deduped[idx]);
+          }
+          changed = true;
+        } else {
+          seen.set(key, c);
+          deduped.push(c);
+        }
+      });
+      if (changed) console.log(`Cleanup: ${prev.length} → ${deduped.length} contacts (removed ${prev.length - deduped.length} dupes/invalid)`);
+      return changed ? deduped : prev;
     });
   }, [dataLoaded]);
 
@@ -7603,7 +7628,8 @@ export default function Dashboard({ user, onLogout }) {
                 <button onClick={() => setShowAddContact(false)} style={{ padding: "9px 20px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
                 <button onClick={() => {
                   const personName = `${contactForm.firstName} ${contactForm.lastName}`.trim();
-                  const name = contactForm.vendorName || personName || contactForm.company;
+                  const isClient = contactForm.contactType === "Client";
+                  const name = isClient ? (personName || contactForm.vendorName || contactForm.company) : (contactForm.vendorName || personName || contactForm.company);
                   if (!name) return;
                   const saveData = { ...contactForm, name, company: contactForm.vendorName || contactForm.company };
                   if (contactForm.id) {
