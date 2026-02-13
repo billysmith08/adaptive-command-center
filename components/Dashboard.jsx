@@ -1472,6 +1472,7 @@ export default function Dashboard({ user, onLogout }) {
   const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", progress: "adptv_progress", comments: "adptv_comments", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
   const lsHydrated = useRef(false);
   const pendingSaveRef = useRef(null); // holds the state object for beforeunload flush
+  const remoteSyncRef = useRef(0); // timestamp of last remote sync — prevents save loops
   
   const [projects, setProjects] = useState(initProjects);
   const [darkMode, setDarkMode] = useState(() => {
@@ -1624,6 +1625,7 @@ export default function Dashboard({ user, onLogout }) {
   
   
   const [search, setSearch] = useState("");
+  const [sidebarStatusFilter, setSidebarStatusFilter] = useState("");
   const [sidebarW, setSidebarW] = useState(280);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -2817,37 +2819,9 @@ export default function Dashboard({ user, onLogout }) {
           .single();
         if (error && error.code !== 'PGRST116') { console.error('Load error:', error); }
         if (data?.state) {
-          // Compare timestamps: only overwrite local data if Supabase is newer
-          const lsTimestamp = localStorage.getItem(LS_KEYS.updatedAt);
-          const sbTimestamp = data.updated_at;
-          const lsDate = lsTimestamp ? new Date(lsTimestamp) : new Date(0);
-          const sbDate = sbTimestamp ? new Date(sbTimestamp) : new Date(0);
-          
-          // If localStorage is newer than Supabase, skip the overwrite and push local to Supabase instead
-          if (lsDate > sbDate && lsTimestamp) {
-            console.log(`localStorage is newer (${lsTimestamp} > ${sbTimestamp}) — keeping local data, pushing to Supabase`);
-            setDataLoaded(true);
-            // Force-push localStorage state to Supabase so they're in sync
-            // Read directly from localStorage since React state may not be hydrated yet
-            setTimeout(async () => {
-              try {
-                const localState = {};
-                ['projects', 'clients', 'contacts', 'vendors', 'workback', 'ros'].forEach(k => {
-                  try { const v = localStorage.getItem(LS_KEYS[k]); if (v) localState[k === 'vendors' ? 'projectVendors' : k === 'workback' ? 'projectWorkback' : k === 'progress' ? 'projectProgress' : k === 'comments' ? 'projectComments' : k === 'ros' ? 'projectROS' : k] = JSON.parse(v); } catch {}
-                });
-                if (Object.keys(localState).length > 0) {
-                  const now = new Date().toISOString();
-                  await supabase.from('shared_state').update({ state: localState, updated_at: now, updated_by: user.id }).eq('id', 'shared');
-                  try { localStorage.setItem(LS_KEYS.updatedAt, now); } catch {}
-                  console.log('Force-pushed localStorage to Supabase');
-                  setSaveStatus("saved");
-                }
-              } catch (e) { console.warn('Force-push failed:', e); }
-            }, 2000);
-            syncDriveCompliance();
-            return;
-          }
-          
+          // Always use Supabase as source of truth for multi-user sync
+          remoteSyncRef.current = Date.now();
+          try { localStorage.setItem(LS_KEYS.updatedAt, data.updated_at || new Date().toISOString()); } catch {}
           const s = data.state;
           // Sanitize projects: ensure all array fields are actually arrays
           if (s.projects && Array.isArray(s.projects)) {
@@ -3014,6 +2988,11 @@ export default function Dashboard({ user, onLogout }) {
 
   useEffect(() => {
     if (!dataLoaded) return;
+    // Skip saves triggered by incoming remote sync (prevents overwrite loops)
+    if (Date.now() - remoteSyncRef.current < 3000) {
+      console.log('Skipping save — triggered by remote sync');
+      return;
+    }
     const stateToSave = { projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients };
     pendingSaveRef.current = stateToSave;
     setSaveStatus("saving");
@@ -3051,6 +3030,66 @@ export default function Dashboard({ user, onLogout }) {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [user]);
+
+  // ─── REALTIME SYNC ─────────────────────────────────────────────
+  const lastSyncRef = useRef(null);
+  useEffect(() => {
+    if (!user || !supabase) return;
+    // Realtime channel for instant sync
+    const channel = supabase.channel('shared-state-sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'shared_state', filter: 'id=eq.shared' }, (payload) => {
+        const updatedBy = payload.new?.updated_by;
+        if (updatedBy === user.id) return;
+        console.log('Realtime: received update from another user');
+        const s = payload.new?.state;
+        if (!s) return;
+        remoteSyncRef.current = Date.now();
+        if (s.projects && Array.isArray(s.projects)) setProjects(s.projects.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null })));
+        if (s.projectVendors) setProjectVendors(s.projectVendors);
+        if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
+        if (s.projectProgress) setProjectProgress(s.projectProgress);
+        if (s.projectComments) setProjectComments(s.projectComments);
+        if (s.projectROS) setProjectROS(s.projectROS);
+        if (s.rosDayDates) setRosDayDates(s.rosDayDates);
+        if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
+        if (s.clients && Array.isArray(s.clients)) setClients(s.clients);
+        if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
+        try { localStorage.setItem(LS_KEYS.updatedAt, payload.new?.updated_at || new Date().toISOString()); } catch {}
+        lastSyncRef.current = new Date().toISOString();
+        setClipboardToast({ text: "🔄 Synced changes from team", x: window.innerWidth / 2, y: 60 });
+        setTimeout(() => setClipboardToast(null), 2500);
+      })
+      .subscribe();
+    // Polling fallback every 30s (in case realtime isn't enabled on table)
+    const pollInterval = setInterval(async () => {
+      try {
+        const { data } = await supabase.from('shared_state').select('updated_at, updated_by').eq('id', 'shared').single();
+        if (!data) return;
+        const localTs = localStorage.getItem(LS_KEYS.updatedAt);
+        if (data.updated_by !== user.id && data.updated_at && (!localTs || new Date(data.updated_at) > new Date(localTs))) {
+          console.log('Poll: detected newer remote state, fetching...');
+          const { data: full } = await supabase.from('shared_state').select('state, updated_at').eq('id', 'shared').single();
+          if (!full?.state) return;
+          remoteSyncRef.current = Date.now();
+          const s = full.state;
+          if (s.projects && Array.isArray(s.projects)) setProjects(s.projects.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null })));
+          if (s.projectVendors) setProjectVendors(s.projectVendors);
+          if (s.projectWorkback) setProjectWorkback(s.projectWorkback);
+          if (s.projectProgress) setProjectProgress(s.projectProgress);
+          if (s.projectComments) setProjectComments(s.projectComments);
+          if (s.projectROS) setProjectROS(s.projectROS);
+          if (s.rosDayDates) setRosDayDates(s.rosDayDates);
+          if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
+          if (s.clients && Array.isArray(s.clients)) setClients(s.clients);
+          if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
+          try { localStorage.setItem(LS_KEYS.updatedAt, full.updated_at); } catch {}
+          setClipboardToast({ text: "🔄 Synced changes from team", x: window.innerWidth / 2, y: 60 });
+          setTimeout(() => setClipboardToast(null), 2500);
+        }
+      } catch (e) { console.warn('Sync poll error:', e); }
+    }, 8000);
+    return () => { supabase.removeChannel(channel); clearInterval(pollInterval); };
+  }, [user, supabase]);
 
   const _rawProject = projects.find(p => p.id === activeProjectId) || projects[0];
   const project = _rawProject ? {
@@ -3559,16 +3598,25 @@ export default function Dashboard({ user, onLogout }) {
     const visible = projects.filter(p => {
       if (!canSeeProject(p.id)) return false;
       if (!showArchived && p.archived) return false;
+      if (sidebarStatusFilter && p.status !== sidebarStatusFilter) return false;
       return p.name.toLowerCase().includes(search.toLowerCase()) || (p.client || "").toLowerCase().includes(search.toLowerCase());
     });
     // Separate parents and children
     const parents = visible.filter(p => !p.parentId);
     const children = visible.filter(p => p.parentId);
-    // Build ordered list: parent, then its children
+    // Sort parents chronologically by event date (earliest first, no-date at end)
+    parents.sort((a, b) => {
+      const da = a.eventDates?.start || a.engagementDates?.start || "9999";
+      const db = b.eventDates?.start || b.engagementDates?.start || "9999";
+      return da.localeCompare(db);
+    });
+    // Build ordered list: parent, then its children (also sorted chronologically)
     const ordered = [];
     parents.forEach(parent => {
       ordered.push(parent);
-      children.filter(c => c.parentId === parent.id).forEach(c => ordered.push(c));
+      const subs = children.filter(c => c.parentId === parent.id);
+      subs.sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
+      subs.forEach(c => ordered.push(c));
     });
     // Add orphan children (parent not visible / deleted)
     children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
@@ -3804,6 +3852,10 @@ export default function Dashboard({ user, onLogout }) {
               <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'" }} />
               <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>
             </div>
+            <select value={sidebarStatusFilter} onChange={e => setSidebarStatusFilter(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: sidebarStatusFilter ? "#ff6b4a10" : "var(--bgCard)", border: `1px solid ${sidebarStatusFilter ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, color: sidebarStatusFilter ? "#ff6b4a" : "var(--textFaint)", fontSize: 10, fontWeight: 600, outline: "none", marginBottom: 8, cursor: "pointer" }}>
+              <option value="">All Statuses</option>
+              {[...new Set(projects.map(p => p.status).filter(Boolean))].sort().map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
             <button onClick={() => { setNewProjectForm({ ...emptyProject }); setShowAddProject(true); }} style={{ width: "100%", padding: "7px 12px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
               <span style={{ fontSize: 13 }}>+</span> New Project
             </button>
@@ -3860,7 +3912,7 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3 }}>{p.name}</div>
                     <div style={{ fontSize: 8, color: p.code ? "var(--textGhost)" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.3, marginBottom: 3, opacity: p.code ? 1 : 0.5 }}>{p.code || generateProjectCode(p)}</div>
                     {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
-                      {p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
+                      {!p.parentId && p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
                       {p.eventDates && p.eventDates.start && <div>🎪 {fmtShort(p.eventDates.start)}{p.eventDates.end ? ` – ${fmtShort(p.eventDates.end)}` : ""}</div>}
                     </div>}
                     {p.budget > 0 && <div style={{ display: "flex", alignItems: "center", gap: 8 }}><ProgressBar pct={pct} h={3} /><span style={{ fontSize: 10, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", minWidth: 30 }}>{Math.round(pct)}%</span></div>}
@@ -4756,7 +4808,7 @@ export default function Dashboard({ user, onLogout }) {
                         </div>
                         <button onClick={() => {
                           const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                          const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: project.engagementDates || { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, subEvents: [] };
+                          const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, subEvents: [] };
                           setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview");
                         }} style={{ padding: "4px 12px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 6, color: "#dba94e", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>+ Add Sub-Project</button>
                       </div>
@@ -4787,10 +4839,10 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>EVENT DATES</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><DatePicker value={project.eventDates.start} onChange={v => updateProject("eventDates", { ...project.eventDates, start: v })} /><DatePicker value={project.eventDates.end} onChange={v => updateProject("eventDates", { ...project.eventDates, end: v })} /></div>
                   </div>
-                  <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
+                  {!project.parentId && <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>ENGAGEMENT DATES</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}><DatePicker value={project.engagementDates.start} onChange={v => updateProject("engagementDates", { ...project.engagementDates, start: v })} /><DatePicker value={project.engagementDates.end} onChange={v => updateProject("engagementDates", { ...project.engagementDates, end: v })} /></div>
-                  </div>
+                  </div>}
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>PRODUCER(S)</div><TagInput values={project.producers} options={peopleOptions} contacts={contacts} onViewContact={viewContact} onChange={v => updateProject("producers", v)} /></div>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>MANAGER(S)</div><TagInput values={project.managers} options={peopleOptions} contacts={contacts} onViewContact={viewContact} onChange={v => updateProject("managers", v)} /></div>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STAFF / CREW</div><TagInput values={project.staff || []} options={peopleOptions} contacts={contacts} onViewContact={viewContact} onChange={v => updateProject("staff", v)} /></div>
@@ -7068,7 +7120,7 @@ export default function Dashboard({ user, onLogout }) {
           <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
             <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
             <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = { id: newId, name: src.name + " (Copy)", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: src.location || "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: { what: "", where: "", why: "" }, producers: [], managers: [], staff: [], clientContacts: [], pocContacts: [], billingContacts: [], notes: "", archived: false }; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate Project</button>
-            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: src.engagementDates || { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, subEvents: [] }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
+            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, subEvents: [] }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
           </div>
