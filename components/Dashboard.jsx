@@ -4968,12 +4968,13 @@ export default function Dashboard({ user, onLogout }) {
                         const clientLower = project.client.trim().toLowerCase();
                         const matchedClient = clients.find(cl => cl.name?.trim().toLowerCase() === clientLower) || clients.find(cl => clientLower.includes(cl.name?.trim().toLowerCase()) || cl.name?.trim().toLowerCase().includes(clientLower));
                         if (matchedClient) {
+                          const personName = (matchedClient.contactName && matchedClient.contactName.toLowerCase() !== matchedClient.name.toLowerCase()) ? matchedClient.contactName : "";
                           effectiveClientContacts = [{
-                            name: matchedClient.companyContact || matchedClient.contactName || matchedClient.billingContact || matchedClient.name,
+                            name: personName || matchedClient.name,
                             phone: matchedClient.contactPhone || matchedClient.billingPhone || "",
                             email: matchedClient.contactEmail || matchedClient.billingEmail || "",
                             company: matchedClient.name,
-                            position: "Client",
+                            position: personName ? "Client Contact" : "Client",
                             address: [matchedClient.address, matchedClient.city, matchedClient.state, matchedClient.zip].filter(Boolean).join(", "),
                             autoPopulated: true
                           }];
