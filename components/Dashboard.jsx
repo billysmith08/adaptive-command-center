@@ -7070,7 +7070,7 @@ export default function Dashboard({ user, onLogout }) {
                   {/* ── DATA PROTECTION ── */}
                   <div style={{ marginTop: 28, borderTop: "2px solid var(--borderSub)", paddingTop: 20 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>🛡️ Data Protection</div>
-                    <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>Auto-backups run at 12 PM & 12 AM daily to Shared Drive → Internal → Command.Center</div>
+                    <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>Auto-backups run every hour to Shared Drive → Internal → Command.Center</div>
 
                     {/* Backup path info */}
                     <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: 14, marginBottom: 20 }}>
@@ -7081,7 +7081,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--textSub)", marginTop: 4 }}>
                         👥 Shared Drive → Internal → <strong>Command.Center</strong> → Contacts → <em>*.vcf</em>
                       </div>
-                      <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 8 }}>Runs automatically via Vercel Cron at 12:00 PM and 12:00 AM Pacific. Contacts sync as vCards with each backup.</div>
+                      <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 8 }}>Runs automatically via Vercel Cron every hour. Contacts sync as vCards with each backup.</div>
                     </div>
 
                     {/* Action Buttons */}

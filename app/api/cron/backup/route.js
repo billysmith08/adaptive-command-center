@@ -76,10 +76,9 @@ export async function GET(request) {
     // ── File name in Pacific time ──
     const now = new Date();
     const pacific = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
-    const hour = pacific.getHours();
-    const period = hour < 6 ? '12AM' : hour < 18 ? '12PM' : '12AM';
     const dateStr = `${pacific.getFullYear()}-${String(pacific.getMonth() + 1).padStart(2, '0')}-${String(pacific.getDate()).padStart(2, '0')}`;
-    const fileName = `backup-${dateStr}-${period}.json`;
+    const timeStr = `T${String(pacific.getHours()).padStart(2, '0')}-${String(pacific.getMinutes()).padStart(2, '0')}-${String(pacific.getSeconds()).padStart(2, '0')}`;
+    const fileName = `backup-${dateStr}${timeStr}.json`;
 
     // ── Folder structure: Command.Center > Backups > 2026-02 ──
     const backupsFolderId = await findOrCreateFolder(drive, commandCenterId, 'Backups');
