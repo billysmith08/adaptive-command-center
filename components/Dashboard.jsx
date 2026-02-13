@@ -5891,20 +5891,19 @@ export default function Dashboard({ user, onLogout }) {
                   {project.saturationUrl ? (() => {
                     const embedUrl = project.saturationUrl.includes("/budget") ? project.saturationUrl : project.saturationUrl.replace(/\/$/, "") + "/budget";
                     return (
-                      <div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 12px", background: "#dba94e08", border: "1px solid #dba94e20", borderRadius: 8, fontSize: 10, color: "var(--textMuted)" }}>
-                          <span>💡</span>
-                          <span>If you see a login screen, <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#ff6b4a", fontWeight: 600 }}>open Saturation in a new tab</a> to log in first, then refresh this page.</span>
+                      <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", background: "linear-gradient(135deg, #1a1128 0%, #0d0d0d 100%)", border: "1px solid #3a2a5c40", borderRadius: 12, textDecoration: "none", cursor: "pointer", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#7c5cfc60"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,92,252,0.15)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#3a2a5c40"; e.currentTarget.style.boxShadow = "none"; }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                          <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #7c5cfc 0%, #a855f7 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>📊</div>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: "#e8e0f0", marginBottom: 2 }}>View Budget in Saturation</div>
+                            <div style={{ fontSize: 10, color: "#9b8ab8" }}>Live budget, actuals, and cost tracking</div>
+                          </div>
                         </div>
-                        <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12 }}>
-                          <iframe
-                            src={embedUrl}
-                            style={{ width: "100%", height: 600, border: "none", borderRadius: 12, display: "block" }}
-                            title="Saturation Budget"
-                            allow="popups popups-to-escape-sandbox"
-                          />
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <img src="https://app.saturation.io/favicon.ico" style={{ width: 14, height: 14, borderRadius: 3, opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
+                          <span style={{ fontSize: 11, color: "#7c5cfc", fontWeight: 700 }}>Open →</span>
                         </div>
-                      </div>
+                      </a>
                     );
                   })() : (
                     <div style={{ background: "var(--bgInput)", border: "2px dashed var(--borderSub)", borderRadius: 12, padding: "40px 20px", textAlign: "center" }}>
@@ -5941,12 +5940,21 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                   {embedUrl ? (
                     <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 12px", background: "#dba94e08", border: "1px solid #dba94e20", borderRadius: 8, fontSize: 10, color: "var(--textMuted)" }}>
-                        <span>💡</span>
-                        <span>If you see a login screen, <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#ff6b4a", fontWeight: 600 }}>open Saturation in a new tab</a> to log in first, then refresh this page.</span>
-                      </div>
-                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12 }}>
-                        <iframe src={embedUrl} style={{ width: "100%", height: "calc(100vh - 240px)", border: "none", borderRadius: 12, display: "block" }} title="Saturation Budget" allow="popups popups-to-escape-sandbox" />
+                      <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "28px 32px", background: "linear-gradient(135deg, #1a1128 0%, #0d0d0d 100%)", border: "1px solid #3a2a5c40", borderRadius: 12, textDecoration: "none", cursor: "pointer", transition: "all 0.2s", marginBottom: 16 }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#7c5cfc60"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,92,252,0.15)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#3a2a5c40"; e.currentTarget.style.boxShadow = "none"; }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                          <div style={{ width: 52, height: 52, borderRadius: 12, background: "linear-gradient(135deg, #7c5cfc 0%, #a855f7 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>📊</div>
+                          <div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: "#e8e0f0", marginBottom: 4 }}>Open Budget in Saturation</div>
+                            <div style={{ fontSize: 12, color: "#9b8ab8" }}>View and edit the full budget, actuals, cost tracking, and transactions</div>
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <img src="https://app.saturation.io/favicon.ico" style={{ width: 18, height: 18, borderRadius: 3, opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
+                          <span style={{ fontSize: 13, color: "#7c5cfc", fontWeight: 700 }}>Open →</span>
+                        </div>
+                      </a>
+                      <div style={{ padding: "16px 20px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, fontSize: 11, color: "var(--textFaint)", lineHeight: 1.6 }}>
+                        <strong style={{ color: "var(--textMuted)" }}>Why a link instead of an embed?</strong> Saturation uses secure authentication that prevents embedding in other apps (third-party cookie restrictions). Clicking the button above opens your full Saturation workspace with all features available.
                       </div>
                     </div>
                   ) : (
