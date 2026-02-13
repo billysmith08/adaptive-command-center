@@ -1539,7 +1539,7 @@ export default function Dashboard({ user, onLogout }) {
   const updateCLF = (k, v) => setClientForm(prev => ({ ...prev, [k]: v }));
   // Resizable column widths
   const defaultClientCols = [36, 190, 80, 130, 140, 170, 110, 150, 170, 140];
-  const defaultPartnerCols = [36, 160, 110, 60, 100, 100, 120, 160, 120, 210, 160];
+  const defaultPartnerCols = [36, 160, 110, 60, 100, 100, 120, 160, 140, 150];
   const [clientColWidths, setClientColWidths] = useState(defaultClientCols);
   const [partnerColWidths, setPartnerColWidths] = useState(defaultPartnerCols);
   const resizeRef = useRef(null);
@@ -4267,17 +4267,24 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     )}
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
-                    <div style={{ minWidth: 1420 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5, minWidth: 1400 }}>
-                      {[["", ""], ["NAME", "name"], ["COMPANY", "company"], ["TYPE", "contactType"], ["RESOURCE TYPE", "resourceType"], ["POSITION", "position"], ["PHONE", "phone"], ["EMAIL", "email"], ["ADDRESS", "address"], ["ACTIONS", ""], ["DOCS", ""]].map(([label, sortKey], i) => (
-                        <span key={i} style={{ position: "relative", userSelect: "none", cursor: sortKey ? "pointer" : "default", display: "flex", alignItems: "center", gap: 3 }} onClick={() => { if (!sortKey) return; setPartnerSort(prev => prev.col === sortKey ? { col: sortKey, dir: prev.dir === "asc" ? "desc" : "asc" } : { col: sortKey, dir: "asc" }); }}>
-                          {i === 0 ? <input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /> : <>{label}{partnerSort.col === sortKey && <span style={{ color: "#ff6b4a", fontSize: 8 }}>{partnerSort.dir === "asc" ? "▲" : "▼"}</span>}</>}
-                          {i < partnerColWidths.length - 1 && renderResizeHandle(setPartnerColWidths, i)}
-                        </span>
-                      ))}
+                    {/* Header */}
+                    <div style={{ display: "flex", position: "sticky", top: 0, zIndex: 6, background: "var(--bgInput)", borderBottom: "1px solid var(--borderSub)", minWidth: "fit-content" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, flex: "0 0 auto" }}>
+                        {[["", ""], ["NAME", "name"], ["COMPANY", "company"], ["TYPE", "contactType"], ["RESOURCE TYPE", "resourceType"], ["POSITION", "position"], ["PHONE", "phone"], ["EMAIL", "email"], ["ADDRESS", "address"], ["PROJECTS", ""]].map(([label, sortKey], i) => (
+                          <span key={i} style={{ position: "relative", userSelect: "none", cursor: sortKey ? "pointer" : "default", display: "flex", alignItems: "center", gap: 3 }} onClick={() => { if (!sortKey) return; setPartnerSort(prev => prev.col === sortKey ? { col: sortKey, dir: prev.dir === "asc" ? "desc" : "asc" } : { col: sortKey, dir: "asc" }); }}>
+                            {i === 0 ? <input type="checkbox" checked={contacts.length > 0 && selectedContacts.size === contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())).length} onChange={(e) => { if (e.target.checked) { const visible = contacts.filter(c => !contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())); setSelectedContacts(new Set(visible.map(c => c.id))); } else { setSelectedContacts(new Set()); } }} style={{ cursor: "pointer" }} /> : <>{label}{partnerSort.col === sortKey && <span style={{ color: "#ff6b4a", fontSize: 8 }}>{partnerSort.dir === "asc" ? "▲" : "▼"}</span>}</>}
+                            {i < partnerColWidths.length - 1 && renderResizeHandle(setPartnerColWidths, i)}
+                          </span>
+                        ))}
+                      </div>
+                      <div style={{ position: "sticky", right: 0, display: "flex", alignItems: "center", background: "var(--bgInput)", zIndex: 3, borderLeft: "1px solid var(--borderSub)", flexShrink: 0 }}>
+                        <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, padding: "10px 16px", width: 200 }}>ACTIONS</span>
+                        <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, padding: "10px 12px", width: 180 }}>DOCS</span>
+                      </div>
                     </div>
                     {contacts.filter(c => (!contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.position || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.address || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.resourceType || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.contactType || "").toLowerCase().includes(contactSearch.toLowerCase())) && (!contactFilterType || c.contactType === contactFilterType) && (!contactFilterResource || c.resourceType === contactFilterResource)).sort((a, b) => { if (!partnerSort.col) return 0; const av = (a[partnerSort.col] || "").toString().toLowerCase(); const bv = (b[partnerSort.col] || "").toString().toLowerCase(); return partnerSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); }).map(c => (
-                      <div key={c.id} style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent", minWidth: 1400 }}>
+                      <div key={c.id} style={{ display: "flex", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent", minWidth: "fit-content" }}>
+                        <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", flex: "0 0 auto", alignItems: "center" }}>
                         <span><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={(e) => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                           <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
@@ -4295,7 +4302,19 @@ export default function Dashboard({ user, onLogout }) {
                         <span onClick={(e) => c.phone && copyToClipboard(c.phone, "Phone", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.phone ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.phone) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.phone || "—"} {c.phone && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span onClick={(e) => c.email && copyToClipboard(c.email, "Email", e)} style={{ color: "var(--textMuted)", fontSize: 11, cursor: c.email ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.email) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{c.email || "—"} {c.email && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                         <span onClick={(e) => c.address && copyToClipboard(c.address, "Address", e)} style={{ color: "var(--textMuted)", fontSize: 10, cursor: c.address ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (c.address) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"} title={c.address || ""}>{c.address || "—"} {c.address && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
-                        <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative", flexWrap: "nowrap", overflow: "visible" }}>
+                        {/* PROJECTS cell */}
+                        {(() => {
+                          const assignedProjects = projects.filter(p => {
+                            const all = [...(p.producers || []), ...(p.managers || []), ...(p.staff || []), ...(p.pocs || []).map(x => x.name), ...(p.clientContacts || []).map(x => x.name), ...(p.billingContacts || []).map(x => x.name)];
+                            const vendorMatch = (projectVendors[p.id] || []).some(v => v.name === c.company || v.name === c.vendorName || v.email === c.email || v.contact === c.name);
+                            return all.includes(c.name) || vendorMatch;
+                          });
+                          return <div style={{ display: "flex", gap: 3, flexWrap: "wrap", overflow: "hidden" }}>{assignedProjects.length === 0 ? <span style={{ fontSize: 10, color: "var(--textGhost)" }}>—</span> : <>{assignedProjects.slice(0, 3).map(p => <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ padding: "2px 6px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 8, fontWeight: 700, color: "#9b6dff", cursor: "pointer", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 100 }} title={p.name}>{p.name}</span>)}{assignedProjects.length > 3 && <span style={{ fontSize: 8, color: "var(--textGhost)" }}>+{assignedProjects.length - 3}</span>}</>}</div>;
+                        })()}
+                        </div>
+                        {/* Sticky right section: ACTIONS + DOCS */}
+                        <div style={{ position: "sticky", right: 0, display: "flex", alignItems: "center", background: selectedContacts.has(c.id) ? "#ff6b4a08" : "var(--bgInput)", zIndex: 2, borderLeft: "1px solid var(--borderSub)", flexShrink: 0 }}>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center", position: "relative", flexWrap: "nowrap", overflow: "visible", padding: "6px 12px", width: 200 }}>
                           <div style={{ position: "relative" }}>
                             <button onClick={() => setAssignContactPopover(assignContactPopover?.contactId === c.id ? null : { contactId: c.id, selectedProject: activeProjectId, selectedRole: "Point of Contact" })} style={{ padding: "4px 10px", background: assignContactPopover?.contactId === c.id ? "#9b6dff25" : "#9b6dff10", border: "1px solid #9b6dff30", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>+ Project</button>
                             {assignContactPopover?.contactId === c.id && (
@@ -4347,18 +4366,9 @@ export default function Dashboard({ user, onLogout }) {
                           <button onClick={() => { setContactForm({ ...c, clientAssociation: c.clientAssociation || (clients.find(cl => cl.name.toLowerCase() === (c.company || c.vendorName || "").toLowerCase())?.name || "") }); setShowAddContact(true); }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Edit contact">✏ Edit</button>
                           <button onClick={() => downloadVCard(c)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Save to Mac Contacts (.vcf)">📇</button>
                           <button onClick={() => { if (confirm(`Remove ${c.name}?`)) { pushUndo("Delete contact"); setContacts(prev => prev.filter(x => x.id !== c.id)); } }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 10, fontWeight: 600 }} title="Delete contact">✕</button>
-                          {/* Project assignments */}
-                          {(() => {
-                            const assignedProjects = projects.filter(p => {
-                              const all = [...(p.producers || []), ...(p.managers || []), ...(p.staff || []), ...(p.pocs || []).map(x => x.name), ...(p.clientContacts || []).map(x => x.name), ...(p.billingContacts || []).map(x => x.name)];
-                              const vendorMatch = (projectVendors[p.id] || []).some(v => v.name === c.company || v.name === c.vendorName || v.email === c.email || v.contact === c.name);
-                              return all.includes(c.name) || vendorMatch;
-                            });
-                            if (assignedProjects.length === 0) return null;
-                            return <div style={{ display: "flex", gap: 2, flexWrap: "wrap", maxWidth: 160 }}>{assignedProjects.slice(0, 3).map(p => <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ padding: "1px 5px", background: "#9b6dff10", border: "1px solid #9b6dff20", borderRadius: 3, fontSize: 7, fontWeight: 700, color: "#9b6dff", cursor: "pointer", whiteSpace: "nowrap", maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis" }} title={p.name}>{p.name}</span>)}{assignedProjects.length > 3 && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>+{assignedProjects.length - 3}</span>}</div>;
-                          })()}
                         </div>
-                        {/* DOCS column - functional upload buttons synced with vendor compliance */}
+                        {/* DOCS column */}
+                        <div style={{ width: 180, padding: "6px 8px", flexShrink: 0 }}>
                         {(() => {
                           const contactVendorName = c.vendorName || c.company || c.name;
                           // Search ALL projects' vendors, not just active project
@@ -4433,10 +4443,11 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                           );
                         })()}
-                      </div>
+                        </div>{/* close DOCS wrapper */}
+                      </div>{/* close sticky right */}
+                      </div>{/* close flex row */}
                     ))}
-                    </div>
-                    </div>
+                    </div>{/* close scroll container */}
                   </div>
                 )}
               </div>
@@ -7887,10 +7898,10 @@ export default function Dashboard({ user, onLogout }) {
         <>
           {/* Toggle button */}
           {!showCommentPanel && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
-            <button onClick={() => setShowCommentPanel(true)} style={{ position: "fixed", right: 0, top: "50%", transform: "translateY(-50%)", zIndex: 200, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRight: "none", borderRadius: "8px 0 0 8px", padding: "12px 8px", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, boxShadow: "-2px 0 12px rgba(0,0,0,0.15)", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => { e.currentTarget.style.background = "var(--bgCard)"; }}>
-              <span style={{ fontSize: 14 }}>💬</span>
+            <button onClick={() => setShowCommentPanel(true)} style={{ position: "fixed", right: 24, bottom: 24, zIndex: 200, background: "#ff6b4a", border: "none", borderRadius: "50%", width: 56, height: 56, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, boxShadow: "0 4px 20px rgba(255,107,74,0.4)", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(255,107,74,0.5)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(255,107,74,0.4)"; }}>
+              <span style={{ fontSize: 24, lineHeight: 1 }}>💬</span>
               {(projectComments[activeProjectId] || []).length > 0 && (
-                <span style={{ fontSize: 8, fontWeight: 800, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{(projectComments[activeProjectId] || []).length}</span>
+                <span style={{ position: "absolute", top: -4, right: -4, fontSize: 10, fontWeight: 800, color: "#fff", background: "#e85454", borderRadius: "50%", width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'JetBrains Mono', monospace", border: "2px solid var(--bg)" }}>{(projectComments[activeProjectId] || []).length}</span>
               )}
             </button>
           )}
