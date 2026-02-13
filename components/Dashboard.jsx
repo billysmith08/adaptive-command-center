@@ -1676,6 +1676,8 @@ export default function Dashboard({ user, onLogout }) {
     departments: [...DEPT_OPTIONS],
     resourceTypes: ["AV/Tech", "Catering", "Crew", "Decor", "DJ/Music", "Equipment", "Fabrication", "Floral", "Lighting", "Other", "Permits", "Photography", "Props", "Security", "Staffing", "Talent", "Vehicles", "Venue", "Videography"],
     projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
+    finCustomCols: [],
+    userProfiles: {}, // { email: { firstName, lastName, phone, title, department, avatar, company } }
     folderTemplate: [
       { name: "ADMIN", children: [
         { name: "BUDGET", children: [
@@ -1712,6 +1714,10 @@ export default function Dashboard({ user, onLogout }) {
   const [driveShareEmail, setDriveShareEmail] = useState("");
   const [driveShareRole, setDriveShareRole] = useState("reader");
   const [driveShareLoading, setDriveShareLoading] = useState(false);
+  const [finFilterMonth, setFinFilterMonth] = useState("all");
+  const [finFilterStatus, setFinFilterStatus] = useState("all");
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [presenceUsers, setPresenceUsers] = useState([]);
   const projDriveFileRef = useRef(null);
   // ─── ACTIVITY FEED ──────────────────────────────────────────────
   const [activityLog, setActivityLog] = useState([]);
@@ -2900,6 +2906,7 @@ export default function Dashboard({ user, onLogout }) {
           if (s.rosDayDates) setRosDayDates(s.rosDayDates);
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
+          if (s.appSettings && typeof s.appSettings === 'object') setAppSettings(prev => ({ ...prev, ...s.appSettings }));
           if (s.clients && Array.isArray(s.clients)) {
             const nameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
             const migrated = s.clients.map(c => ({ ...c, name: nameMap[c.name] || c.name }));
@@ -2928,6 +2935,7 @@ export default function Dashboard({ user, onLogout }) {
           if (s.contacts && Array.isArray(s.contacts)) setContacts(s.contacts);
           if (s.activityLog && Array.isArray(s.activityLog)) setActivityLog(s.activityLog);
           if (s.clients && Array.isArray(s.clients)) {
+          if (s.appSettings && typeof s.appSettings === 'object') setAppSettings(prev => ({ ...prev, ...s.appSettings }));
             const nameMap = { "Amjad Asad": "Amjad Masad", "Ayita": "AYITA", "GUESS?, Inc": "Guess", "GUESS?, Inc.": "Guess", "NVE": "NVE Experience Agency, LLC", "Sequel Inc": "Sequel Marketing", "Franklin Pictures": "Franklin Pictures, Inc.", "Franklin Pictures, Inc": "Franklin Pictures, Inc.", "Brunello": "Brunelo" };
             const migrated = s.clients.map(c => ({ ...c, name: nameMap[c.name] || c.name }));
             const seen = new Set(); setClients(migrated.filter(c => { const k = c.name.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; }));
@@ -2946,6 +2954,7 @@ export default function Dashboard({ user, onLogout }) {
             projectROS: s.projectROS || {},
             rosDayDates: s.rosDayDates || {},
             activityLog: s.activityLog || [],
+            appSettings: s.appSettings || { finCustomCols: [] },
           };
           const upserts = Object.entries(sliceData).map(([key, data]) => ({
             id: key, state: data, updated_at: now, updated_by: user.id
@@ -3230,6 +3239,7 @@ export default function Dashboard({ user, onLogout }) {
     else if (key === 'contacts' && Array.isArray(data)) setContacts(prev => mergeArrayById(prev, data));
     else if (key === 'clients' && Array.isArray(data)) setClients(prev => mergeArrayById(prev, data));
     else if (key === 'activityLog' && Array.isArray(data)) setActivityLog(data); // activity log: remote wins always
+    else if (key === 'appSettings' && data && typeof data === 'object') setAppSettings(prev => ({ ...prev, ...data }));
     else if (key === 'projectVendors' && data) setProjectVendors(prev => mergeDictById(prev, data));
     else if (key === 'projectWorkback' && data) setProjectWorkback(prev => mergeDictById(prev, data));
     else if (key === 'projectProgress' && data) setProjectProgress(prev => mergeDictById(prev, data));
@@ -3278,7 +3288,7 @@ export default function Dashboard({ user, onLogout }) {
           setTimeout(() => setClipboardToast(null), 2500);
         }
       } catch (e) { console.warn('Sync poll error:', e); }
-    }, 3000); // 3s polling (was 8s)
+    }, 5000); // 5s polling (reduced from 3s to lower Vercel invocations)
     return () => { supabase.removeChannel(channel); clearInterval(pollInterval); };
   }, [user, supabase, applyRemoteSlice]);
 
@@ -3907,7 +3917,8 @@ export default function Dashboard({ user, onLogout }) {
     ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
     ...(project.pocs || []).filter(p => p.name).map(p => p.name),
     ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
-  ])];
+    ...vendors.map(v => v.name).filter(Boolean),
+  ])].sort();
   const pctSpent = project.budget > 0 ? (project.spent / project.budget) * 100 : 0;
   const compTotal = vendors.length * 5;
   const compDone = vendors.reduce((s, v) => s + COMP_KEYS.filter(ck => v.compliance?.[ck.key]?.done).length, 0);
@@ -3990,6 +4001,72 @@ export default function Dashboard({ user, onLogout }) {
       saveSettings(updated);
     }
   }, [dataLoaded, user, isUserAuthorized]);
+
+  // ─── PRESENCE via SUPABASE REALTIME (zero serverless calls) ─────
+  useEffect(() => {
+    if (!dataLoaded || !user?.email || !isUserAuthorized || !supabase) return;
+    const myProfile = (appSettings.userProfiles || {})[user.email] || {};
+    const presencePayload = {
+      email: user.email,
+      firstName: myProfile.firstName || user.name?.split(" ")[0] || "",
+      lastName: myProfile.lastName || user.name?.split(" ").slice(1).join(" ") || "",
+      avatar: myProfile.avatar || "",
+      title: myProfile.title || "",
+      onlineAt: new Date().toISOString(),
+    };
+    const channel = supabase.channel('cc-presence', { config: { presence: { key: user.email } } });
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const others = [];
+        Object.entries(state).forEach(([email, presences]) => {
+          if (email === user.email) return;
+          const p = presences[0]; // latest presence for this user
+          if (p) others.push({ email, firstName: p.firstName || "", lastName: p.lastName || "", avatar: p.avatar || "", title: p.title || "", onlineAt: p.onlineAt });
+        });
+        setPresenceUsers(others);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track(presencePayload);
+        }
+      });
+    // Re-track when profile changes
+    const retrack = async () => {
+      const updated = (appSettings.userProfiles || {})[user.email] || {};
+      await channel.track({
+        email: user.email,
+        firstName: updated.firstName || user.name?.split(" ")[0] || "",
+        lastName: updated.lastName || user.name?.split(" ").slice(1).join(" ") || "",
+        avatar: updated.avatar || "",
+        title: updated.title || "",
+        onlineAt: new Date().toISOString(),
+      });
+    };
+    const profileJson = JSON.stringify(myProfile);
+    const retrackTimer = setTimeout(retrack, 100); // ensure initial track
+    return () => { clearTimeout(retrackTimer); supabase.removeChannel(channel); };
+  }, [dataLoaded, user, isUserAuthorized, supabase, JSON.stringify((appSettings.userProfiles || {})[user?.email])]);
+
+  // ─── FIRST-LOGIN PROFILE CHECK ──────────────────────────────────
+  useEffect(() => {
+    if (!dataLoaded || !user?.email || !isUserAuthorized) return;
+    const profiles = appSettings.userProfiles || {};
+    if (!profiles[user.email]) {
+      // First time this user logs in — show profile setup
+      setShowProfileSetup(true);
+    }
+  }, [dataLoaded, user, isUserAuthorized, appSettings.userProfiles]);
+
+  // ─── SAVE USER PROFILE ──────────────────────────────────────────
+  const saveUserProfile = async (profileData) => {
+    const updated = {
+      ...appSettings,
+      userProfiles: { ...(appSettings.userProfiles || {}), [user.email]: { ...profileData, email: user.email, setupAt: new Date().toISOString() } },
+    };
+    await saveSettings(updated);
+    setShowProfileSetup(false);
+  };
 
   const approveUser = async (email) => {
     const updated = {
@@ -4118,6 +4195,30 @@ export default function Dashboard({ user, onLogout }) {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          {/* ── LIVE PRESENCE BUBBLES ── */}
+          {presenceUsers.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+              {presenceUsers.slice(0, 5).map((u, i) => {
+                const initials = ((u.firstName || "")[0] || "") + ((u.lastName || "")[0] || u.email[0] || "");
+                const colors = ["#ff6b4a", "#3da5db", "#9b6dff", "#4ecb71", "#dba94e"];
+                const color = colors[i % colors.length];
+                return (
+                  <div key={u.email} style={{ position: "relative", marginLeft: i > 0 ? -6 : 0, zIndex: 5 - i }} title={`${u.firstName || ""} ${u.lastName || ""}`.trim() || u.email}>
+                    {u.avatar ? (
+                      <img src={u.avatar} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--bgCard)" }} />
+                    ) : (
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: `${color}25`, border: "2px solid var(--bgCard)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color }}>{initials.toUpperCase()}</div>
+                    )}
+                    <div style={{ position: "absolute", bottom: -1, right: -1, width: 8, height: 8, borderRadius: "50%", background: "#4ecb71", border: "1.5px solid var(--bgCard)" }} />
+                  </div>
+                );
+              })}
+              {presenceUsers.length > 5 && (
+                <div style={{ marginLeft: -6, width: 28, height: 28, borderRadius: "50%", background: "var(--bgHover)", border: "2px solid var(--bgCard)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", zIndex: 0 }}>+{presenceUsers.length - 5}</div>
+              )}
+              <span style={{ marginLeft: 6, fontSize: 9, color: "var(--textFaint)", fontWeight: 600 }}>{presenceUsers.length} online</span>
+            </div>
+          )}
           {/* Settings gear (admin only) */}
           {(canSeeSection("settings") || previewingAs) && isAdmin && (
             <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title="Settings">
@@ -4190,7 +4291,20 @@ export default function Dashboard({ user, onLogout }) {
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast synced: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : "never"}`} onClick={() => { const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog }; Object.entries(slices).forEach(([key, data]) => saveSlice(key, data)); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ LIVE"}</span></div>
           <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
-          {user && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{user.email}</span>}
+          {user && (() => {
+            const myP = (appSettings.userProfiles || {})[user.email] || {};
+            const ini = ((myP.firstName || user.name?.split(" ")[0] || "")[0] || "") + ((myP.lastName || user.name?.split(" ").slice(1).join(" ") || "")[0] || user.email[0] || "");
+            return (
+              <div onClick={() => { setSettingsTab("profile"); setShowSettings(true); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: "2px 8px 2px 2px", borderRadius: 20, border: "1px solid transparent", transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--borderSub)"} onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"} title="Edit profile">
+                {myP.avatar ? (
+                  <img src={myP.avatar} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} />
+                ) : (
+                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#ff6b4a20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#ff6b4a" }}>{ini.toUpperCase()}</div>
+                )}
+                <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{myP.firstName ? `${myP.firstName} ${myP.lastName || ""}`.trim() : user.email}</span>
+              </div>
+            );
+          })()}
           {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
         </div>
       </div>
@@ -5054,67 +5168,172 @@ export default function Dashboard({ user, onLogout }) {
 
             {/* ═══ FINANCE (ADMIN-ONLY) ═══ */}
             {activeTab === "finance" && isAdmin && (() => {
-              const activeProjects = projects.filter(p => !p.parentId && p.status !== "Archived");
               const monthOrder = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-              const sorted = [...activeProjects].sort((a, b) => {
-                const ma = monthOrder.indexOf(a.projectMonth || "");
-                const mb = monthOrder.indexOf(b.projectMonth || "");
+              const monthAbbr = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+              const parseNum = (v) => { if (!v && v !== 0) return 0; const n = parseFloat(String(v).replace(/[^0-9.-]/g, "")); return isNaN(n) ? 0 : n; };
+              const fmtMoney = (v) => { const n = parseNum(v); if (n === 0) return ""; const abs = Math.abs(n); const str = "$" + abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return n < 0 ? "-" + str : str; };
+              const moneyColor = (v) => { const n = parseNum(v); return n < 0 ? "#e85454" : n > 0 ? "#4ecb71" : "var(--textGhost)"; };
+              const statusMap = { "In-Production": "Active", "Exploration": "Prospecting", "Wrap": "Complete", "Archived": "Archived" };
+              const statusColors = { Active: "#4ecb71", "In-Production": "#4ecb71", "On Hold": "#dba94e", Complete: "#3da5db", Wrap: "#3da5db", Cancelled: "#ff4a6b", Prospecting: "#9b6dff", Exploration: "#9b6dff", Archived: "#8a8680" };
+
+              // Auto-derive month from eventDates.start
+              const getProjectMonth = (p) => {
+                if (p.projectMonth) return p.projectMonth;
+                if (p.eventDates?.start) {
+                  const d = new Date(p.eventDates.start + "T00:00:00");
+                  if (!isNaN(d)) return monthOrder[d.getMonth()];
+                }
+                return "";
+              };
+
+              const allProjects = projects.filter(p => !p.parentId && p.status !== "Archived");
+
+              // Apply filters
+              const Q1 = ["January","February","March"];
+              const Q2 = ["April","May","June"];
+              const Q3 = ["July","August","September"];
+              const Q4 = ["October","November","December"];
+              const quarterMap = { Q1, Q2, Q3, Q4 };
+
+              const filtered = allProjects.filter(p => {
+                if (finFilterStatus !== "all" && p.status !== finFilterStatus) return false;
+                if (finFilterMonth !== "all") {
+                  const pm = getProjectMonth(p);
+                  if (finFilterMonth === "year") return true; // show all for "Full Year"
+                  if (quarterMap[finFilterMonth]) return quarterMap[finFilterMonth].includes(pm);
+                  if (pm !== finFilterMonth) return false;
+                }
+                return true;
+              });
+
+              const sorted = [...filtered].sort((a, b) => {
+                const ma = monthOrder.indexOf(getProjectMonth(a));
+                const mb = monthOrder.indexOf(getProjectMonth(b));
                 return (ma === -1 ? 99 : ma) - (mb === -1 ? 99 : mb);
               });
-              const parseNum = (v) => { if (!v && v !== 0) return 0; const n = parseFloat(String(v).replace(/[^0-9.-]/g, "")); return isNaN(n) ? 0 : n; };
-              const fmtMoney = (v) => { const n = parseNum(v); return n === 0 ? "" : "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-              const totalWalkout = sorted.reduce((s, p) => s + parseNum(p.fin_walkout), 0);
-              const totalTalent = sorted.reduce((s, p) => s + parseNum(p.fin_talent), 0);
-              const totalProdCoord = sorted.reduce((s, p) => s + parseNum(p.fin_prodCoord), 0);
-              const totalShowCoord = sorted.reduce((s, p) => s + parseNum(p.fin_showCoord), 0);
-              const totalCalc = sorted.reduce((s, p) => s + parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord), 0);
+
+              // Custom columns from appSettings (synced to Supabase via app_settings table)
+              const savedCols = appSettings.finCustomCols || [];
+              const addCustomCol = () => {
+                const name = prompt("Column name:");
+                if (!name) return;
+                const key = "fin_c_" + name.replace(/[^a-zA-Z0-9]/g, "_").toLowerCase();
+                const updated = { ...appSettings, finCustomCols: [...(appSettings.finCustomCols || []), { key, label: name }] };
+                saveSettings(updated);
+              };
+              const removeCustomCol = (key) => {
+                if (!confirm("Remove this column?")) return;
+                const updated = { ...appSettings, finCustomCols: (appSettings.finCustomCols || []).filter(c => c.key !== key) };
+                saveSettings(updated);
+              };
+
+              // Calculate sums
+              const sumField = (field) => sorted.reduce((s, p) => s + parseNum(p[field]), 0);
+              const rowSum = (p) => {
+                let s = parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord);
+                savedCols.forEach(c => { s += parseNum(p[c.key]); });
+                return s;
+              };
+              const totalWalkout = sumField("fin_walkout");
+              const totalTalent = sumField("fin_talent");
+              const totalProdCoord = sumField("fin_prodCoord");
+              const totalShowCoord = sumField("fin_showCoord");
+              const totalSum = sorted.reduce((s, p) => s + rowSum(p), 0);
+
               const colStyle = { padding: "8px 10px", fontSize: 12, borderBottom: "1px solid var(--borderSub)", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" };
               const headerStyle = { ...colStyle, fontSize: 9, fontWeight: 700, letterSpacing: 0.8, color: "var(--textFaint)", background: "var(--bgHover)", position: "sticky", top: 0, zIndex: 2, fontFamily: "'Instrument Sans', sans-serif" };
               const inputStyle = { width: "100%", background: "transparent", border: "none", color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", padding: 0 };
               const updateFinField = (projectId, field, value) => {
                 setProjects(prev => prev.map(p => p.id === projectId ? { ...p, [field]: value } : p));
               };
-              const statusColors = { Active: "#4ecb71", "On Hold": "#dba94e", Complete: "#3da5db", Cancelled: "#ff4a6b", Prospecting: "#9b6dff" };
+
+              // Unique statuses and months for filter dropdowns
+              const uniqueStatuses = [...new Set(allProjects.map(p => p.status))].sort();
+              const uniqueMonths = [...new Set(allProjects.map(p => getProjectMonth(p)).filter(Boolean))].sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
 
               return (
                 <div style={{ animation: "fadeUp 0.3s ease" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
                     <div>
                       <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ADMIN · FINANCIALS</div>
                       <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>💰 Finance Overview</div>
                     </div>
-                    <div style={{ display: "flex", gap: 8 }}>
-                      <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", textAlign: "center" }}>
-                        <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL WALKOUT</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: "#4ecb71", fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalWalkout)}</div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      {/* Filters */}
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <select value={finFilterMonth} onChange={e => setFinFilterMonth(e.target.value)} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                          <option value="all">All Months</option>
+                          <option value="year">Full Year</option>
+                          <option disabled>──────────</option>
+                          <option value="Q1">Q1 (Jan-Mar)</option>
+                          <option value="Q2">Q2 (Apr-Jun)</option>
+                          <option value="Q3">Q3 (Jul-Sep)</option>
+                          <option value="Q4">Q4 (Oct-Dec)</option>
+                          <option disabled>──────────</option>
+                          {uniqueMonths.map(m => <option key={m} value={m}>{m}</option>)}
+                        </select>
+                        <select value={finFilterStatus} onChange={e => setFinFilterStatus(e.target.value)} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                          <option value="all">All Statuses</option>
+                          {uniqueStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        {(finFilterMonth !== "all" || finFilterStatus !== "all") && (
+                          <button onClick={() => { setFinFilterMonth("all"); setFinFilterStatus("all"); }} style={{ padding: "4px 8px", background: "#e8545410", border: "1px solid #e8545420", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 9, fontWeight: 700 }}>✕ Clear</button>
+                        )}
                       </div>
-                      <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", textAlign: "center" }}>
-                        <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL SUM</div>
-                        <div style={{ fontSize: 16, fontWeight: 700, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalCalc)}</div>
-                      </div>
+                      <button onClick={addCustomCol} style={{ padding: "5px 10px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>+ Column</button>
                     </div>
                   </div>
 
+                  {/* Summary Cards */}
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 110 }}>
+                      <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL WALKOUT</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: moneyColor(totalWalkout), fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalWalkout) || "$0.00"}</div>
+                    </div>
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 110 }}>
+                      <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL FEES</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: moneyColor(totalTalent + totalProdCoord + totalShowCoord), fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalTalent + totalProdCoord + totalShowCoord) || "$0.00"}</div>
+                    </div>
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 110 }}>
+                      <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>Σ TOTAL</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: moneyColor(totalSum), fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalSum) || "$0.00"}</div>
+                    </div>
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 80 }}>
+                      <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>PROJECTS</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{sorted.length}{finFilterMonth !== "all" || finFilterStatus !== "all" ? `/${allProjects.length}` : ""}</div>
+                    </div>
+                  </div>
+
+                  {/* Table */}
                   <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
-                    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+                    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 300px)" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 + savedCols.length * 130 }}>
                         <thead>
                           <tr>
                             <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>PROJECTS</th>
-                            <th style={{ ...headerStyle, width: 100, textAlign: "center" }}>STATUS</th>
-                            <th style={{ ...headerStyle, width: 100, textAlign: "left" }}>MONTH</th>
-                            <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>NOTES</th>
-                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>EST. WALKOUT</th>
-                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>TALENT FEE</th>
-                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>PROD. COORD</th>
-                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>SHOW COORD</th>
-                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>Σ SUM</th>
+                            <th style={{ ...headerStyle, width: 90, textAlign: "center" }}>STATUS</th>
+                            <th style={{ ...headerStyle, width: 60, textAlign: "center" }}>MONTH</th>
+                            <th style={{ ...headerStyle, width: 180, textAlign: "left" }}>NOTES</th>
+                            <th style={{ ...headerStyle, width: 120, textAlign: "right" }}>EST. WALKOUT</th>
+                            <th style={{ ...headerStyle, width: 110, textAlign: "right" }}>TALENT FEE</th>
+                            <th style={{ ...headerStyle, width: 110, textAlign: "right" }}>PROD. COORD</th>
+                            <th style={{ ...headerStyle, width: 110, textAlign: "right" }}>SHOW COORD</th>
+                            {savedCols.map(c => (
+                              <th key={c.key} style={{ ...headerStyle, width: 120, textAlign: "right", cursor: "pointer", position: "relative" }}>
+                                <span>{c.label.toUpperCase()}</span>
+                                <span onClick={(e) => { e.stopPropagation(); removeCustomCol(c.key); }} style={{ marginLeft: 4, color: "#e85454", cursor: "pointer", opacity: 0.5, fontSize: 8 }} title="Remove column">✕</span>
+                              </th>
+                            ))}
+                            <th style={{ ...headerStyle, width: 120, textAlign: "right" }}>Σ SUM</th>
                           </tr>
                         </thead>
                         <tbody>
                           {sorted.map((p, idx) => {
-                            const rowSum = parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord);
+                            const rs = rowSum(p);
                             const code = p.code || "";
+                            const month = getProjectMonth(p);
+                            const monthIdx = monthOrder.indexOf(month);
                             return (
                               <tr key={p.id} style={{ background: idx % 2 === 0 ? "transparent" : "var(--bgHover)" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a08"} onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? "transparent" : "var(--bgHover)"}>
                                 <td style={{ ...colStyle, textAlign: "left" }}>
@@ -5122,54 +5341,60 @@ export default function Dashboard({ user, onLogout }) {
                                   {code && <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{code}</div>}
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "center" }}>
-                                  <select value={p.status || "Active"} onChange={e => updateFinField(p.id, "status", e.target.value)} style={{ ...inputStyle, textAlign: "center", background: (statusColors[p.status] || "#888") + "20", color: statusColors[p.status] || "var(--text)", borderRadius: 4, padding: "3px 6px", fontWeight: 700, fontSize: 10, fontFamily: "'Instrument Sans', sans-serif", cursor: "pointer" }}>
-                                    {["Active", "On Hold", "Complete", "Cancelled", "Prospecting"].map(s => <option key={s} value={s}>{s}</option>)}
-                                  </select>
+                                  <span style={{ display: "inline-block", background: (statusColors[p.status] || "#888") + "20", color: statusColors[p.status] || "var(--text)", borderRadius: 4, padding: "3px 8px", fontWeight: 700, fontSize: 9, fontFamily: "'Instrument Sans', sans-serif", whiteSpace: "nowrap" }}>
+                                    {statusMap[p.status] || p.status}
+                                  </span>
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "left" }}>
-                                  <select value={p.projectMonth || ""} onChange={e => updateFinField(p.id, "projectMonth", e.target.value)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11 }}>
-                                    <option value="">—</option>
-                                    {monthOrder.map(m => <option key={m} value={m}>{m}</option>)}
-                                  </select>
+                                <td style={{ ...colStyle, textAlign: "center", fontSize: 10, color: month ? "var(--text)" : "var(--textGhost)", fontFamily: "'Instrument Sans', sans-serif" }}>
+                                  {monthIdx >= 0 ? monthAbbr[monthIdx] : "—"}
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "left" }}>
                                   <input value={p.fin_notes || ""} onChange={e => updateFinField(p.id, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 11, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_walkout || ""} onChange={e => updateFinField(p.id, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_walkout", v.toFixed(2)); }} />
+                                  <input value={p.fin_walkout || ""} onChange={e => updateFinField(p.id, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_walkout) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_walkout", v.toFixed(2)); }} />
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_talent || ""} onChange={e => updateFinField(p.id, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_talent", v.toFixed(2)); }} />
+                                  <input value={p.fin_talent || ""} onChange={e => updateFinField(p.id, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_talent) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_talent", v.toFixed(2)); }} />
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_prodCoord || ""} onChange={e => updateFinField(p.id, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_prodCoord", v.toFixed(2)); }} />
+                                  <input value={p.fin_prodCoord || ""} onChange={e => updateFinField(p.id, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_prodCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_prodCoord", v.toFixed(2)); }} />
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_showCoord || ""} onChange={e => updateFinField(p.id, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_showCoord", v.toFixed(2)); }} />
+                                  <input value={p.fin_showCoord || ""} onChange={e => updateFinField(p.id, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_showCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_showCoord", v.toFixed(2)); }} />
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: rowSum > 0 ? "#4ecb71" : "var(--textMuted)" }}>
-                                  {rowSum > 0 ? fmtMoney(rowSum) : "—"}
+                                {savedCols.map(c => (
+                                  <td key={c.key} style={{ ...colStyle, textAlign: "right" }}>
+                                    <input value={p[c.key] || ""} onChange={e => updateFinField(p.id, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p[c.key]) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, c.key, v.toFixed(2)); }} />
+                                  </td>
+                                ))}
+                                <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(rs) }}>
+                                  {rs !== 0 ? fmtMoney(rs) : "—"}
                                 </td>
                               </tr>
                             );
                           })}
                           {/* Totals row */}
                           <tr style={{ background: "var(--bgHover)", borderTop: "2px solid var(--border)" }}>
-                            <td style={{ ...colStyle, fontWeight: 700, fontSize: 11 }}>TOTALS ({sorted.length} projects)</td>
+                            <td style={{ ...colStyle, fontWeight: 700, fontSize: 11, fontFamily: "'Instrument Sans', sans-serif" }}>TOTALS ({sorted.length} project{sorted.length !== 1 ? "s" : ""})</td>
                             <td style={colStyle} />
                             <td style={colStyle} />
                             <td style={colStyle} />
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "#4ecb71" }}>{fmtMoney(totalWalkout)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{fmtMoney(totalTalent)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{fmtMoney(totalProdCoord)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{fmtMoney(totalShowCoord)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "#ff6b4a", fontSize: 13 }}>{fmtMoney(totalCalc)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalWalkout) }}>{fmtMoney(totalWalkout)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalTalent) }}>{fmtMoney(totalTalent)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalProdCoord) }}>{fmtMoney(totalProdCoord)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalShowCoord) }}>{fmtMoney(totalShowCoord)}</td>
+                            {savedCols.map(c => {
+                              const colTotal = sumField(c.key);
+                              return <td key={c.key} style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(colTotal) }}>{fmtMoney(colTotal)}</td>;
+                            })}
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, fontSize: 13, color: moneyColor(totalSum) }}>{fmtMoney(totalSum)}</td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
                   </div>
-                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Data saves live to Supabase · Click project name to jump to overview</div>
+                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Data saves live to Supabase · Month auto-derived from event date · Click project name to jump to overview</div>
                 </div>
               );
             })()}
@@ -5340,7 +5565,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ display: "grid", gridTemplateColumns: project.parentId ? "1fr 1fr 1fr 1fr 1fr" : "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STATUS</div>
-                    <Dropdown value={project.status} options={[...new Set([...STATUSES, ...(appSettings.statuses || [])])].filter(Boolean)} onChange={v => updateProject("status", v)} colors={{...STATUS_COLORS, ...Object.fromEntries((appSettings.statuses || []).filter(s => !STATUS_COLORS[s]).map(s => [s, { bg: "#9b6dff10", text: "#9b6dff", dot: "#9b6dff" }]))}} width="100%" />
+                    <Dropdown value={project.status} options={[...new Set([...STATUSES, ...(appSettings.statuses || [])])].filter(Boolean).sort()} onChange={v => updateProject("status", v)} colors={{...STATUS_COLORS, ...Object.fromEntries((appSettings.statuses || []).filter(s => !STATUS_COLORS[s]).map(s => [s, { bg: "#9b6dff10", text: "#9b6dff", dot: "#9b6dff" }]))}} width="100%" />
                   </div>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>EVENT DATES</div>
@@ -5822,7 +6047,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
                   <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 280px)", minHeight: 300 }}>
                   <div style={{ minWidth: 1100 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 220px 200px 180px 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
+                  <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 200px 180px 160px 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
                   {workback.map((wb, i) => {
                     // Deadline color-coding
                     const wbDeadlineStyle = (() => {
@@ -5845,13 +6070,13 @@ export default function Dashboard({ user, onLogout }) {
                       return null;
                     })();
                     return (
-                    <div key={wb.id} style={{ display: "grid", gridTemplateColumns: "100px 1fr 220px 200px 180px 36px", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wbDeadlineStyle.bg, borderLeft: wbDeadlineStyle.borderLeft }}>
+                    <div key={wb.id} style={{ display: "grid", gridTemplateColumns: "140px 1fr 200px 180px 160px 36px", padding: "8px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: wbDeadlineStyle.bg, borderLeft: wbDeadlineStyle.borderLeft }}>
                       <div style={{ position: "relative" }}>
                         <DatePicker value={wb.date} onChange={v => updateWB(wb.id, "date", v)} />
                         {overdueLabel && <div style={{ fontSize: 8, fontWeight: 700, color: overdueLabel.color, marginTop: 2 }}>{overdueLabel.text}</div>}
                       </div>
                       <EditableText value={wb.task} onChange={v => updateWB(wb.id, "task", v)} fontSize={12} color={wb.isEvent ? "#ff6b4a" : "var(--text)"} fontWeight={wb.isEvent ? 700 : 500} placeholder="Task name..." />
-                      <MultiDropdown values={wb.depts} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
+                      <MultiDropdown values={wb.depts} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort()} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
                       <Dropdown value={wb.owner} options={eventContactNames} onChange={v => updateWB(wb.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                       <Dropdown value={wb.status} options={WB_STATUSES} onChange={v => updateWB(wb.id, "status", v)} colors={Object.fromEntries(WB_STATUSES.map(s => [s, { bg: WB_STATUS_STYLES[s].bg, text: WB_STATUS_STYLES[s].text, dot: WB_STATUS_STYLES[s].text }]))} width="100%" />
                       <button onClick={() => setWorkback(p => p.filter(w => w.id !== wb.id))} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
@@ -5874,8 +6099,14 @@ export default function Dashboard({ user, onLogout }) {
               }
               const prRows = progress.rows || [];
               const prLocs = progress.locations || [];
-              const allDepts = [...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean);
-              const eventContactNames = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];
+              const allDepts = [...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort();
+              const eventContactNames = [...new Set([
+                ...project.producers, ...project.managers, ...(project.staff || []),
+                ...(project.clientContacts || []).filter(p => p.name).map(p => p.name),
+                ...(project.pocs || []).filter(p => p.name).map(p => p.name),
+                ...(project.billingContacts || []).filter(p => p.name).map(p => p.name),
+                ...vendors.map(v => v.name).filter(Boolean),
+              ])].sort();
 
               // Helpers
               const addPRRow = () => {
@@ -6081,7 +6312,7 @@ export default function Dashboard({ user, onLogout }) {
                           <div key={entry.id} style={{ display: "grid", gridTemplateColumns: "65px 1.6fr 0.7fr 1fr 0.9fr 0.7fr 0.7fr 1fr 30px", padding: "6px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isS ? "var(--bgCard)" : isW ? "var(--bgInput)" : "transparent" }}>
                             <EditableText value={entry.time} onChange={v => updateROS(entry.id, "time", v)} fontSize={10} color={isS ? "#ff6b4a" : "var(--textMuted)"} placeholder="Time" />
                             <EditableText value={entry.item} onChange={v => updateROS(entry.id, "item", v)} fontSize={11} color={isS ? "#ff6b4a" : "var(--textSub)"} fontWeight={isS ? 700 : 500} placeholder="Item..." />
-                            <Dropdown value={entry.dept} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
+                            <Dropdown value={entry.dept} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort()} onChange={v => updateROS(entry.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
                             <MultiDropdown values={entry.vendors} options={vendors.map(v => v.id)} onChange={v => updateROS(entry.id, "vendors", v)} colorMap={Object.fromEntries(vendors.map(v => [v.id, DEPT_COLORS[v.deptId] || "var(--textMuted)"]))} renderLabel={id => { const v = vendors.find(x => x.id === id); return v ? v.name.split(" ")[0] : id; }} />
                             <AddressAutocomplete value={entry.location} onChange={v => updateROS(entry.id, "location", v)} showIcon={false} placeholder="Location" inputStyle={{ padding: "2px 6px", background: "transparent", border: "1px solid transparent", borderRadius: 4, color: "var(--textMuted)", fontSize: 10, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} />
                             <Dropdown value={entry.contact} options={eventContactNames} onChange={v => updateROS(entry.id, "contact", v)} width="100%" allowBlank blankLabel="—" />
@@ -6697,7 +6928,7 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts, roles, depts..." style={{ padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 220 }} />
-                        <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean)} projectRoles={appSettings.projectRoles} onCreateContact={(c) => {
+                        <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort()} projectRoles={appSettings.projectRoles} onCreateContact={(c) => {
                           setContacts(prev => {
                             if (prev.find(x => x.name.toLowerCase() === c.name.toLowerCase())) return prev;
                             return [...prev, { ...c, id: c.id || `ct_${Date.now()}_${Math.random().toString(36).substr(2, 4)}` }];
@@ -6887,13 +7118,82 @@ export default function Dashboard({ user, onLogout }) {
               </div>
               {/* Tabs */}
               <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
-                {[["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["display", "🔤 Display"], ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
+                {[["profile", "🪪 Profile"], ...(isAdmin ? [["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["display", "🔤 Display"]] : []), ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
                   <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
                 ))}
               </div>
             </div>
             {/* Content */}
             <div style={{ flex: 1, overflowY: "auto", padding: 24, minHeight: 0 }}>
+
+              {/* ── PROFILE TAB ── */}
+              {settingsTab === "profile" && (() => {
+                const myProfile = (appSettings.userProfiles || {})[user?.email] || {};
+                const updateProfile = (field, val) => {
+                  const updated = { ...appSettings, userProfiles: { ...(appSettings.userProfiles || {}), [user.email]: { ...(appSettings.userProfiles || {})[user.email] || {}, [field]: val, email: user.email } } };
+                  setAppSettings(updated);
+                  setSettingsDirty(true);
+                };
+                const handleAvatarUpload = (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 500000) { alert("Image must be under 500KB"); return; }
+                  const reader = new FileReader();
+                  reader.onload = (ev) => updateProfile("avatar", ev.target.result);
+                  reader.readAsDataURL(file);
+                };
+                const initials = ((myProfile.firstName || user?.name?.split(" ")[0] || "")[0] || "") + ((myProfile.lastName || user?.name?.split(" ").slice(1).join(" ") || "")[0] || "");
+                const fld = (label, key, placeholder, type) => (
+                  <div key={key}>
+                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4, letterSpacing: 0.3 }}>{label}</label>
+                    <input value={myProfile[key] || ""} onChange={e => updateProfile(key, e.target.value)} placeholder={placeholder || ""} type={type || "text"} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                  </div>
+                );
+                return (
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 16, lineHeight: 1.5 }}>Your profile is visible to other team members in Command Center.</div>
+                    {/* Avatar */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+                      <div style={{ position: "relative" }}>
+                        {myProfile.avatar ? (
+                          <img src={myProfile.avatar} alt="" style={{ width: 72, height: 72, borderRadius: "50%", objectFit: "cover", border: "2px solid var(--borderActive)" }} />
+                        ) : (
+                          <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#ff6b4a20", border: "2px solid #ff6b4a40", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, fontWeight: 700, color: "#ff6b4a" }}>{initials.toUpperCase() || "?"}</div>
+                        )}
+                        <label style={{ position: "absolute", bottom: -2, right: -2, width: 26, height: 26, borderRadius: "50%", background: "var(--bgCard)", border: "1px solid var(--borderActive)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 12 }} title="Upload photo">
+                          📷
+                          <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />
+                        </label>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{myProfile.firstName || myProfile.lastName ? `${myProfile.firstName || ""} ${myProfile.lastName || ""}`.trim() : user?.name || "Set up your profile"}</div>
+                        <div style={{ fontSize: 11, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{user?.email}</div>
+                        {myProfile.title && <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 2 }}>{myProfile.title}{myProfile.company ? ` · ${myProfile.company}` : ""}</div>}
+                      </div>
+                    </div>
+                    {/* Fields */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+                      {fld("FIRST NAME", "firstName", "Billy")}
+                      {fld("LAST NAME", "lastName", "Smith")}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+                      {fld("TITLE / POSITION", "title", "Executive Producer")}
+                      {fld("COMPANY", "company", "WE ARE ADPTV")}
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+                      {fld("PHONE", "phone", "(555) 123-4567", "tel")}
+                      {fld("DEPARTMENT", "department", "Production")}
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      {fld("ADDRESS", "address", "123 Main St, Miami FL")}
+                    </div>
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4, letterSpacing: 0.3 }}>BIO / NOTES</label>
+                      <textarea value={myProfile.bio || ""} onChange={e => updateProfile("bio", e.target.value)} placeholder="Short bio..." rows={2} style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none", resize: "vertical", fontFamily: "inherit" }} />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── USERS TAB ── */}
               {settingsTab === "users" && (
@@ -7472,7 +7772,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Statuses</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {(appSettings.statuses || []).filter(Boolean).map((s, i) => (
+                      {(appSettings.statuses || []).filter(Boolean).sort().map((s, i) => (
                         <span key={s + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {s}
                           <button onClick={() => { setAppSettings(prev => ({ ...prev, statuses: prev.statuses.filter(v => v !== s) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
@@ -7486,7 +7786,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Types</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {(appSettings.projectTypes || []).filter(Boolean).map((t, i) => (
+                      {(appSettings.projectTypes || []).filter(Boolean).sort().map((t, i) => (
                         <span key={t + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {t}
                           <button onClick={() => { setAppSettings(prev => ({ ...prev, projectTypes: prev.projectTypes.filter(v => v !== t) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
@@ -7500,7 +7800,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Departments</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {(appSettings.departments || []).filter(Boolean).map((d, i) => (
+                      {(appSettings.departments || []).filter(Boolean).sort().map((d, i) => (
                         <span key={d + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {d}
                           <button onClick={() => { setAppSettings(prev => ({ ...prev, departments: prev.departments.filter(v => v !== d) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
@@ -7528,7 +7828,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ marginBottom: 20 }}>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 8 }}>Project Roles</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 8 }}>
-                      {(appSettings.projectRoles || []).filter(Boolean).map((r, i) => (
+                      {(appSettings.projectRoles || []).filter(Boolean).sort().map((r, i) => (
                         <span key={r + i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, fontSize: 11, color: "var(--textSub)" }}>
                           {r}
                           <button onClick={() => { setAppSettings(prev => ({ ...prev, projectRoles: prev.projectRoles.filter(v => v !== r) })); setSettingsDirty(true); }} style={{ background: "none", border: "none", color: "var(--textGhost)", fontSize: 12, cursor: "pointer", padding: 0, lineHeight: 1 }}>✕</button>
@@ -8014,6 +8314,83 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* ═══ FIRST-LOGIN PROFILE SETUP MODAL ═══ */}
+      {showProfileSetup && (() => {
+        const existingProfile = (appSettings.userProfiles || {})[user?.email] || {};
+        const ProfileSetupInner = () => {
+          const [pf, setPf] = useState({
+            firstName: existingProfile.firstName || user?.name?.split(" ")[0] || "",
+            lastName: existingProfile.lastName || user?.name?.split(" ").slice(1).join(" ") || "",
+            title: existingProfile.title || "",
+            company: existingProfile.company || "",
+            phone: existingProfile.phone || "",
+            department: existingProfile.department || "",
+            address: existingProfile.address || "",
+            avatar: existingProfile.avatar || "",
+          });
+          const handleAvatar = (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            if (file.size > 500000) { alert("Image must be under 500KB"); return; }
+            const reader = new FileReader();
+            reader.onload = (ev) => setPf(p => ({ ...p, avatar: ev.target.result }));
+            reader.readAsDataURL(file);
+          };
+          const initials = ((pf.firstName || "")[0] || "") + ((pf.lastName || "")[0] || "");
+          const canSave = pf.firstName && pf.lastName;
+          const fieldStyle = { width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" };
+          return (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.3s ease", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+                <div style={{ padding: "28px 28px 20px", textAlign: "center", borderBottom: "1px solid var(--borderSub)" }}>
+                  <div style={{ fontSize: 32, marginBottom: 8 }}>👋</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>Welcome to Command Center</div>
+                  <div style={{ fontSize: 12, color: "var(--textMuted)", marginTop: 6, lineHeight: 1.5 }}>Set up your profile so your team knows who you are. This only takes a moment.</div>
+                </div>
+                <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
+                  {/* Avatar */}
+                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+                    <div style={{ position: "relative" }}>
+                      {pf.avatar ? (
+                        <img src={pf.avatar} alt="" style={{ width: 80, height: 80, borderRadius: "50%", objectFit: "cover", border: "3px solid #ff6b4a40" }} />
+                      ) : (
+                        <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#ff6b4a20", border: "3px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#ff6b4a" }}>{initials.toUpperCase() || "?"}</div>
+                      )}
+                      <label style={{ position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: "50%", background: "var(--bgCard)", border: "1px solid var(--borderActive)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13 }} title="Upload photo">
+                        📷
+                        <input type="file" accept="image/*" onChange={handleAvatar} style={{ display: "none" }} />
+                      </label>
+                    </div>
+                  </div>
+                  {/* Fields */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME *</label><input value={pf.firstName} onChange={e => setPf(p => ({ ...p, firstName: e.target.value }))} style={fieldStyle} /></div>
+                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME *</label><input value={pf.lastName} onChange={e => setPf(p => ({ ...p, lastName: e.target.value }))} style={fieldStyle} /></div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>TITLE / POSITION</label><input value={pf.title} onChange={e => setPf(p => ({ ...p, title: e.target.value }))} placeholder="Executive Producer" style={fieldStyle} /></div>
+                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY</label><input value={pf.company} onChange={e => setPf(p => ({ ...p, company: e.target.value }))} placeholder="WE ARE ADPTV" style={fieldStyle} /></div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><input value={pf.phone} onChange={e => setPf(p => ({ ...p, phone: e.target.value }))} placeholder="(555) 123-4567" type="tel" style={fieldStyle} /></div>
+                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label><input value={pf.department} onChange={e => setPf(p => ({ ...p, department: e.target.value }))} placeholder="Production" style={fieldStyle} /></div>
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
+                    <input value={pf.address} onChange={e => setPf(p => ({ ...p, address: e.target.value }))} placeholder="123 Main St, Miami FL" style={fieldStyle} />
+                  </div>
+                </div>
+                <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid var(--borderSub)" }}>
+                  {existingProfile.firstName && <button onClick={() => setShowProfileSetup(false)} style={{ padding: "10px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Skip</button>}
+                  <button disabled={!canSave} onClick={() => saveUserProfile(pf)} style={{ padding: "10px 28px", background: canSave ? "#ff6b4a" : "#ff6b4a40", border: "none", borderRadius: 8, color: "#fff", cursor: canSave ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700, opacity: canSave ? 1 : 0.5 }}>Save Profile</button>
+                </div>
+              </div>
+            </div>
+          );
+        };
+        return <ProfileSetupInner />;
+      })()}
 
       {showAddContact && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddContact(false); }}>
