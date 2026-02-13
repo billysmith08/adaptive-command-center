@@ -4443,11 +4443,11 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                           );
                         })()}
-                        </div>{/* close DOCS wrapper */}
-                      </div>{/* close sticky right */}
-                      </div>{/* close flex row */}
+                        </div>
+                      </div>
+                      </div>
                     ))}
-                    </div>{/* close scroll container */}
+                    </div>
                   </div>
                 )}
               </div>
