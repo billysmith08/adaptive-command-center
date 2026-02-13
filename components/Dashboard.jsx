@@ -3,6 +3,9 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 import { createClient } from "@/lib/supabase-browser";
 import { useEditor, EditorContent } from "@tiptap/react";
+
+// ── APP VERSION ── bump this on every deploy
+const APP_VERSION = "v90.1";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
@@ -887,7 +890,10 @@ function PocPullDropdown({ contacts, existingPocs, onSelect, searchLabel }) {
   const [query, setQuery] = useState("");
   const ref = useRef(null);
   useEffect(() => { const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener("mousedown", h); return () => document.removeEventListener("mousedown", h); }, []);
-  const filtered = (contacts || []).filter(c => c.name.toLowerCase().includes(query.toLowerCase()) && !(existingPocs || []).find(p => p.name === c.name));
+  const filtered = (contacts || []).filter(c => {
+    const q = query.toLowerCase();
+    return c.name.toLowerCase().includes(q) || (c.company || "").toLowerCase().includes(q) || (c.email || "").toLowerCase().includes(q);
+  });
   return (
     <div ref={ref} style={{ position: "relative" }}>
       <button onClick={() => setOpen(!open)} style={{ padding: "3px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>{searchLabel || "🔍 Search Contacts"}</button>
@@ -1466,6 +1472,8 @@ export default function Dashboard({ user, onLogout }) {
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
   const [forceSaveCounter, setForceSaveCounter] = useState(0);
+  const [updateAvailable, setUpdateAvailable] = useState(null); // null or { version, message, force }
+  const [updateDismissed, setUpdateDismissed] = useState(false);
   // ─── LOCAL STORAGE PERSISTENCE (post-mount hydration for SSR safety) ──
   const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", progress: "adptv_progress", comments: "adptv_comments", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
   const lsHydrated = useRef(false);
@@ -1629,7 +1637,7 @@ export default function Dashboard({ user, onLogout }) {
   const [search, setSearch] = useState("");
   const [sidebarStatusFilter, setSidebarStatusFilter] = useState("");
   const [sidebarDateFilter, setSidebarDateFilter] = useState(""); // "upcoming", "past", "this-month", "this-quarter", ""
-  const [collapseSubProjects, setCollapseSubProjects] = useState(false);
+  const [collapsedParents, setCollapsedParents] = useState(new Set());
   const [sidebarW, setSidebarW] = useState(280);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -3343,11 +3351,66 @@ export default function Dashboard({ user, onLogout }) {
     syncProjectVendors(project);
   }, [activeTab, project?.id, project?.driveFolderId]);
 
-  // On data load, scan ALL projects with Drive folders → sync vendors to Global Partners
+  // On data load, scan ALL projects with Drive folders — staggered to avoid API overload
   useEffect(() => {
     if (!dataLoaded) return;
-    projects.forEach(p => { if (p.driveFolderId) syncProjectVendors(p); });
+    let cancelled = false;
+    const driveProjects = projects.filter(p => p.driveFolderId && !projVendorScanDone[p.id]);
+    if (driveProjects.length === 0) return;
+    (async () => {
+      for (let i = 0; i < driveProjects.length; i++) {
+        if (cancelled) break;
+        syncProjectVendors(driveProjects[i]);
+        // Stagger: 500ms between each scan to avoid hammering
+        if (i < driveProjects.length - 1) await new Promise(r => setTimeout(r, 500));
+      }
+    })();
+    return () => { cancelled = true; };
   }, [dataLoaded]);
+
+  // ─── HOT UPDATE PROTECTION ──────────────────────────────────────
+  // Checks Supabase for version mismatch every 30s. When an admin deploys,
+  // they bump the version in Settings → all clients see a banner.
+  useEffect(() => {
+    if (!supabase || !dataLoaded) return;
+    let cancelled = false;
+    const checkVersion = async () => {
+      try {
+        const { data } = await supabase.from("command_data").select("data").eq("slice_type", "appMeta").maybeSingle();
+        if (cancelled) return;
+        if (data?.data) {
+          const remote = data.data;
+          if (remote.version && remote.version !== APP_VERSION) {
+            setUpdateAvailable({
+              version: remote.version,
+              message: remote.message || "A new version is available.",
+              force: remote.force || false,
+              deployedAt: remote.deployedAt
+            });
+          } else {
+            setUpdateAvailable(null);
+            setUpdateDismissed(false);
+          }
+        }
+      } catch (e) { console.warn("Version check failed:", e); }
+    };
+    checkVersion();
+    const interval = setInterval(checkVersion, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [supabase, dataLoaded]);
+
+  // Admin: push version to Supabase
+  const pushAppVersion = async (message, force) => {
+    if (!supabase) return;
+    const payload = { version: APP_VERSION, message: message || "", force: !!force, deployedAt: new Date().toISOString() };
+    const { data: existing } = await supabase.from("command_data").select("id").eq("slice_type", "appMeta").maybeSingle();
+    if (existing) {
+      await supabase.from("command_data").update({ data: payload, updated_at: new Date().toISOString() }).eq("id", existing.id);
+    } else {
+      await supabase.from("command_data").insert({ slice_type: "appMeta", data: payload, updated_at: new Date().toISOString() });
+    }
+    console.log("App version pushed:", APP_VERSION);
+  };
 
   const updateProject = (key, val) => {
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
@@ -3758,16 +3821,14 @@ export default function Dashboard({ user, onLogout }) {
     const ordered = [];
     parents.forEach(parent => {
       ordered.push(parent);
-      if (!collapseSubProjects) {
+      if (!collapsedParents.has(parent.id)) {
         const subs = children.filter(c => c.parentId === parent.id);
         subs.sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
         subs.forEach(c => ordered.push(c));
       }
     });
     // Add orphan children (parent not visible / deleted)
-    if (!collapseSubProjects) {
-      children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
-    }
+    children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
     return ordered;
   })();
   const archivedCount = projects.filter(p => p.archived).length;
@@ -3874,6 +3935,29 @@ export default function Dashboard({ user, onLogout }) {
           <button onClick={() => setPreviewingAs(null)} style={{ padding: "4px 14px", background: "#3da5db", border: "none", borderRadius: 5, color: "#fff", fontSize: 10, fontWeight: 700, cursor: "pointer", letterSpacing: 0.3, marginLeft: 6 }}>
             ✕ Exit Preview
           </button>
+        </div>
+      )}
+
+      {/* ═══ UPDATE AVAILABLE BANNER ═══ */}
+      {updateAvailable && !updateDismissed && (
+        <div style={{ padding: "10px 24px", background: updateAvailable.force ? "#e85454" : "#dba94e", color: "#fff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexShrink: 0, zIndex: 200, animation: "fadeUp 0.3s ease" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 16 }}>🔄</span>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>Update Available — {updateAvailable.version}</div>
+              <div style={{ fontSize: 10, opacity: 0.9 }}>{updateAvailable.message || "A new version has been deployed. Please save your work and refresh."}</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button onClick={() => { setForceSaveCounter(c => c + 1); setTimeout(() => window.location.reload(), 1500); }} style={{ padding: "6px 16px", background: "#fff", border: "none", borderRadius: 6, color: updateAvailable.force ? "#e85454" : "#dba94e", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              💾 Save & Refresh
+            </button>
+            {!updateAvailable.force && (
+              <button onClick={() => setUpdateDismissed(true)} style={{ padding: "6px 12px", background: "rgba(255,255,255,0.2)", border: "none", borderRadius: 6, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                Later
+              </button>
+            )}
+          </div>
         </div>
       )}
 
@@ -4013,8 +4097,8 @@ export default function Dashboard({ user, onLogout }) {
                 <option value="this-quarter">This Quarter</option>
                 <option value="no-date">No Date</option>
               </select>
-              <button onClick={() => setCollapseSubProjects(!collapseSubProjects)} style={{ padding: "6px 8px", background: collapseSubProjects ? "#9b6dff10" : "var(--bgCard)", border: `1px solid ${collapseSubProjects ? "#9b6dff30" : "var(--borderSub)"}`, borderRadius: 7, color: collapseSubProjects ? "#9b6dff" : "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600, whiteSpace: "nowrap" }} title={collapseSubProjects ? "Show sub-projects" : "Hide sub-projects"}>
-                {collapseSubProjects ? "▸ Subs" : "▾ Subs"}
+              <button onClick={() => { const parentIds = projects.filter(p => !p.parentId && projects.some(sp => sp.parentId === p.id)).map(p => p.id); if (collapsedParents.size >= parentIds.length) { setCollapsedParents(new Set()); } else { setCollapsedParents(new Set(parentIds)); } }} style={{ padding: "6px 8px", background: collapsedParents.size > 0 ? "#9b6dff10" : "var(--bgCard)", border: `1px solid ${collapsedParents.size > 0 ? "#9b6dff30" : "var(--borderSub)"}`, borderRadius: 7, color: collapsedParents.size > 0 ? "#9b6dff" : "var(--textFaint)", cursor: "pointer", fontSize: 9, fontWeight: 600, whiteSpace: "nowrap" }} title={collapsedParents.size > 0 ? "Expand all sub-projects" : "Collapse all sub-projects"}>
+                {collapsedParents.size > 0 ? "▸ Subs" : "▾ Subs"}
               </button>
             </div>
             <button onClick={() => { setNewProjectForm({ ...emptyProject }); setShowAddProject(true); }} style={{ width: "100%", padding: "7px 12px", background: "#ff6b4a10", border: "1px solid #ff6b4a25", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -4070,7 +4154,10 @@ export default function Dashboard({ user, onLogout }) {
                         <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, background: sc.bg, color: sc.text }}><span style={{ display: "inline-block", width: 4, height: 4, borderRadius: "50%", background: sc.dot, marginRight: 4 }} />{p.status}</span>
                       </div>
                     </div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3 }}>{p.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
+                      {hasSubProjects && <span onClick={(e) => { e.stopPropagation(); setCollapsedParents(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; }); }} style={{ fontSize: 8, color: "var(--textFaint)", cursor: "pointer", padding: "2px 3px", borderRadius: 3, flexShrink: 0 }} title={collapsedParents.has(p.id) ? "Expand sub-projects" : "Collapse sub-projects"}>{collapsedParents.has(p.id) ? "▸" : "▾"}</span>}
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                    </div>
                     <div style={{ fontSize: 8, color: p.code ? "var(--textGhost)" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.3, marginBottom: 3, opacity: p.code ? 1 : 0.5 }}>{p.code || generateProjectCode(p)}</div>
                     {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
                       {!p.parentId && p.engagementDates && p.engagementDates.start && <div>📋 {fmtShort(p.engagementDates.start)}{p.engagementDates.end ? ` – ${fmtShort(p.engagementDates.end)}` : ""}</div>}
@@ -4975,7 +5062,7 @@ export default function Dashboard({ user, onLogout }) {
                         </div>
                         <button onClick={() => {
                           const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                          const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, subEvents: [] };
+                          const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, isTour: project.isTour || false, subEvents: project.isTour ? [] : undefined };
                           setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview");
                         }} style={{ padding: "4px 12px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 6, color: "#dba94e", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>+ Add Sub-Project</button>
                       </div>
@@ -7178,6 +7265,44 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#4ecb71", marginBottom: 6 }}>💾 Auto-Save Active</div>
                     <div style={{ fontSize: 11, color: "var(--textMuted)", lineHeight: 1.5 }}>All data (projects, clients, contacts, vendors, work back, run of show) is automatically saved to your browser's local storage. Data persists across page refreshes and redeployments on the same browser.</div>
                   </div>
+
+                  {/* Version & Update Management */}
+                  <div style={{ marginTop: 20, padding: "16px 20px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 10 }}>🔄 App Version & Updates</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+                      <span style={{ fontSize: 11, color: "var(--textMuted)" }}>Current version:</span>
+                      <span style={{ fontSize: 12, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: "#4ecb71", padding: "2px 8px", background: "#4ecb7110", borderRadius: 4 }}>{APP_VERSION}</span>
+                      {updateAvailable && <span style={{ fontSize: 10, color: "#dba94e", fontWeight: 600 }}>⚠ Remote: {updateAvailable.version}</span>}
+                    </div>
+                    {isAdmin && (
+                      <div>
+                        <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 6 }}>After deploying a new build, push the version so all users get notified to refresh:</div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => {
+                            const msg = prompt("Update message for users (optional):", "New features and bug fixes available.");
+                            if (msg === null) return;
+                            pushAppVersion(msg, false);
+                            setClipboardToast({ text: `Version ${APP_VERSION} pushed — users will see a banner`, x: window.innerWidth / 2, y: 60 });
+                          }} style={{ padding: "8px 16px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 8, color: "#dba94e", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            📢 Push Update (Soft)
+                          </button>
+                          <button onClick={() => {
+                            if (!confirm("Force update will block users until they refresh. Continue?")) return;
+                            const msg = prompt("Update message:", "Critical update — please refresh now.");
+                            if (msg === null) return;
+                            pushAppVersion(msg, true);
+                            setClipboardToast({ text: `Force update pushed — users must refresh`, x: window.innerWidth / 2, y: 60 });
+                          }} style={{ padding: "8px 16px", background: "#e8545415", border: "1px solid #e8545430", borderRadius: 8, color: "#e85454", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            🚨 Force Update
+                          </button>
+                        </div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 8, lineHeight: 1.5 }}>
+                          <strong>Soft:</strong> Yellow banner, user can dismiss and refresh later.<br/>
+                          <strong>Force:</strong> Red banner, user cannot dismiss — must refresh.
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -7345,7 +7470,7 @@ export default function Dashboard({ user, onLogout }) {
           <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
             <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
             <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = { id: newId, name: src.name + " (Copy)", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: src.location || "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: { what: "", where: "", why: "" }, producers: [], managers: [], staff: [], clientContacts: [], pocContacts: [], billingContacts: [], notes: "", archived: false }; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate Project</button>
-            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, subEvents: [] }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
+            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, isTour: src.isTour || false, subEvents: src.isTour ? [] : undefined }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
           </div>
