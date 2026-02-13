@@ -5891,18 +5891,18 @@ export default function Dashboard({ user, onLogout }) {
                   {project.saturationUrl ? (() => {
                     const embedUrl = project.saturationUrl.includes("/budget") ? project.saturationUrl : project.saturationUrl.replace(/\/$/, "") + "/budget";
                     return (
-                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden", position: "relative" }}>
-                        <iframe
-                          src={embedUrl}
-                          style={{ width: "100%", height: 600, border: "none", borderRadius: 12 }}
-                          title="Saturation Budget"
-                         
-                        />
-                        <div id="saturation-fallback" style={{ display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, textAlign: "center" }}>
-                          <div style={{ fontSize: 28, marginBottom: 12 }}>🔒</div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 6 }}>Saturation blocked the embed</div>
-                          <div style={{ fontSize: 11, color: "var(--textFaint)", marginBottom: 16 }}>Some apps don't allow embedding. Open it directly instead.</div>
-                          <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ padding: "10px 20px", background: "#ff6b4a", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 12, textDecoration: "none" }}>Open in Saturation →</a>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 12px", background: "#dba94e08", border: "1px solid #dba94e20", borderRadius: 8, fontSize: 10, color: "var(--textMuted)" }}>
+                          <span>💡</span>
+                          <span>If you see a login screen, <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#ff6b4a", fontWeight: 600 }}>open Saturation in a new tab</a> to log in first, then refresh this page.</span>
+                        </div>
+                        <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12 }}>
+                          <iframe
+                            src={embedUrl}
+                            style={{ width: "100%", height: 600, border: "none", borderRadius: 12, display: "block" }}
+                            title="Saturation Budget"
+                            allow="popups popups-to-escape-sandbox"
+                          />
                         </div>
                       </div>
                     );
@@ -5940,8 +5940,14 @@ export default function Dashboard({ user, onLogout }) {
                     </button>
                   </div>
                   {embedUrl ? (
-                    <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden" }}>
-                      <iframe src={embedUrl} style={{ width: "100%", height: "calc(100vh - 200px)", border: "none", borderRadius: 12 }} title="Saturation Budget" />
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 12px", background: "#dba94e08", border: "1px solid #dba94e20", borderRadius: 8, fontSize: 10, color: "var(--textMuted)" }}>
+                        <span>💡</span>
+                        <span>If you see a login screen, <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ color: "#ff6b4a", fontWeight: 600 }}>open Saturation in a new tab</a> to log in first, then refresh this page.</span>
+                      </div>
+                      <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12 }}>
+                        <iframe src={embedUrl} style={{ width: "100%", height: "calc(100vh - 240px)", border: "none", borderRadius: 12, display: "block" }} title="Saturation Budget" allow="popups popups-to-escape-sandbox" />
+                      </div>
                     </div>
                   ) : (
                     <div style={{ textAlign: "center", padding: 60 }}>
