@@ -700,6 +700,114 @@ function EditableText({ value, onChange, fontSize, color, fontWeight, multiline,
   return <span onClick={() => setEditing(true)} style={{ cursor: "pointer", fontSize: fontSize || 13, color: value ? (color || "var(--textSub)") : "var(--textGhost)", fontWeight: fontWeight || 400, borderBottom: "1px dashed var(--borderSub)", display: "inline-block" }} title="Click to edit">{value || placeholder || "Click to edit"}</span>;
 }
 
+function processAvatarImage(file, size = 200) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      // Center-crop to square
+      const min = Math.min(img.width, img.height);
+      const sx = (img.width - min) / 2;
+      const sy = (img.height - min) / 2;
+      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => reject(new Error("Failed to load image"));
+    const reader = new FileReader();
+    reader.onload = (e) => { img.src = e.target.result; };
+    reader.readAsDataURL(file);
+  });
+}
+
+function AvatarCropper({ imageSrc, onSave, onCancel }) {
+  const canvasRef = useRef(null);
+  const imgRef = useRef(null);
+  const [loaded, setLoaded] = useState(false);
+  const [drag, setDrag] = useState(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const CROP_SIZE = 200;
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => { imgRef.current = img; setLoaded(true); };
+    img.src = imageSrc;
+  }, [imageSrc]);
+
+  useEffect(() => {
+    if (!loaded || !imgRef.current) return;
+    const img = imgRef.current;
+    // Fit image to cover the crop area initially
+    const scale = Math.max(CROP_SIZE / img.width, CROP_SIZE / img.height);
+    setZoom(scale);
+    setPos({ x: (CROP_SIZE - img.width * scale) / 2, y: (CROP_SIZE - img.height * scale) / 2 });
+  }, [loaded]);
+
+  useEffect(() => {
+    if (!loaded || !imgRef.current || !canvasRef.current) return;
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.clearRect(0, 0, CROP_SIZE, CROP_SIZE);
+    // Draw image
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(imgRef.current, pos.x, pos.y, imgRef.current.width * zoom, imgRef.current.height * zoom);
+    ctx.restore();
+    // Draw circular border
+    ctx.strokeStyle = "#ff6b4a";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2 - 1, 0, Math.PI * 2);
+    ctx.stroke();
+  }, [pos, zoom, loaded]);
+
+  const handleMouseDown = (e) => { e.preventDefault(); setDrag({ startX: e.clientX - pos.x, startY: e.clientY - pos.y }); };
+  const handleMouseMove = (e) => { if (!drag) return; setPos({ x: e.clientX - drag.startX, y: e.clientY - drag.startY }); };
+  const handleMouseUp = () => setDrag(null);
+  const handleWheel = (e) => { e.preventDefault(); const delta = e.deltaY > 0 ? -0.05 : 0.05; setZoom(z => Math.max(0.1, Math.min(5, z + delta))); };
+
+  const handleTouchStart = (e) => {
+    if (e.touches.length === 1) { const t = e.touches[0]; setDrag({ startX: t.clientX - pos.x, startY: t.clientY - pos.y }); }
+  };
+  const handleTouchMove = (e) => { if (!drag || e.touches.length !== 1) return; e.preventDefault(); const t = e.touches[0]; setPos({ x: t.clientX - drag.startX, y: t.clientY - drag.startY }); };
+
+  const doSave = () => {
+    const output = document.createElement("canvas");
+    output.width = CROP_SIZE; output.height = CROP_SIZE;
+    const ctx = output.getContext("2d");
+    ctx.beginPath();
+    ctx.arc(CROP_SIZE / 2, CROP_SIZE / 2, CROP_SIZE / 2, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.drawImage(imgRef.current, pos.x, pos.y, imgRef.current.width * zoom, imgRef.current.height * zoom);
+    onSave(output.toDataURL("image/jpeg", 0.85));
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center" }} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, padding: 28, textAlign: "center", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Position your photo</div>
+        <div style={{ fontSize: 11, color: "var(--textFaint)", marginBottom: 16 }}>Drag to move · scroll to zoom</div>
+        <div style={{ display: "inline-block", borderRadius: "50%", overflow: "hidden", cursor: drag ? "grabbing" : "grab", marginBottom: 16, border: "3px solid var(--borderActive)", boxShadow: "0 0 0 4px var(--bgCard), 0 0 20px rgba(0,0,0,0.3)" }}>
+          <canvas ref={canvasRef} width={CROP_SIZE} height={CROP_SIZE} onMouseDown={handleMouseDown} onWheel={handleWheel} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleMouseUp} style={{ display: "block", touchAction: "none" }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginBottom: 20 }}>
+          <span style={{ fontSize: 10, color: "var(--textFaint)" }}>−</span>
+          <input type="range" min="0.1" max="3" step="0.05" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} style={{ width: 140, accentColor: "#ff6b4a" }} />
+          <span style={{ fontSize: 10, color: "var(--textFaint)" }}>+</span>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+          <button onClick={onCancel} style={{ padding: "8px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Cancel</button>
+          <button onClick={doSave} style={{ padding: "8px 24px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DatePicker({ value, onChange }) {
   return <input type="date" value={value || ""} onChange={e => onChange(e.target.value)} style={{ padding: "5px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textSub)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", cursor: "pointer", colorScheme: "var(--filterScheme)" }} />;
 }
@@ -1498,7 +1606,6 @@ export default function Dashboard({ user, onLogout }) {
   const lsHydrated = useRef(false);
   // Per-slice sync guards: { projects: timestamp, contacts: timestamp, ... }
   const remoteSyncTimes = useRef({});
-  const profileCheckDone = useRef(false);
   // Per-slice debounce timers
   const sliceTimers = useRef({});
   // Slice keys
@@ -1719,6 +1826,9 @@ export default function Dashboard({ user, onLogout }) {
   const [finFilterStatus, setFinFilterStatus] = useState("all");
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [presenceUsers, setPresenceUsers] = useState([]);
+  const [appSettingsLoaded, setAppSettingsLoaded] = useState(false);
+  const [avatarCropSrc, setAvatarCropSrc] = useState(null); // raw image to crop
+  const [avatarCropCallback, setAvatarCropCallback] = useState(null); // fn(dataUrl) to call on save
   const projDriveFileRef = useRef(null);
   // ─── ACTIVITY FEED ──────────────────────────────────────────────
   const [activityLog, setActivityLog] = useState([]);
@@ -2832,7 +2942,8 @@ export default function Dashboard({ user, onLogout }) {
           });
           setAppSettings(prev => ({ ...prev, ...cleaned }));
         }
-      } catch (e) { console.error('Settings load failed:', e); }
+        setAppSettingsLoaded(true);
+      } catch (e) { console.error('Settings load failed:', e); setAppSettingsLoaded(true); }
     })();
   }, [user]);
 
@@ -4049,17 +4160,18 @@ export default function Dashboard({ user, onLogout }) {
     return () => { clearTimeout(retrackTimer); supabase.removeChannel(channel); };
   }, [dataLoaded, user, isUserAuthorized, supabase, JSON.stringify((appSettings.userProfiles || {})[user?.email])]);
 
-  // ─── FIRST-LOGIN PROFILE CHECK (runs once per session) ───────────
+  // ─── FIRST-LOGIN PROFILE CHECK (waits for settings to load from Supabase) ──
   useEffect(() => {
-    if (!dataLoaded || !user?.email || !isUserAuthorized) return;
-    if (profileCheckDone.current) return; // only check once per session
-    profileCheckDone.current = true;
+    if (!dataLoaded || !appSettingsLoaded || !user?.email || !isUserAuthorized) return;
+    // Only check once per browser session
+    const sessionKey = `cc_profile_checked_${user.email}`;
+    if (sessionStorage.getItem(sessionKey)) return;
+    sessionStorage.setItem(sessionKey, '1');
     const profile = (appSettings.userProfiles || {})[user.email];
     if (!profile || !profile.setupAt) {
-      // No profile or never completed setup — show welcome modal
       setShowProfileSetup(true);
     }
-  }, [dataLoaded, user, isUserAuthorized]);
+  }, [dataLoaded, appSettingsLoaded, user, isUserAuthorized]);
 
   // ─── SAVE USER PROFILE ──────────────────────────────────────────
   const saveUserProfile = async (profileData) => {
@@ -7140,10 +7252,11 @@ export default function Dashboard({ user, onLogout }) {
                 const handleAvatarUpload = (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  if (file.size > 500000) { alert("Image must be under 500KB"); return; }
+                  if (file.size > 5000000) { alert("Image must be under 5MB"); return; }
                   const reader = new FileReader();
-                  reader.onload = (ev) => updateProfile("avatar", ev.target.result);
+                  reader.onload = (ev) => { setAvatarCropSrc(ev.target.result); setAvatarCropCallback(() => (dataUrl) => updateProfile("avatar", dataUrl)); };
                   reader.readAsDataURL(file);
+                  e.target.value = ""; // reset so same file can be re-selected
                 };
                 const initials = ((myProfile.firstName || user?.name?.split(" ")[0] || "")[0] || "") + ((myProfile.lastName || user?.name?.split(" ").slice(1).join(" ") || "")[0] || "");
                 const fld = (label, key, placeholder, type) => (
@@ -8335,10 +8448,11 @@ export default function Dashboard({ user, onLogout }) {
           const handleAvatar = (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            if (file.size > 500000) { alert("Image must be under 500KB"); return; }
+            if (file.size > 5000000) { alert("Image must be under 5MB"); return; }
             const reader = new FileReader();
-            reader.onload = (ev) => setPf(p => ({ ...p, avatar: ev.target.result }));
+            reader.onload = (ev) => { setAvatarCropSrc(ev.target.result); setAvatarCropCallback(() => (dataUrl) => setPf(p => ({ ...p, avatar: dataUrl }))); };
             reader.readAsDataURL(file);
+            e.target.value = "";
           };
           const initials = ((pf.firstName || "")[0] || "") + ((pf.lastName || "")[0] || "");
           const canSave = pf.firstName && pf.lastName;
@@ -9073,6 +9187,15 @@ export default function Dashboard({ user, onLogout }) {
           {/* Backdrop */}
           {showCommentPanel && <div onClick={() => setShowCommentPanel(false)} style={{ position: "fixed", inset: 0, zIndex: 299, background: "rgba(0,0,0,0.15)" }} />}
         </>
+      )}
+
+      {/* ═══ AVATAR CROPPER ═══ */}
+      {avatarCropSrc && (
+        <AvatarCropper
+          imageSrc={avatarCropSrc}
+          onSave={(dataUrl) => { if (avatarCropCallback) avatarCropCallback(dataUrl); setAvatarCropSrc(null); setAvatarCropCallback(null); }}
+          onCancel={() => { setAvatarCropSrc(null); setAvatarCropCallback(null); }}
+        />
       )}
 
     </div>
