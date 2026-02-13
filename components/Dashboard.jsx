@@ -2425,16 +2425,26 @@ export default function Dashboard({ user, onLogout }) {
     if (form.billingAddressSame) form.billingAddress = form.contactAddress;
     if (form.id) {
       setClients(prev => prev.map(c => c.id === form.id ? { ...form } : c));
-      // Mirror: update matching Global Partners contacts
-      setContacts(prev => prev.map(c => {
-        if (c.company === form.name && c.position === "Billing Contact") {
-          return { ...c, name: form.billingContact, email: form.billingEmail, phone: form.billingPhone, address: form.billingAddress };
+      // Mirror: update matching Global Partners contacts, or create if missing
+      setContacts(prev => {
+        let updated = prev.map(c => {
+          if (c.company === form.name && c.position === "Billing Contact") {
+            return { ...c, name: form.billingContact, email: form.billingEmail, phone: form.billingPhone, address: form.billingAddress };
+          }
+          if (c.company === form.name && c.position === "Client Contact") {
+            return { ...c, name: form.contactName, email: form.contactEmail, phone: form.contactPhone, address: form.contactAddress };
+          }
+          return c;
+        });
+        // Create if missing
+        if (form.contactName && !updated.some(c => c.name.toLowerCase() === form.contactName.toLowerCase() && c.company === form.name)) {
+          updated = [...updated, { id: `ct_${Date.now()}_cc`, name: form.contactName, firstName: form.contactName.split(" ")[0] || "", lastName: form.contactName.split(" ").slice(1).join(" ") || "", email: form.contactEmail || "", phone: form.contactPhone || "", company: form.name, position: "Client Contact", contactType: "Client", department: "", address: form.contactAddress || "", resourceType: "", vendorName: form.name, notes: "", source: "client" }];
         }
-        if (c.company === form.name && c.position === "Client Contact") {
-          return { ...c, name: form.contactName, email: form.contactEmail, phone: form.contactPhone, address: form.contactAddress };
+        if (form.billingContact && form.billingContact !== form.contactName && !updated.some(c => c.name.toLowerCase() === form.billingContact.toLowerCase() && c.company === form.name)) {
+          updated = [...updated, { id: `ct_${Date.now()}_bc`, name: form.billingContact, firstName: form.billingContact.split(" ")[0] || "", lastName: form.billingContact.split(" ").slice(1).join(" ") || "", email: form.billingEmail || "", phone: form.billingPhone || "", company: form.name, position: "Billing Contact", contactType: "Client", department: "", address: form.billingAddress || "", resourceType: "", vendorName: form.name, notes: "", source: "client" }];
         }
-        return c;
-      }));
+        return updated;
+      });
     } else {
       const newClient = { ...form, id: `cl_${Date.now()}` };
       setClients(prev => [...prev, newClient]);
@@ -2991,6 +3001,49 @@ export default function Dashboard({ user, onLogout }) {
       console.log('Drive sync skipped:', e.message);
     }
   };
+
+  // ─── SYNC CLIENT CONTACTS → GLOBAL PARTNERS ─────────────────────
+  // Ensures all client contact names, billing contacts, and additional contacts
+  // are also present in the Global Partners (contacts) list
+  useEffect(() => {
+    if (!dataLoaded || clients.length === 0) return;
+    const contactsByKey = new Map();
+    contacts.forEach(c => contactsByKey.set((c.name || "").toLowerCase() + "|||" + (c.company || "").toLowerCase(), c));
+    const toAdd = [];
+    clients.forEach(cl => {
+      const companyName = cl.name || "";
+      // Primary contact
+      if (cl.contactName && cl.contactName.trim()) {
+        const key = cl.contactName.toLowerCase() + "|||" + companyName.toLowerCase();
+        if (!contactsByKey.has(key)) {
+          toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cl.contactName, firstName: cl.contactName.split(" ")[0] || "", lastName: cl.contactName.split(" ").slice(1).join(" ") || "", email: cl.contactEmail || "", phone: cl.contactPhone || "", company: companyName, position: "Client Contact", contactType: "Client", department: "", address: cl.contactAddress || "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
+          contactsByKey.set(key, true);
+        }
+      }
+      // Billing contact
+      if (cl.billingContact && cl.billingContact.trim() && cl.billingContact !== cl.contactName) {
+        const key = cl.billingContact.toLowerCase() + "|||" + companyName.toLowerCase();
+        if (!contactsByKey.has(key)) {
+          toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cl.billingContact, firstName: cl.billingContact.split(" ")[0] || "", lastName: cl.billingContact.split(" ").slice(1).join(" ") || "", email: cl.billingEmail || "", phone: cl.billingPhone || "", company: companyName, position: "Billing Contact", contactType: "Client", department: "", address: cl.billingAddress || "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
+          contactsByKey.set(key, true);
+        }
+      }
+      // Additional contact names
+      (cl.contactNames || []).forEach(cn => {
+        if (cn && cn.trim() && cn !== cl.contactName && cn !== cl.billingContact) {
+          const key = cn.toLowerCase() + "|||" + companyName.toLowerCase();
+          if (!contactsByKey.has(key)) {
+            toAdd.push({ id: `ct_cs_${Date.now()}_${Math.random().toString(36).slice(2,6)}`, name: cn, firstName: cn.split(" ")[0] || "", lastName: cn.split(" ").slice(1).join(" ") || "", email: "", phone: "", company: companyName, position: "Contact", contactType: "Client", department: "", address: "", resourceType: "", vendorName: companyName, notes: "", source: "client" });
+            contactsByKey.set(key, true);
+          }
+        }
+      });
+    });
+    if (toAdd.length > 0) {
+      console.log(`Client→Partner sync: adding ${toAdd.length} contacts to Global Partners`);
+      setContacts(prev => [...prev, ...toAdd]);
+    }
+  }, [clients, dataLoaded]);
 
   // Auto-sync Drive compliance every 60 seconds
   useEffect(() => {
