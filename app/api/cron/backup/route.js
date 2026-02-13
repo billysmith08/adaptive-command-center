@@ -65,12 +65,22 @@ export async function GET(request) {
 
     const commandCenterId = await findOrCreateFolder(drive, internalId, 'Command.Center');
 
-    // ── Get current state ──
-    const { data: state, error: stateErr } = await supabase
-      .from('shared_state').select('state, updated_at').eq('id', 'shared').single();
-    if (stateErr || !state) throw new Error('Could not read current state');
+    // ── Get current state from per-slice rows ──
+    const { data: allRows, error: stateErr } = await supabase
+      .from('shared_state')
+      .select('id, state, updated_at')
+      .neq('id', 'shared');
+    if (stateErr) throw new Error('Could not read current state: ' + stateErr.message);
+    
+    // Combine slices into a single state object
+    const combinedState = {};
+    let latestUpdate = null;
+    (allRows || []).forEach(row => {
+      combinedState[row.id] = row.state;
+      if (!latestUpdate || new Date(row.updated_at) > new Date(latestUpdate)) latestUpdate = row.updated_at;
+    });
 
-    const stateJson = JSON.stringify(state.state, null, 2);
+    const stateJson = JSON.stringify(combinedState, null, 2);
     const sizeKb = Math.round(Buffer.byteLength(stateJson) / 1024);
 
     // ── File name in Pacific time ──
@@ -112,7 +122,7 @@ export async function GET(request) {
     });
 
     // ── Sync contacts as vCards → Command.Center > Contacts ──
-    const contacts = state.state.contacts || [];
+    const contacts = combinedState.contacts || [];
     let contactsSynced = 0;
     if (contacts.length > 0) {
       const contactsFolderId = await findOrCreateFolder(drive, commandCenterId, 'Contacts');

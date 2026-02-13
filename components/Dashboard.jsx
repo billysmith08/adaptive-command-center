@@ -1474,6 +1474,7 @@ export default function Dashboard({ user, onLogout }) {
   const [forceSaveCounter, setForceSaveCounter] = useState(0);
   const [updateAvailable, setUpdateAvailable] = useState(null); // null or { version, message, force }
   const [updateDismissed, setUpdateDismissed] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState(null);
   // ─── LOCAL STORAGE PERSISTENCE (post-mount hydration for SSR safety) ──
   const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", progress: "adptv_progress", comments: "adptv_comments", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
   const lsHydrated = useRef(false);
@@ -1839,15 +1840,8 @@ export default function Dashboard({ user, onLogout }) {
   }, []);
   // ─── AUTO-SAVE TO LOCALSTORAGE (skip initial render) ────────────
   const saveSkipRef = useRef(true);
-  const stampLS = () => { try { localStorage.setItem(LS_KEYS.updatedAt, new Date().toISOString()); } catch {} };
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.projects, JSON.stringify(projects)); stampLS(); } catch {} }, [projects]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.clients, JSON.stringify(clients)); stampLS(); } catch {} }, [clients]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.contacts, JSON.stringify(contacts)); stampLS(); } catch {} }, [contacts]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.vendors, JSON.stringify(projectVendors)); stampLS(); } catch {} }, [projectVendors]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.workback, JSON.stringify(projectWorkback)); stampLS(); } catch {} }, [projectWorkback]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.progress, JSON.stringify(projectProgress)); stampLS(); } catch {} }, [projectProgress]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.comments, JSON.stringify(projectComments)); stampLS(); } catch {} }, [projectComments]);
-  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.ros, JSON.stringify(projectROS)); stampLS(); } catch {} }, [projectROS]);
+  // localStorage is now write-through cache only — saveSlice() handles writing to both Supabase and localStorage.
+  // These effects only handle textSize (UI-only, no Supabase) and the initial skip guard.
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.textSize, JSON.stringify(textSize)); } catch {} }, [textSize]);
   useEffect(() => { saveSkipRef.current = false; }, []);
 
@@ -2964,6 +2958,7 @@ export default function Dashboard({ user, onLogout }) {
         } catch (e) { console.warn('Recovery merge failed:', e); }
         
         setDataLoaded(true);
+        setLastSyncTime(Date.now());
         syncDriveCompliance();
       } catch (e) { console.error('Load failed:', e); setDataLoaded(true); }
     })();
@@ -3119,7 +3114,10 @@ export default function Dashboard({ user, onLogout }) {
         setSaveStatus("error");
       } else {
         setSaveStatus("saved");
-        try { localStorage.setItem(LS_KEYS.updatedAt, now); } catch {}
+        setLastSyncTime(Date.now());
+        // Write-through: cache to localStorage as fallback
+        const lsMap = { projects: LS_KEYS.projects, contacts: LS_KEYS.contacts, clients: LS_KEYS.clients, projectVendors: LS_KEYS.vendors, projectWorkback: LS_KEYS.workback, projectProgress: LS_KEYS.progress, projectComments: LS_KEYS.comments, projectROS: LS_KEYS.ros };
+        if (lsMap[key]) { try { localStorage.setItem(lsMap[key], JSON.stringify(data)); localStorage.setItem(LS_KEYS.updatedAt, now); } catch {} }
       }
     } catch (e) {
       console.error(`Save failed (${key}):`, e);
@@ -3127,14 +3125,14 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [user, supabase]);
 
-  // Helper: create a debounced save effect for a slice
+  // Helper: create an immediate-save effect for a slice (100ms micro-debounce for typing batching)
   const useSliceSave = (key, data) => {
     useEffect(() => {
       if (!dataLoaded) return;
       // Skip if this state change was caused by incoming remote data
-      if (Date.now() - (remoteSyncTimes.current[key] || 0) < 3000) return;
+      if (Date.now() - (remoteSyncTimes.current[key] || 0) < 1500) return;
       if (sliceTimers.current[key]) clearTimeout(sliceTimers.current[key]);
-      const delay = forceSaveCounter > 0 ? 50 : 800;
+      const delay = forceSaveCounter > 0 ? 0 : 100; // 100ms micro-debounce (was 800ms)
       sliceTimers.current[key] = setTimeout(() => saveSlice(key, data), delay);
       return () => { if (sliceTimers.current[key]) clearTimeout(sliceTimers.current[key]); };
     }, [data, dataLoaded, forceSaveCounter]);
@@ -3173,20 +3171,53 @@ export default function Dashboard({ user, onLogout }) {
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [user, projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog]);
 
-  // ─── REALTIME SYNC (per-slice) ──────────────────────────────────
+  // ─── REALTIME SYNC (per-slice with smart merge) ──────────────────
+  // Merge arrays by ID: remote wins for existing items, local-only items preserved
+  const mergeArrayById = useCallback((local, remote) => {
+    if (!Array.isArray(remote)) return local;
+    if (!Array.isArray(local) || local.length === 0) return remote;
+    const remoteMap = new Map(remote.map(item => [item.id, item]));
+    const merged = [...remote]; // start with all remote items
+    // Add local items that don't exist in remote (locally created, save pending)
+    local.forEach(item => {
+      if (item.id && !remoteMap.has(item.id)) merged.push(item);
+    });
+    return merged;
+  }, []);
+
+  // Merge dict-of-arrays (projectVendors, projectWorkback, etc.)
+  const mergeDictById = useCallback((local, remote) => {
+    if (!remote || typeof remote !== 'object') return local;
+    if (!local || typeof local !== 'object') return remote;
+    const merged = { ...remote };
+    // Preserve local project keys not in remote
+    Object.keys(local).forEach(k => {
+      if (!merged[k]) merged[k] = local[k];
+      else if (Array.isArray(merged[k]) && Array.isArray(local[k])) {
+        const remoteIds = new Set(merged[k].map(v => v.id));
+        local[k].forEach(v => { if (v.id && !remoteIds.has(v.id)) merged[k].push(v); });
+      }
+    });
+    return merged;
+  }, []);
+
   const applyRemoteSlice = useCallback((key, data) => {
     remoteSyncTimes.current[key] = Date.now();
-    if (key === 'projects' && Array.isArray(data)) setProjects(sanitizeProjectsArr(data));
-    else if (key === 'contacts' && Array.isArray(data)) setContacts(data);
-    else if (key === 'clients' && Array.isArray(data)) setClients(data);
-    else if (key === 'projectVendors' && data) setProjectVendors(data);
-    else if (key === 'projectWorkback' && data) setProjectWorkback(data);
-    else if (key === 'projectProgress' && data) setProjectProgress(data);
-    else if (key === 'projectComments' && data) setProjectComments(data);
-    else if (key === 'projectROS' && data) setProjectROS(data);
-    else if (key === 'rosDayDates' && data) setRosDayDates(data);
-    else if (key === 'activityLog' && Array.isArray(data)) setActivityLog(data);
-  }, []);
+    if (key === 'projects' && Array.isArray(data)) setProjects(prev => mergeArrayById(prev, sanitizeProjectsArr(data)));
+    else if (key === 'contacts' && Array.isArray(data)) setContacts(prev => mergeArrayById(prev, data));
+    else if (key === 'clients' && Array.isArray(data)) setClients(prev => mergeArrayById(prev, data));
+    else if (key === 'activityLog' && Array.isArray(data)) setActivityLog(data); // activity log: remote wins always
+    else if (key === 'projectVendors' && data) setProjectVendors(prev => mergeDictById(prev, data));
+    else if (key === 'projectWorkback' && data) setProjectWorkback(prev => mergeDictById(prev, data));
+    else if (key === 'projectProgress' && data) setProjectProgress(prev => mergeDictById(prev, data));
+    else if (key === 'projectComments' && data) setProjectComments(prev => mergeDictById(prev, data));
+    else if (key === 'projectROS' && data) setProjectROS(prev => mergeDictById(prev, data));
+    else if (key === 'rosDayDates' && data) setRosDayDates(prev => ({ ...prev, ...data }));
+    // Write-through to localStorage cache
+    const lsMap = { projects: LS_KEYS.projects, contacts: LS_KEYS.contacts, clients: LS_KEYS.clients, projectVendors: LS_KEYS.vendors, projectWorkback: LS_KEYS.workback, projectProgress: LS_KEYS.progress, projectComments: LS_KEYS.comments, projectROS: LS_KEYS.ros };
+    if (lsMap[key]) { try { localStorage.setItem(lsMap[key], JSON.stringify(data)); } catch {} }
+    setLastSyncTime(Date.now());
+  }, [mergeArrayById, mergeDictById]);
 
   useEffect(() => {
     if (!user || !supabase) return;
@@ -3203,7 +3234,7 @@ export default function Dashboard({ user, onLogout }) {
         setTimeout(() => setClipboardToast(null), 2500);
       })
       .subscribe();
-    // Polling fallback: check all slices every 8s
+    // Polling fallback: check all slices every 3s (was 8s)
     const sliceTimestamps = {};
     const pollInterval = setInterval(async () => {
       try {
@@ -3224,7 +3255,7 @@ export default function Dashboard({ user, onLogout }) {
           setTimeout(() => setClipboardToast(null), 2500);
         }
       } catch (e) { console.warn('Sync poll error:', e); }
-    }, 8000);
+    }, 3000); // 3s polling (was 8s)
     return () => { supabase.removeChannel(channel); clearInterval(pollInterval); };
   }, [user, supabase, applyRemoteSlice]);
 
@@ -4057,7 +4088,7 @@ export default function Dashboard({ user, onLogout }) {
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast saved: ${(() => { try { return localStorage.getItem(LS_KEYS.updatedAt) || "never"; } catch { return "unknown"; } })()}`} onClick={() => { const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog }; Object.entries(slices).forEach(([key, data]) => saveSlice(key, data)); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ SYNCED"}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast synced: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : "never"}`} onClick={() => { const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog }; Object.entries(slices).forEach(([key, data]) => saveSlice(key, data)); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ LIVE"}</span></div>
           <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
           {user && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{user.email}</span>}
           {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
@@ -7262,8 +7293,8 @@ export default function Dashboard({ user, onLogout }) {
 
                   {/* Data persistence info */}
                   <div style={{ marginTop: 20, padding: "16px 20px", background: "#4ecb7108", borderRadius: 10, border: "1px solid #4ecb7125" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#4ecb71", marginBottom: 6 }}>💾 Auto-Save Active</div>
-                    <div style={{ fontSize: 11, color: "var(--textMuted)", lineHeight: 1.5 }}>All data (projects, clients, contacts, vendors, work back, run of show) is automatically saved to your browser's local storage. Data persists across page refreshes and redeployments on the same browser.</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#4ecb71", marginBottom: 6 }}>⚡ Live Sync Active</div>
+                    <div style={{ fontSize: 11, color: "var(--textMuted)", lineHeight: 1.5 }}>All data saves to Supabase immediately (~100ms). Changes from other team members sync in real-time via Supabase Realtime + 3s polling fallback. Browser localStorage is used as a fast-load cache only — Supabase is always the source of truth.</div>
                   </div>
 
                   {/* Version & Update Management */}
