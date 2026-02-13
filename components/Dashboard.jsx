@@ -985,7 +985,8 @@ function ContactListBlock({ label, items, contacts, onUpdate, onSaveToGlobal, on
 
 // ─── DOC DROP ZONE (from v3) ─────────────────────────────────────────────────
 
-function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear }) {
+function DocDropZone({ vendor, compKey, compInfo: rawCompInfo, onFileDrop, onPreview, onClear }) {
+  const compInfo = rawCompInfo || { done: false, file: null, date: null, link: null };
   const [dragOver, setDragOver] = useState(false);
   const [justUploaded, setJustUploaded] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
@@ -2881,7 +2882,7 @@ export default function Dashboard({ user, onLogout }) {
           }
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: (() => { const c = v.compliance && typeof v.compliance === 'object' ? v.compliance : {}; return { coi: c.coi || { done: false }, w9: c.w9 || { done: false }, quote: c.quote || { done: false }, invoice: c.invoice || { done: false }, banking: c.banking || { done: false }, contract: c.contract || { done: false } }; })() })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback && typeof s.projectWorkback === 'object') {
@@ -2916,7 +2917,7 @@ export default function Dashboard({ user, onLogout }) {
           }
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: (() => { const c = v.compliance && typeof v.compliance === 'object' ? v.compliance : {}; return { coi: c.coi || { done: false }, w9: c.w9 || { done: false }, quote: c.quote || { done: false }, invoice: c.invoice || { done: false }, banking: c.banking || { done: false }, contract: c.contract || { done: false } }; })() })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback) { const safe = {}; Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; }); setProjectWorkback(safe); }
@@ -3909,7 +3910,7 @@ export default function Dashboard({ user, onLogout }) {
   ])];
   const pctSpent = project.budget > 0 ? (project.spent / project.budget) * 100 : 0;
   const compTotal = vendors.length * 5;
-  const compDone = vendors.reduce((s, v) => s + Object.values(v.compliance).filter(c => c.done).length, 0);
+  const compDone = vendors.reduce((s, v) => s + COMP_KEYS.filter(ck => v.compliance?.[ck.key]?.done).length, 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
   const filteredProjects = (() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -6490,7 +6491,7 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                   )}
                   {[...vendors].sort((a, b) => (a.name || "").localeCompare(b.name || "")).map((v, vi) => {
-                    const done = Object.values(v.compliance).filter(c => c.done).length;
+                    const done = COMP_KEYS.filter(ck => v.compliance[ck.key]?.done).length;
                     const isExp = expandedVendor === v.id;
                     const isSelected = selectedVendorIds.has(v.id);
                     return (
@@ -6525,7 +6526,7 @@ export default function Dashboard({ user, onLogout }) {
                           <div style={{ padding: "0 18px 16px", borderTop: "1px solid var(--border)", animation: "fadeUp 0.2s ease" }}>
                             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginTop: 14 }}>
                               {COMP_KEYS.map(ck => {
-                                const info = v.compliance[ck.key] || {};
+                                const info = v.compliance[ck.key] || { done: false, file: null, date: null, link: null };
                                 const dp = `${ck.drivePrefix}/${v.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim()}/`;
                                 const isVersionedDoc = ck.key === 'invoice' || ck.key === 'quote';
                                 const versionFiles = isVersionedDoc && Array.isArray(info.files) ? info.files : [];
