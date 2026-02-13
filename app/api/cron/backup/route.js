@@ -44,7 +44,9 @@ async function findSharedDrive(drive) {
 
 export async function GET(request) {
   const authHeader = request.headers.get('authorization');
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET;
+  // Vercel cron sends Bearer token automatically; allow if no secret configured (dev/testing)
+  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 

@@ -22,7 +22,7 @@ const DEFAULT_TEMPLATE = [
 ];
 
 const VENDOR_SUBFOLDER_TEMPLATE = [
-  'Agreements', 'COI', 'Invoices', 'Quotes', 'W9'
+  'Agreements', 'Banking', 'COI', 'Invoices', 'Quotes', 'W9'
 ];
 
 function getDriveClient(readOnly = false) {
@@ -115,6 +115,18 @@ export async function POST(request) {
 
     if (action === 'create-vendor-folder') {
       return handleCreateVendorFolder(body);
+    }
+
+    if (action === 'share-project') {
+      return handleShareProject(body);
+    }
+
+    if (action === 'revoke-project-access') {
+      return handleRevokeProjectAccess(body);
+    }
+
+    if (action === 'list-project-permissions') {
+      return handleListProjectPermissions(body);
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
@@ -696,6 +708,123 @@ async function handleCreateVendorFolder(body) {
     });
   } catch (err) {
     console.error('Create vendor folder error:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// ─── Share project folder with external user (Option A permissions) ───
+async function handleShareProject(body) {
+  const { projectFolderId, email, role = 'reader', projectName } = body;
+  if (!projectFolderId || !email) {
+    return NextResponse.json({ error: 'Missing projectFolderId or email' }, { status: 400 });
+  }
+
+  const drive = getDriveClient();
+
+  try {
+    // Share the project folder with the user
+    const permission = await drive.permissions.create({
+      fileId: projectFolderId,
+      requestBody: {
+        type: 'user',
+        role, // 'reader', 'commenter', or 'writer'
+        emailAddress: email,
+      },
+      sendNotificationEmail: true,
+      emailMessage: projectName
+        ? `You've been added to the "${projectName}" project in Command Center. This gives you access to the project's Drive folder.`
+        : `You've been given access to a project folder in Command Center.`,
+      supportsAllDrives: true,
+    });
+
+    return NextResponse.json({
+      success: true,
+      permissionId: permission.data.id,
+      email,
+      role,
+      message: `Shared "${projectName || projectFolderId}" with ${email} as ${role}`,
+    });
+  } catch (err) {
+    // Handle "already has access" gracefully
+    if (err.message?.includes('already has access')) {
+      return NextResponse.json({ success: true, alreadyShared: true, email, role, message: `${email} already has access` });
+    }
+    console.error('Share project error:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// ─── Revoke project folder access ───
+async function handleRevokeProjectAccess(body) {
+  const { projectFolderId, email } = body;
+  if (!projectFolderId || !email) {
+    return NextResponse.json({ error: 'Missing projectFolderId or email' }, { status: 400 });
+  }
+
+  const drive = getDriveClient();
+
+  try {
+    // List permissions to find the one for this email
+    const perms = await drive.permissions.list({
+      fileId: projectFolderId,
+      fields: 'permissions(id, emailAddress, role, type)',
+      supportsAllDrives: true,
+    });
+
+    const userPerm = (perms.data.permissions || []).find(
+      p => p.emailAddress?.toLowerCase() === email.toLowerCase() && p.type === 'user'
+    );
+
+    if (!userPerm) {
+      return NextResponse.json({ success: true, message: `${email} did not have access`, notFound: true });
+    }
+
+    await drive.permissions.delete({
+      fileId: projectFolderId,
+      permissionId: userPerm.id,
+      supportsAllDrives: true,
+    });
+
+    return NextResponse.json({
+      success: true,
+      email,
+      revoked: true,
+      message: `Revoked ${email}'s access`,
+    });
+  } catch (err) {
+    console.error('Revoke access error:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// ─── List who has access to a project folder ───
+async function handleListProjectPermissions(body) {
+  const { projectFolderId } = body;
+  if (!projectFolderId) {
+    return NextResponse.json({ error: 'Missing projectFolderId' }, { status: 400 });
+  }
+
+  const drive = getDriveClient();
+
+  try {
+    const perms = await drive.permissions.list({
+      fileId: projectFolderId,
+      fields: 'permissions(id, emailAddress, role, type, displayName)',
+      supportsAllDrives: true,
+    });
+
+    const users = (perms.data.permissions || [])
+      .filter(p => p.type === 'user')
+      .map(p => ({
+        id: p.id,
+        email: p.emailAddress,
+        name: p.displayName,
+        role: p.role,
+      }));
+
+    return NextResponse.json({ success: true, permissions: users });
+  } catch (err) {
+    console.error('List permissions error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

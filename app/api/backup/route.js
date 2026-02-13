@@ -93,11 +93,13 @@ export async function POST(request) {
 
     // ── MANUAL BACKUP to Drive ──
     if (action === 'backup') {
-      const { data: state, error: stateErr } = await supabase
-        .from('shared_state').select('state, updated_at').eq('id', 'shared').single();
-      if (stateErr || !state) throw new Error('Could not read current state');
+      const { data: allRows, error: stateErr } = await supabase
+        .from('shared_state').select('id, state, updated_at').neq('id', 'shared');
+      if (stateErr) throw new Error('Could not read current state: ' + stateErr.message);
+      const combinedState = {};
+      (allRows || []).forEach(row => { combinedState[row.id] = row.state; });
 
-      const stateJson = JSON.stringify(state.state, null, 2);
+      const stateJson = JSON.stringify(combinedState, null, 2);
       const sizeKb = Math.round(Buffer.byteLength(stateJson) / 1024);
       const now = new Date();
       const fileName = `backup-manual-${now.toISOString().replace(/[:.]/g, '-').slice(0, 19)}.json`;
@@ -128,11 +130,11 @@ export async function POST(request) {
 
     // ── SYNC CONTACTS as vCards ──
     if (action === 'sync-contacts') {
-      const { data: state, error: stateErr } = await supabase
-        .from('shared_state').select('state').eq('id', 'shared').single();
-      if (stateErr || !state) throw new Error('Could not read state');
+      const { data: contactsRow, error: stateErr } = await supabase
+        .from('shared_state').select('state').eq('id', 'contacts').single();
+      if (stateErr || !contactsRow) throw new Error('Could not read contacts');
 
-      const contacts = state.state.contacts || [];
+      const contacts = contactsRow.state || [];
       if (!contacts.length) return NextResponse.json({ success: true, synced: 0 });
 
       const drive = getDriveClient();

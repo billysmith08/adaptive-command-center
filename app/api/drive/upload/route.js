@@ -27,13 +27,17 @@ export async function POST(request) {
     const vendorName = formData.get('vendorName');
     const docType = formData.get('docType');
     const basePath = formData.get('basePath');
+    const projectFolderId = formData.get('projectFolderId');
+    const vendorSubfolder = formData.get('vendorSubfolder');
+    const globalMirror = formData.get('globalMirror') === 'true';
+    const globalBasePath = formData.get('globalBasePath');
     
-    steps.push({ step: 'parse', status: 'ok', vendorName, docType, basePath, fileName: file?.name, fileSize: file?.size });
+    steps.push({ step: 'parse', status: 'ok', vendorName, docType, basePath, projectFolderId: !!projectFolderId, fileName: file?.name, fileSize: file?.size });
     
-    if (!file || !vendorName || !basePath) {
+    if (!file || !vendorName) {
       return NextResponse.json({ 
         success: false, 
-        error: `Missing required fields: ${!file ? 'file ' : ''}${!vendorName ? 'vendorName ' : ''}${!basePath ? 'basePath' : ''}`.trim(),
+        error: `Missing required fields: ${!file ? 'file ' : ''}${!vendorName ? 'vendorName ' : ''}`.trim(),
         steps 
       }, { status: 400 });
     }
@@ -48,172 +52,147 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: `Google Auth failed: ${authErr.message}`, steps }, { status: 500 });
     }
 
-    // Step 3: Find the ADPTV LLC shared drive
+    // Step 3: Find the shared drive
     let sharedDriveId = null;
     try {
       const drivesRes = await drive.drives.list({ pageSize: 50 });
       const allDrives = drivesRes.data.drives || [];
-      steps.push({ step: 'listDrives', status: 'ok', count: allDrives.length, names: allDrives.map(d => d.name) });
-      
-      const targetDrive = allDrives.find(d => d.name === SHARED_DRIVE_NAME);
+      const targetDrive = allDrives.find(d => d.name === SHARED_DRIVE_NAME) || allDrives.find(d => d.name.toLowerCase().includes('adptv'));
       if (targetDrive) {
         sharedDriveId = targetDrive.id;
-        steps.push({ step: 'findDrive', status: 'found', driveId: sharedDriveId, driveName: SHARED_DRIVE_NAME });
+        steps.push({ step: 'findDrive', status: 'found', driveName: targetDrive.name });
       } else {
-        const partialMatch = allDrives.find(d => d.name.toLowerCase().includes('adptv'));
-        if (partialMatch) {
-          sharedDriveId = partialMatch.id;
-          steps.push({ step: 'findDrive', status: 'partial_match', driveId: sharedDriveId, driveName: partialMatch.name });
-        } else {
-          steps.push({ step: 'findDrive', status: 'NOT_FOUND', searched: SHARED_DRIVE_NAME, available: allDrives.map(d => d.name) });
-          return NextResponse.json({ 
-            success: false, 
-            error: `Shared drive "${SHARED_DRIVE_NAME}" not found. Available drives: ${allDrives.map(d => d.name).join(', ') || 'none'}. Make sure the service account (${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL}) is added as a member of the shared drive.`,
-            steps 
-          }, { status: 404 });
-        }
+        return NextResponse.json({ success: false, error: `Shared drive not found`, steps }, { status: 404 });
       }
     } catch (driveErr) {
-      steps.push({ step: 'listDrives', status: 'error', error: driveErr.message });
-      return NextResponse.json({ success: false, error: `Failed to list shared drives: ${driveErr.message}`, steps }, { status: 500 });
+      return NextResponse.json({ success: false, error: `Failed to list drives: ${driveErr.message}`, steps }, { status: 500 });
     }
 
-    // Step 4: Navigate folder path within the shared drive
-    const pathParts = basePath.split('/').filter(Boolean);
-    let currentParentId = sharedDriveId; // Start from the shared drive root
-    
-    for (let i = 0; i < pathParts.length; i++) {
-      const part = pathParts[i];
+    // Helper: find folder in parent
+    async function findFolder(parentId, name) {
+      const res = await drive.files.list({
+        q: `name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${parentId}' in parents`,
+        fields: 'files(id, name, webViewLink)', ...SD, corpora: 'drive', driveId: sharedDriveId,
+      });
+      return res.data.files?.[0] || null;
+    }
+    async function findOrCreateFolder(parentId, name) {
+      const existing = await findFolder(parentId, name);
+      if (existing) return { id: existing.id, created: false };
+      const created = await drive.files.create({
+        requestBody: { name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] },
+        fields: 'id, name, webViewLink', supportsAllDrives: true,
+      });
+      return { id: created.data.id, created: true };
+    }
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    let uploadFolderId;
+    let folderCreated = false;
+
+    // ═══ PROJECT-SCOPED UPLOAD ═══
+    if (projectFolderId && vendorSubfolder) {
       try {
-        const query = `name='${part.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${currentParentId}' in parents`;
+        // Navigate: projectFolderId → ADMIN → VENDORS → VendorName → Subfolder
+        const adminFolder = await findOrCreateFolder(projectFolderId, 'ADMIN');
+        const vendorsFolder = await findOrCreateFolder(adminFolder.id, 'VENDORS');
+        const vendorFolder = await findOrCreateFolder(vendorsFolder.id, vendorName);
+        folderCreated = vendorFolder.created;
         
-        const res = await drive.files.list({
-          q: query,
-          fields: 'files(id, name, parents)',
-          ...SD,
-          corpora: 'drive',
-          driveId: sharedDriveId,
-        });
+        // Create all template subfolders if vendor folder was just created
+        if (vendorFolder.created) {
+          for (const sub of ['Agreements', 'Banking', 'COI', 'Invoices', 'Quotes', 'W9']) {
+            await findOrCreateFolder(vendorFolder.id, sub);
+          }
+          steps.push({ step: 'vendorFolder', status: 'created_with_template', name: vendorName });
+        }
         
-        const folder = res.data.files?.[0];
+        // Navigate to the specific subfolder (e.g. "Invoices", "COI", etc.)
+        const subfolder = await findOrCreateFolder(vendorFolder.id, vendorSubfolder);
+        uploadFolderId = subfolder.id;
+        steps.push({ step: 'projectRoute', status: 'ok', path: `ADMIN/VENDORS/${vendorName}/${vendorSubfolder}` });
+      } catch (navErr) {
+        steps.push({ step: 'projectRoute', status: 'error', error: navErr.message });
+        return NextResponse.json({ success: false, error: `Project folder navigation failed: ${navErr.message}`, steps }, { status: 500 });
+      }
+    }
+    // ═══ LEGACY GLOBAL PATH UPLOAD ═══
+    else if (basePath) {
+      const pathParts = basePath.split('/').filter(Boolean);
+      let currentParentId = sharedDriveId;
+      
+      for (let i = 0; i < pathParts.length; i++) {
+        const part = pathParts[i];
+        const folder = await findFolder(currentParentId, part);
         if (folder) {
           currentParentId = folder.id;
-          steps.push({ step: `navigate[${i}]`, segment: part, status: 'found', folderId: folder.id });
         } else {
-          // List what IS in the parent to help debug
           let subfolders = [];
           try {
             const debugList = await drive.files.list({
               q: `'${currentParentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
-              fields: 'files(id, name)',
-              ...SD,
-              corpora: 'drive',
-              driveId: sharedDriveId,
-              pageSize: 50,
+              fields: 'files(name)', ...SD, corpora: 'drive', driveId: sharedDriveId, pageSize: 50,
             });
             subfolders = (debugList.data.files || []).map(f => f.name);
           } catch (_) {}
-          
-          steps.push({ step: `navigate[${i}]`, segment: part, status: 'NOT_FOUND', parentId: currentParentId, existingSubfolders: subfolders });
-          
-          return NextResponse.json({ 
-            success: false, 
-            error: `Folder not found: "${part}" (step ${i + 1} of path "${basePath}"). Found these folders instead: ${subfolders.join(', ') || 'none'}. Check the exact folder name in the "${SHARED_DRIVE_NAME}" shared drive.`,
-            steps 
-          }, { status: 404 });
+          return NextResponse.json({ success: false, error: `Folder not found: "${part}" in path "${basePath}". Found: ${subfolders.join(', ')}`, steps }, { status: 404 });
         }
-      } catch (navErr) {
-        steps.push({ step: `navigate[${i}]`, segment: part, status: 'error', error: navErr.message });
-        return NextResponse.json({ 
-          success: false, 
-          error: `Error navigating to "${part}": ${navErr.message}`,
-          steps 
-        }, { status: 500 });
       }
-    }
-
-    // Step 5: Find or create vendor subfolder
-    let vendorFolderId;
-    let folderCreated = false;
-    
-    try {
-      const vendorQuery = `name='${vendorName.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and trashed=false and '${currentParentId}' in parents`;
-      const vendorRes = await drive.files.list({
-        q: vendorQuery,
-        fields: 'files(id, name)',
-        ...SD,
-        corpora: 'drive',
-        driveId: sharedDriveId,
-      });
       
-      const existingFolder = vendorRes.data.files?.[0];
-      
-      if (existingFolder) {
-        vendorFolderId = existingFolder.id;
-        steps.push({ step: 'vendorFolder', status: 'found_existing', folderId: vendorFolderId, name: vendorName });
-      } else {
-        const createRes = await drive.files.create({
-          requestBody: {
-            name: vendorName,
-            mimeType: 'application/vnd.google-apps.folder',
-            parents: [currentParentId],
-          },
-          fields: 'id, name, webViewLink',
-          supportsAllDrives: true,
-        });
-        vendorFolderId = createRes.data.id;
-        folderCreated = true;
-        steps.push({ step: 'vendorFolder', status: 'created', folderId: vendorFolderId, name: vendorName });
-      }
-    } catch (folderErr) {
-      steps.push({ step: 'vendorFolder', status: 'error', error: folderErr.message });
-      return NextResponse.json({ 
-        success: false, 
-        error: `Failed to find/create vendor folder "${vendorName}": ${folderErr.message}`,
-        steps 
-      }, { status: 500 });
+      // Find or create vendor subfolder
+      const vendorFolder = await findOrCreateFolder(currentParentId, vendorName);
+      uploadFolderId = vendorFolder.id;
+      folderCreated = vendorFolder.created;
+    } else {
+      return NextResponse.json({ success: false, error: 'Missing basePath or projectFolderId', steps }, { status: 400 });
     }
 
     // Step 6: Upload the file
-    try {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      
-      const uploadRes = await drive.files.create({
-        requestBody: {
-          name: file.name,
-          parents: [vendorFolderId],
-        },
-        media: {
-          mimeType: file.type || 'application/octet-stream',
-          body: Readable.from(buffer),
-        },
-        fields: 'id, name, webViewLink',
-        supportsAllDrives: true,
-      });
-      
-      steps.push({ step: 'upload', status: 'ok', fileId: uploadRes.data.id, fileName: uploadRes.data.name });
-      
-      return NextResponse.json({
-        success: true,
-        file: { name: uploadRes.data.name, id: uploadRes.data.id, link: uploadRes.data.webViewLink },
-        folder: { id: vendorFolderId, created: folderCreated, path: `${basePath}/${vendorName}` },
-        steps,
-      });
-    } catch (uploadErr) {
-      steps.push({ step: 'upload', status: 'error', error: uploadErr.message });
-      return NextResponse.json({ 
-        success: false, 
-        error: `File upload failed: ${uploadErr.message}`,
-        steps 
-      }, { status: 500 });
+    const uploadRes = await drive.files.create({
+      requestBody: { name: file.name, parents: [uploadFolderId] },
+      media: { mimeType: file.type || 'application/octet-stream', body: Readable.from(buffer) },
+      fields: 'id, name, webViewLink', supportsAllDrives: true,
+    });
+    steps.push({ step: 'upload', status: 'ok', fileId: uploadRes.data.id });
+
+    // ═══ GLOBAL MIRROR for W9/COI ═══
+    let mirrorResult = null;
+    if (globalMirror && globalBasePath && projectFolderId) {
+      try {
+        // Navigate global path
+        const globalParts = globalBasePath.split('/').filter(Boolean);
+        let globalParent = sharedDriveId;
+        for (const part of globalParts) {
+          const f = await findFolder(globalParent, part);
+          if (f) { globalParent = f.id; } else { throw new Error(`Global path not found: "${part}"`); }
+        }
+        // Create vendor folder in global path
+        const globalVendorFolder = await findOrCreateFolder(globalParent, vendorName);
+        // Copy file
+        const copied = await drive.files.copy({
+          fileId: uploadRes.data.id,
+          requestBody: { name: file.name, parents: [globalVendorFolder.id] },
+          ...SD,
+        });
+        mirrorResult = { success: true, globalPath: globalBasePath, fileId: copied.data.id };
+        steps.push({ step: 'globalMirror', status: 'ok', path: `${globalBasePath}/${vendorName}` });
+      } catch (mirrorErr) {
+        mirrorResult = { success: false, error: mirrorErr.message };
+        steps.push({ step: 'globalMirror', status: 'warning', error: mirrorErr.message });
+      }
     }
+
+    return NextResponse.json({
+      success: true,
+      file: { name: uploadRes.data.name, id: uploadRes.data.id, link: uploadRes.data.webViewLink },
+      folder: { id: uploadFolderId, created: folderCreated },
+      mirror: mirrorResult,
+      steps,
+    });
     
   } catch (err) {
     return NextResponse.json({ 
-      success: false, 
-      error: `Unexpected error: ${err.message}`,
-      stack: err.stack,
-      steps 
+      success: false, error: `Unexpected error: ${err.message}`, steps 
     }, { status: 500 });
   }
 }

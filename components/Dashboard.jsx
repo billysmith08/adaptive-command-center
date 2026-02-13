@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase-browser";
 import { useEditor, EditorContent } from "@tiptap/react";
 
 // ── APP VERSION ── bump this on every deploy
-const APP_VERSION = "v90.1";
+const APP_VERSION = "v91.1";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
 import Link from "@tiptap/extension-link";
@@ -274,11 +274,12 @@ const WB_STATUSES = ["Not Started", "In Progress", "At Risk", "Done"];
 const WB_STATUS_STYLES = { "Not Started": { bg: "var(--bgCard)", text: "var(--textFaint)" }, "In Progress": { bg: "#3da5db12", text: "#3da5db" }, "At Risk": { bg: "#e8545412", text: "#e85454" }, Done: { bg: "#4ecb7112", text: "#4ecb71" } };
 
 const COMP_KEYS = [
-  { key: "coi", label: "COI", fullLabel: "Certificate of Insurance", drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp" },
-  { key: "w9", label: "W9", fullLabel: "W-9 Tax Form", drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s" },
-  { key: "invoice", label: "INV", fullLabel: "Invoice", drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Invoices" },
-  { key: "banking", label: "BANK", fullLabel: "Banking Details", drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Banking" },
-  { key: "contract", label: "CTR", fullLabel: "Contract", drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Contracts" },
+  { key: "coi", label: "COI", fullLabel: "Certificate of Insurance", vendorSubfolder: "COI", globalMirror: true, drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp" },
+  { key: "w9", label: "W9", fullLabel: "W-9 Tax Form", vendorSubfolder: "W9", globalMirror: true, drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s" },
+  { key: "quote", label: "QTE", fullLabel: "Quote", vendorSubfolder: "Quotes", globalMirror: false, drivePrefix: "" },
+  { key: "invoice", label: "INV", fullLabel: "Invoice", vendorSubfolder: "Invoices", globalMirror: false, drivePrefix: "" },
+  { key: "banking", label: "BANK", fullLabel: "Banking Details", vendorSubfolder: "Banking", globalMirror: false, drivePrefix: "" },
+  { key: "contract", label: "CTR", fullLabel: "Contract", vendorSubfolder: "Agreements", globalMirror: false, drivePrefix: "" },
 ];
 
 const PROJECT_COLORS = ["#ff6b4a", "#3da5db", "#9b6dff", "#4ecb71", "#e85494", "#dba94e"];
@@ -1015,7 +1016,7 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
   return (
     <div ref={boxRef} onDragOver={e => { e.preventDefault(); setDragOver(true); }} onDragLeave={() => setDragOver(false)} onDrop={handleDrop} onClick={handleClick} onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)}
       style={{ position: "relative", width: 52, height: 52, borderRadius: 8, background: justUploaded ? "#4ecb7110" : dragOver ? "#4ecb7108" : isDone ? "#4ecb7108" : "var(--bgCard)", border: `1.5px dashed ${justUploaded ? "#4ecb7180" : dragOver ? "#4ecb7160" : isDone ? "#4ecb7140" : "var(--borderSub)"}`, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer", transition: "all 0.25s", transform: dragOver ? "scale(1.08)" : "scale(1)" }}>
-      {justUploaded ? <><span style={{ fontSize: 16 }}>✓</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>SAVED</span></> : isDone ? <><span style={{ fontSize: 13, lineHeight: 1 }}>📄</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>✓</span></> : <><span style={{ fontSize: 14, opacity: dragOver ? 1 : 0.5 }}>{dragOver ? "📥" : "+"}</span><span style={{ fontSize: 7, color: dragOver ? "#4ecb71" : "var(--textGhost)", fontWeight: 600, marginTop: 1 }}>{compKey.label}</span></>}
+      {justUploaded ? <><span style={{ fontSize: 16 }}>✓</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>SAVED</span></> : isDone ? <><span style={{ fontSize: 13, lineHeight: 1 }}>📄</span><span style={{ fontSize: 7, color: "#4ecb71", fontWeight: 700, marginTop: 2 }}>{(compKey.key === "invoice" || compKey.key === "quote") && compInfo.files?.length > 0 ? `V${compInfo.files.length}` : "✓"}</span></> : <><span style={{ fontSize: 14, opacity: dragOver ? 1 : 0.5 }}>{dragOver ? "📥" : "+"}</span><span style={{ fontSize: 7, color: dragOver ? "#4ecb71" : "var(--textGhost)", fontWeight: 600, marginTop: 1 }}>{compKey.label}</span></>}
       {showTooltip && <div onClick={e => e.stopPropagation()} style={{ position: "fixed", ...(tp.arrowTop ? { top: tp.top } : { bottom: tp.bottom }), left: tp.left, transform: "translateX(-50%)", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 10, padding: "12px 14px", minWidth: 230, maxWidth: 280, zIndex: 10000, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text)", marginBottom: 2 }}>{compKey.fullLabel}</div>
         <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 8 }}>{vendor.name}</div>
@@ -1033,7 +1034,7 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
               📂 Open in Drive
             </button>
             <button onClick={handleUploadClick} style={{ padding: "4px 8px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 5, color: "#dba94e", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
-              🔄 Replace
+              {(compKey.key === "invoice" || compKey.key === "quote") ? "📤 New Version" : "🔄 Replace"}
             </button>
             {onClear && (
               <button onClick={(e) => { e.stopPropagation(); onClear(vendor.id, compKey.key); setShowTooltip(false); }} style={{ padding: "4px 8px", background: "#e8545410", border: "1px solid #e8545425", borderRadius: 5, color: "#e85454", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
@@ -1041,6 +1042,22 @@ function DocDropZone({ vendor, compKey, compInfo, onFileDrop, onPreview, onClear
               </button>
             )}
           </div>
+          
+          {/* Version history for invoice/quote */}
+          {(compKey.key === "invoice" || compKey.key === "quote") && compInfo.files?.length > 0 && (
+            <div style={{ marginTop: 8, borderTop: "1px solid var(--borderSub)", paddingTop: 6 }}>
+              <div style={{ fontSize: 8, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 4 }}>VERSION HISTORY ({compInfo.files.length})</div>
+              {compInfo.files.slice().reverse().map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "3px 0", fontSize: 9 }}>
+                  <span style={{ color: "var(--textMuted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 160 }}>{f.file}</span>
+                  <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                    <span style={{ color: "var(--textGhost)", fontSize: 8 }}>{f.date}</span>
+                    {f.link && <button onClick={(e) => { e.stopPropagation(); window.open(f.link, '_blank'); }} style={{ padding: "1px 4px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 3, color: "#3da5db", cursor: "pointer", fontSize: 7, fontWeight: 700 }}>Open</button>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           
           <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginTop: 8 }}>📁 .../{drivePath.split("/").slice(-3).join("/")}</div>
         </> : <>
@@ -1689,6 +1706,11 @@ export default function Dashboard({ user, onLogout }) {
   const [projDriveLoading, setProjDriveLoading] = useState(false);
   const [projDriveUploading, setProjDriveUploading] = useState(false);
   const [projDriveEnsuring, setProjDriveEnsuring] = useState(false);
+  const [driveAccessPanel, setDriveAccessPanel] = useState(false);
+  const [drivePermissions, setDrivePermissions] = useState([]);
+  const [driveShareEmail, setDriveShareEmail] = useState("");
+  const [driveShareRole, setDriveShareRole] = useState("reader");
+  const [driveShareLoading, setDriveShareLoading] = useState(false);
   const projDriveFileRef = useRef(null);
   // ─── ACTIVITY FEED ──────────────────────────────────────────────
   const [activityLog, setActivityLog] = useState([]);
@@ -2607,7 +2629,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const importFromDrive = (dv) => {
     const comp = {};
-    ["coi", "w9", "banking", "contract", "invoice"].forEach(k => {
+    ["coi", "w9", "quote", "banking", "contract", "invoice"].forEach(k => {
       comp[k] = dv.drive[k]?.found ? { done: true, file: dv.drive[k].file, date: new Date().toISOString().split("T")[0], link: dv.drive[k].link || null } : { done: false, file: null, date: null, link: null };
     });
     const exists = vendors.find(v => v.name.toLowerCase() === dv.name.toLowerCase());
@@ -2721,7 +2743,7 @@ export default function Dashboard({ user, onLogout }) {
       deptId: vendorForm.dept, source: "manual",
       ein: w9ParsedData?.ein || '',
       address: finalAddress,
-      compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
+      compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, quote: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
     // Auto-add vendor AND contact person to global contacts
@@ -2859,7 +2881,7 @@ export default function Dashboard({ user, onLogout }) {
           }
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback && typeof s.projectWorkback === 'object') {
@@ -2894,7 +2916,7 @@ export default function Dashboard({ user, onLogout }) {
           }
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: v.compliance && typeof v.compliance === 'object' ? v.compliance : { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback) { const safe = {}; Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; }); setProjectWorkback(safe); }
@@ -3305,8 +3327,8 @@ export default function Dashboard({ user, onLogout }) {
             const v = updated[existingIdx];
             const comp = { ...v.compliance };
             
-            // Project-specific docs: invoice, contract, banking
-            ['invoice', 'contract', 'banking'].forEach(key => {
+            // Project-specific docs: invoice, quote, contract, banking
+            ['invoice', 'quote', 'contract', 'banking'].forEach(key => {
               if (vendorData.docs[key]?.done) {
                 comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
               }
@@ -3321,8 +3343,8 @@ export default function Dashboard({ user, onLogout }) {
             updated[existingIdx] = { ...v, compliance: comp, driveFolderId: vendorData.folderId };
           } else {
             // Vendor NOT on tab yet — auto-add from Drive
-            const comp = { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } };
-            ['invoice', 'contract', 'banking', 'w9', 'coi'].forEach(key => {
+            const comp = { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } };
+            ['invoice', 'quote', 'contract', 'banking', 'w9', 'coi'].forEach(key => {
               if (vendorData.docs[key]?.done) {
                 comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
               }
@@ -3488,6 +3510,34 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
 
+  // ─── Drive Access / Permission functions ───
+  const loadDrivePermissions = async () => {
+    if (!project?.driveFolderId) return;
+    try {
+      const res = await fetch('/api/drive/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'list-project-permissions', projectFolderId: project.driveFolderId }) });
+      const data = await res.json();
+      if (data.success) setDrivePermissions(data.permissions || []);
+    } catch (e) { console.error('Load permissions:', e); }
+  };
+  const shareDriveAccess = async () => {
+    if (!driveShareEmail || !project?.driveFolderId) return;
+    setDriveShareLoading(true);
+    try {
+      const res = await fetch('/api/drive/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'share-project', projectFolderId: project.driveFolderId, email: driveShareEmail, role: driveShareRole, projectName: project.name }) });
+      const data = await res.json();
+      if (data.success) { setDriveShareEmail(""); loadDrivePermissions(); }
+      else alert('Share failed: ' + (data.error || 'Unknown error'));
+    } catch (e) { alert('Share failed: ' + e.message); }
+    setDriveShareLoading(false);
+  };
+  const revokeDriveAccess = async (email) => {
+    if (!confirm(`Revoke ${email}'s access to this project's Drive folder?`)) return;
+    try {
+      await fetch('/api/drive/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'revoke-project-access', projectFolderId: project.driveFolderId, email }) });
+      loadDrivePermissions();
+    } catch (e) { alert('Revoke failed: ' + e.message); }
+  };
+
   const driveBrowse = async (folderId, folderName, isRoot = false) => {
     setProjDriveLoading(true);
     try {
@@ -3649,12 +3699,15 @@ export default function Dashboard({ user, onLogout }) {
   const suggestFileName = (compKey, vendorName, originalName, projectCode) => {
     const ext = originalName.includes('.') ? '.' + originalName.split('.').pop() : '.pdf';
     const clean = (vendorName || 'Unknown').replace(/[^a-zA-Z0-9 &'()-]/g, '').trim();
+    const cleanUnder = clean.replace(/\s+/g, '_');
+    const code = projectCode || 'PROJ';
     switch (compKey) {
       case 'coi': return `COI - ${clean}${ext}`;
       case 'w9': return `W9 - ${clean}${ext}`;
       case 'banking': return `Banking - ${clean}${ext}`;
       case 'contract': return `Contract - ${clean}${ext}`;
-      case 'invoice': return `${projectCode || 'PROJ'}_${clean}_V1${ext}`;
+      case 'invoice': return `${code}_${cleanUnder}_Invoice_V1${ext}`;
+      case 'quote': return `${code}_${cleanUnder}_Quote_V1${ext}`;
       default: return originalName;
     }
   };
@@ -3666,8 +3719,12 @@ export default function Dashboard({ user, onLogout }) {
     const vendor = allVendorsList.find(v => v.id === vendorId);
     const vName = vendor?.name || 'Unknown';
     const ext = file.name.includes('.') ? '.' + file.name.split('.').pop() : '';
-    const suggested = suggestFileName(compKey, vName, file.name, project?.code || '');
-    setRenameModal({ file, vendorId, compKey, drivePath, basePath, vendorName: vName, suggestedName: suggested, originalName: file.name, ext });
+    // Auto-detect next version for invoice/quote
+    const existingComp = vendor?.compliance?.[compKey];
+    const existingFiles = Array.isArray(existingComp?.files) ? existingComp.files : [];
+    const nextVersion = (compKey === 'invoice' || compKey === 'quote') ? (existingComp?.done ? existingFiles.length + 1 : 1) : 1;
+    const suggested = suggestFileName(compKey, vName, file.name, project?.code || '').replace(/_V1/, `_V${nextVersion}`);
+    setRenameModal({ file, vendorId, compKey, drivePath, basePath, vendorName: vName, suggestedName: suggested, originalName: file.name, ext, version: String(nextVersion) });
   };
 
   // Step 2: Execute upload with (optionally renamed) file
@@ -3675,9 +3732,24 @@ export default function Dashboard({ user, onLogout }) {
     const allVendorsList = Object.values(projectVendors).flat();
     const vendor = allVendorsList.find(v => v.id === vendorId);
     const fileName = typeof file === 'string' ? file : file.name;
+    const isVersioned = compKey === 'invoice' || compKey === 'quote';
+    const today = new Date().toISOString().split("T")[0];
+    
+    // For versioned docs, preserve existing files array
+    const getUpdatedComp = (prev, link) => {
+      const existing = prev || {};
+      if (isVersioned) {
+        const prevFiles = Array.isArray(existing.files) ? existing.files : [];
+        // If there was a previous "current" file, push it to files array
+        const allFiles = existing.done && existing.file ? [...prevFiles.filter(f => f.file !== existing.file), { file: existing.file, link: existing.link, date: existing.date, version: prevFiles.length + 1 }] : [...prevFiles];
+        const newVersion = allFiles.length + 1;
+        return { done: true, file: fileName, date: today, link: link || null, uploading: false, files: [...allFiles, { file: fileName, link: link || null, date: today, version: newVersion }] };
+      }
+      return { done: true, file: fileName, date: today, link: link || null, uploading: false };
+    };
     
     // Immediately update UI optimistically (show uploading state)
-    setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], uploading: true } } }));
+    setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { ...getUpdatedComp(v.compliance[compKey], null), uploading: true } } }));
     logActivity("vendor", `uploading ${compKey} for "${vendor?.name}"`, project?.name);
     
     // Upload to Google Drive via API
@@ -3687,14 +3759,36 @@ export default function Dashboard({ user, onLogout }) {
         formData.append('file', file);
         formData.append('vendorName', vendor?.name || 'Unknown');
         formData.append('docType', compKey);
-        formData.append('basePath', basePath || drivePath.replace(/\/[^/]+\/$/, ''));
+        // Project-scoped upload: route to project's ADMIN/VENDORS/VendorName/[subfolder]
+        const ckObj = COMP_KEYS.find(c => c.key === compKey);
+        if (project?.driveFolderId && ckObj?.vendorSubfolder) {
+          formData.append('projectFolderId', project.driveFolderId);
+          formData.append('vendorSubfolder', ckObj.vendorSubfolder);
+          formData.append('globalMirror', ckObj.globalMirror ? 'true' : 'false');
+          if (ckObj.globalMirror && ckObj.drivePrefix) formData.append('globalBasePath', ckObj.drivePrefix);
+        } else {
+          formData.append('basePath', basePath || drivePath.replace(/\/[^/]+\/$/, ''));
+        }
         
         const res = await fetch('/api/drive/upload', { method: 'POST', body: formData });
         const data = await res.json();
         
         if (data.success) {
-          // SUCCESS — update with Drive link
-          setVendors(prev => prev.map(v => v.id !== vendorId ? v : { ...v, compliance: { ...v.compliance, [compKey]: { done: true, file: fileName, date: new Date().toISOString().split("T")[0], link: data.file?.link, uploading: false } } }));
+          // SUCCESS — update with Drive link, preserve version history
+          setVendors(prev => prev.map(v => {
+            if (v.id !== vendorId) return v;
+            const comp = { ...v.compliance };
+            const existing = comp[compKey] || {};
+            if (compKey === 'invoice' || compKey === 'quote') {
+              // Update the files array — replace the last entry's link
+              const files = Array.isArray(existing.files) ? [...existing.files] : [];
+              if (files.length > 0) files[files.length - 1] = { ...files[files.length - 1], link: data.file?.link };
+              comp[compKey] = { ...existing, done: true, file: fileName, date: new Date().toISOString().split("T")[0], link: data.file?.link, uploading: false, files };
+            } else {
+              comp[compKey] = { done: true, file: fileName, date: new Date().toISOString().split("T")[0], link: data.file?.link, uploading: false };
+            }
+            return { ...v, compliance: comp };
+          }));
           setUploadLog(prev => [{ id: Date.now(), vendorName: vendor?.name, compKey, fileName, drivePath, time: new Date().toLocaleTimeString(), folderCreated: data.folder?.created, vendorFolder: vendor?.name }, ...prev].slice(0, 20));
           logActivity("vendor", `✅ uploaded ${compKey} for "${vendor?.name}" to Drive`, project?.name);
           // Re-sync from Drive to ensure global consistency
@@ -4016,6 +4110,11 @@ export default function Dashboard({ user, onLogout }) {
               🏢 Clients {clients.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{clients.length}</span>}
             </button>
           )}
+          {isAdmin && (
+            <button onClick={() => setActiveTab("finance")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "finance" ? "#4ecb71" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+              💰 Finance
+            </button>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
           {/* Settings gear (admin only) */}
@@ -4174,7 +4273,7 @@ export default function Dashboard({ user, onLogout }) {
                       const sw = swipeState[p.id];
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
-                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" ) setActiveTab("overview");
+                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" || activeTab === "finance" ) setActiveTab("overview");
                     }}
                     style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
@@ -4220,7 +4319,7 @@ export default function Dashboard({ user, onLogout }) {
         {/* MAIN */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "16px 28px 0" }}>
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -4238,7 +4337,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
               </div>
             )}
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
+            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
@@ -4503,9 +4602,9 @@ export default function Dashboard({ user, onLogout }) {
                                   const sectionTasks = (tasksBySection[section.id] || []).sort((a, b) => (a.order || 0) - (b.order || 0));
                                   if ((todoistFilter === "today" || todoistFilter === "overdue") && sectionTasks.length === 0) return null;
                                   return (
-                                    <div key={section.id}>
-                                      <div style={{ padding: "6px 16px", fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5, borderBottom: "1px solid var(--calLine)", background: "#ff6b4a06" }}>
-                                        {String.fromCharCode(9656)} {section.name.toUpperCase()} <span style={{ color: "var(--textFaint)", fontWeight: 400 }}>({sectionTasks.length})</span>
+                                    <React.Fragment key={section.id}>
+                                      <div style={{ padding: "5px 16px", fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.3, borderBottom: "1px solid var(--calLine)", background: "var(--bgInput)" }}>
+                                        {section.name} <span style={{ fontWeight: 400, opacity: 0.6 }}>· {sectionTasks.length}</span>
                                       </div>
                                       {sectionTasks.map(task => {
                                         const isOverdue = task.due?.date && task.due.date < today;
@@ -4523,7 +4622,7 @@ export default function Dashboard({ user, onLogout }) {
                                           </div>
                                         );
                                       })}
-                                    </div>
+                                    </React.Fragment>
                                   );
                                 })}
                                 {tasks.length === 0 && todoistFilter === "all" && <div style={{ padding: "12px 16px", fontSize: 11, color: "var(--textGhost)", textAlign: "center" }}>No tasks yet</div>}
@@ -4709,7 +4808,7 @@ export default function Dashboard({ user, onLogout }) {
                           const driveComp = driveComplianceMap[useVendorName] || driveComplianceMap[c.vendorName] || driveComplianceMap[c.company] || driveComplianceMap[c.name] || {};
                           const comp = { ...vendorComp };
                           // Fill in from Drive map if vendor compliance is missing
-                          ['coi', 'w9', 'banking', 'invoice', 'contract'].forEach(key => {
+                          ['coi', 'w9', 'quote', 'banking', 'invoice', 'contract'].forEach(key => {
                             if (!comp[key]?.done && driveComp[key]?.done) {
                               comp[key] = { done: true, file: driveComp[key].file, link: driveComp[key].link };
                             }
@@ -4735,7 +4834,7 @@ export default function Dashboard({ user, onLogout }) {
                                   email: c.email, contact: c.name, phone: c.phone, title: c.position,
                                   contactType: "", deptId: c.department, source: "contacts",
                                   ein: "", address: c.address || "",
-                                  compliance: { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } }
+                                  compliance: { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } }
                                 };
                                 setVendors(prev => [...prev, newV]);
                               }
@@ -4951,6 +5050,128 @@ export default function Dashboard({ user, onLogout }) {
                 )}
               </div>
             )}
+
+            {/* ═══ FINANCE (ADMIN-ONLY) ═══ */}
+            {activeTab === "finance" && isAdmin && (() => {
+              const activeProjects = projects.filter(p => !p.parentId && p.status !== "Archived");
+              const monthOrder = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+              const sorted = [...activeProjects].sort((a, b) => {
+                const ma = monthOrder.indexOf(a.projectMonth || "");
+                const mb = monthOrder.indexOf(b.projectMonth || "");
+                return (ma === -1 ? 99 : ma) - (mb === -1 ? 99 : mb);
+              });
+              const parseNum = (v) => { if (!v && v !== 0) return 0; const n = parseFloat(String(v).replace(/[^0-9.-]/g, "")); return isNaN(n) ? 0 : n; };
+              const fmtMoney = (v) => { const n = parseNum(v); return n === 0 ? "" : "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+              const totalWalkout = sorted.reduce((s, p) => s + parseNum(p.fin_walkout), 0);
+              const totalTalent = sorted.reduce((s, p) => s + parseNum(p.fin_talent), 0);
+              const totalProdCoord = sorted.reduce((s, p) => s + parseNum(p.fin_prodCoord), 0);
+              const totalShowCoord = sorted.reduce((s, p) => s + parseNum(p.fin_showCoord), 0);
+              const totalCalc = sorted.reduce((s, p) => s + parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord), 0);
+              const colStyle = { padding: "8px 10px", fontSize: 12, borderBottom: "1px solid var(--borderSub)", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" };
+              const headerStyle = { ...colStyle, fontSize: 9, fontWeight: 700, letterSpacing: 0.8, color: "var(--textFaint)", background: "var(--bgHover)", position: "sticky", top: 0, zIndex: 2, fontFamily: "'Instrument Sans', sans-serif" };
+              const inputStyle = { width: "100%", background: "transparent", border: "none", color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", padding: 0 };
+              const updateFinField = (projectId, field, value) => {
+                setProjects(prev => prev.map(p => p.id === projectId ? { ...p, [field]: value } : p));
+              };
+              const statusColors = { Active: "#4ecb71", "On Hold": "#dba94e", Complete: "#3da5db", Cancelled: "#ff4a6b", Prospecting: "#9b6dff" };
+
+              return (
+                <div style={{ animation: "fadeUp 0.3s ease" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ADMIN · FINANCIALS</div>
+                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>💰 Finance Overview</div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", textAlign: "center" }}>
+                        <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL WALKOUT</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "#4ecb71", fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalWalkout)}</div>
+                      </div>
+                      <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", textAlign: "center" }}>
+                        <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL SUM</div>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "#ff6b4a", fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalCalc)}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 240px)" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>PROJECTS</th>
+                            <th style={{ ...headerStyle, width: 100, textAlign: "center" }}>STATUS</th>
+                            <th style={{ ...headerStyle, width: 100, textAlign: "left" }}>MONTH</th>
+                            <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>NOTES</th>
+                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>EST. WALKOUT</th>
+                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>TALENT FEE</th>
+                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>PROD. COORD</th>
+                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>SHOW COORD</th>
+                            <th style={{ ...headerStyle, width: 140, textAlign: "right" }}>Σ SUM</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sorted.map((p, idx) => {
+                            const rowSum = parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord);
+                            const code = p.code || "";
+                            return (
+                              <tr key={p.id} style={{ background: idx % 2 === 0 ? "transparent" : "var(--bgHover)" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a08"} onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? "transparent" : "var(--bgHover)"}>
+                                <td style={{ ...colStyle, textAlign: "left" }}>
+                                  <div style={{ fontWeight: 600, color: "var(--text)", cursor: "pointer" }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }}>{p.name}</div>
+                                  {code && <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{code}</div>}
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "center" }}>
+                                  <select value={p.status || "Active"} onChange={e => updateFinField(p.id, "status", e.target.value)} style={{ ...inputStyle, textAlign: "center", background: (statusColors[p.status] || "#888") + "20", color: statusColors[p.status] || "var(--text)", borderRadius: 4, padding: "3px 6px", fontWeight: 700, fontSize: 10, fontFamily: "'Instrument Sans', sans-serif", cursor: "pointer" }}>
+                                    {["Active", "On Hold", "Complete", "Cancelled", "Prospecting"].map(s => <option key={s} value={s}>{s}</option>)}
+                                  </select>
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "left" }}>
+                                  <select value={p.projectMonth || ""} onChange={e => updateFinField(p.id, "projectMonth", e.target.value)} style={{ ...inputStyle, cursor: "pointer", fontSize: 11 }}>
+                                    <option value="">—</option>
+                                    {monthOrder.map(m => <option key={m} value={m}>{m}</option>)}
+                                  </select>
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "left" }}>
+                                  <input value={p.fin_notes || ""} onChange={e => updateFinField(p.id, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 11, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "right" }}>
+                                  <input value={p.fin_walkout || ""} onChange={e => updateFinField(p.id, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_walkout", v.toFixed(2)); }} />
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "right" }}>
+                                  <input value={p.fin_talent || ""} onChange={e => updateFinField(p.id, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_talent", v.toFixed(2)); }} />
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "right" }}>
+                                  <input value={p.fin_prodCoord || ""} onChange={e => updateFinField(p.id, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_prodCoord", v.toFixed(2)); }} />
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "right" }}>
+                                  <input value={p.fin_showCoord || ""} onChange={e => updateFinField(p.id, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right" }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_showCoord", v.toFixed(2)); }} />
+                                </td>
+                                <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: rowSum > 0 ? "#4ecb71" : "var(--textMuted)" }}>
+                                  {rowSum > 0 ? fmtMoney(rowSum) : "—"}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {/* Totals row */}
+                          <tr style={{ background: "var(--bgHover)", borderTop: "2px solid var(--border)" }}>
+                            <td style={{ ...colStyle, fontWeight: 700, fontSize: 11 }}>TOTALS ({sorted.length} projects)</td>
+                            <td style={colStyle} />
+                            <td style={colStyle} />
+                            <td style={colStyle} />
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "#4ecb71" }}>{fmtMoney(totalWalkout)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{fmtMoney(totalTalent)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{fmtMoney(totalProdCoord)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "var(--text)" }}>{fmtMoney(totalShowCoord)}</td>
+                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: "#ff6b4a", fontSize: 13 }}>{fmtMoney(totalCalc)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Data saves live to Supabase · Click project name to jump to overview</div>
+                </div>
+              );
+            })()}
 
             {/* ═══ TODOIST (GLOBAL) ═══ */}
             {activeTab === "todoist" && !project && (
@@ -5565,13 +5786,14 @@ export default function Dashboard({ user, onLogout }) {
                             {unsectioned.map(renderTask)}
                             {projSections.map(section => {
                               const sectionTasks = projectTasks.filter(t => t.section_id === section.id).sort((a, b) => (a.order || 0) - (b.order || 0));
+                              if (sectionTasks.length === 0) return null;
                               return (
-                                <div key={section.id}>
-                                  <div style={{ padding: "6px 12px", fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5, borderBottom: "1px solid var(--calLine)", background: "#ff6b4a06" }}>
-                                    {String.fromCharCode(9656)} {section.name.toUpperCase()} <span style={{ color: "var(--textFaint)", fontWeight: 400 }}>({sectionTasks.length})</span>
+                                <React.Fragment key={section.id}>
+                                  <div style={{ padding: "5px 12px", fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.3, borderBottom: "1px solid var(--calLine)", background: "var(--bgInput)" }}>
+                                    {section.name} <span style={{ fontWeight: 400, opacity: 0.6 }}>· {sectionTasks.length}</span>
                                   </div>
                                   {sectionTasks.map(renderTask)}
-                                </div>
+                                </React.Fragment>
                               );
                             })}
                           </div>
@@ -5959,6 +6181,11 @@ export default function Dashboard({ user, onLogout }) {
                             Open in Drive →
                           </a>
                         )}
+                        {isAdmin && project.driveFolderId && (
+                          <button onClick={() => { setDriveAccessPanel(!driveAccessPanel); if (!driveAccessPanel) loadDrivePermissions(); }} style={{ fontSize: 10, color: driveAccessPanel ? "#dba94e" : "var(--textFaint)", fontWeight: 600, padding: "2px 8px", background: driveAccessPanel ? "#dba94e10" : "var(--bgInput)", border: `1px solid ${driveAccessPanel ? "#dba94e30" : "var(--borderSub)"}`, borderRadius: 4, cursor: "pointer" }}>
+                            🔐 Access
+                          </button>
+                        )}
                       </div>
                       <div style={{ display: "flex", gap: 6 }}>
                         <input type="file" ref={projDriveFileRef} onChange={e => { const f = e.target.files[0]; if (f) { setRenameModal({ file: f, mode: 'drive', suggestedName: f.name, originalName: f.name, ext: f.name.includes('.') ? '.' + f.name.split('.').pop() : '', folderName: projDrivePath[projDrivePath.length - 1]?.name || '' }); } e.target.value = ""; }} style={{ display: "none" }} />
@@ -5970,6 +6197,47 @@ export default function Dashboard({ user, onLogout }) {
                         </button>
                       </div>
                     </div>
+
+                    {/* Drive Access Panel */}
+                    {driveAccessPanel && isAdmin && (
+                      <div style={{ marginBottom: 12, padding: 14, background: "var(--bgInput)", border: "1px solid #dba94e30", borderRadius: 10 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "#dba94e", letterSpacing: 0.3 }}>🔐 DRIVE ACCESS</div>
+                          <span style={{ fontSize: 9, color: "var(--textGhost)" }}>Share this project's Drive folder with external collaborators</span>
+                        </div>
+                        {/* Add new */}
+                        <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                          <input value={driveShareEmail} onChange={e => setDriveShareEmail(e.target.value)} placeholder="email@example.com" onKeyDown={e => e.key === 'Enter' && shareDriveAccess()} style={{ flex: 1, padding: "6px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 11 }} />
+                          <select value={driveShareRole} onChange={e => setDriveShareRole(e.target.value)} style={{ padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 10 }}>
+                            <option value="reader">Viewer</option>
+                            <option value="commenter">Commenter</option>
+                            <option value="writer">Editor</option>
+                          </select>
+                          <button onClick={shareDriveAccess} disabled={driveShareLoading || !driveShareEmail} style={{ padding: "6px 14px", background: "#4ecb7110", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", fontSize: 10, fontWeight: 700, cursor: "pointer", opacity: driveShareLoading || !driveShareEmail ? 0.5 : 1 }}>
+                            {driveShareLoading ? "..." : "+ Share"}
+                          </button>
+                        </div>
+                        {/* Current permissions */}
+                        {drivePermissions.length > 0 ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                            {drivePermissions.map((p, i) => (
+                              <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px", background: "var(--bgCard)", borderRadius: 6, border: "1px solid var(--borderSub)" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 10, color: "var(--text)", fontWeight: 600 }}>{p.name || p.email}</span>
+                                  {p.name && <span style={{ fontSize: 9, color: "var(--textFaint)" }}>{p.email}</span>}
+                                  <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: p.role === "owner" ? "#dba94e15" : p.role === "writer" ? "#4ecb7115" : "#3da5db15", color: p.role === "owner" ? "#dba94e" : p.role === "writer" ? "#4ecb71" : "#3da5db", fontWeight: 700 }}>{p.role}</span>
+                                </div>
+                                {p.role !== "owner" && p.role !== "organizer" && (
+                                  <button onClick={() => revokeDriveAccess(p.email)} style={{ padding: "2px 6px", background: "#e8545408", border: "1px solid #e8545420", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 8, fontWeight: 700 }}>Revoke</button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 10, color: "var(--textGhost)", textAlign: "center", padding: 6 }}>Loading permissions...</div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Breadcrumb */}
                     <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 12, padding: "8px 12px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)", flexWrap: "wrap" }}>
@@ -6132,7 +6400,7 @@ export default function Dashboard({ user, onLogout }) {
                         <span style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.5 }}>GOOGLE DRIVE — {driveResults.length} result{driveResults.length !== 1 ? "s" : ""}</span>
                       </div>
                       {driveResults.map((dv, di) => {
-                        const docKeys = ["coi", "w9", "banking", "contract", "invoice"];
+                        const docKeys = ["coi", "w9", "quote", "banking", "contract", "invoice"];
                         const found = docKeys.filter(k => dv.drive[k]?.found).length;
                         const alreadyAdded = vendors.some(v => v.name.toLowerCase() === dv.name.toLowerCase());
                         return (
@@ -6238,7 +6506,7 @@ export default function Dashboard({ user, onLogout }) {
                               <span style={{ fontSize: 15, fontWeight: 700 }}>{v.name}</span>
                               <SyncBadge source={v.source} />
                               <DeptTag dept={v.deptId} small />
-                              {done === 5 && <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 3, background: "var(--bgCard)", color: "#4ecb71", fontWeight: 700, border: "1px solid var(--borderSub)" }}>COMPLETE</span>}
+                              {done === 6 && <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 3, background: "var(--bgCard)", color: "#4ecb71", fontWeight: 700, border: "1px solid var(--borderSub)" }}>COMPLETE</span>}
                             </div>
                             <div style={{ fontSize: 11, color: "var(--textFaint)" }}>{v.type} · {v.email}</div>
                           </div>
@@ -6250,26 +6518,40 @@ export default function Dashboard({ user, onLogout }) {
                               </div>
                             ))}
                           </div>
-                          <div style={{ textAlign: "center", minWidth: 40 }}><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: done === 5 ? "#4ecb71" : done >= 3 ? "#dba94e" : "#e85454" }}>{done}/5</div></div>
+                          <div style={{ textAlign: "center", minWidth: 40 }}><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: done === 6 ? "#4ecb71" : done >= 4 ? "#dba94e" : "#e85454" }}>{done}/6</div></div>
                           <button onClick={() => setExpandedVendor(isExp ? null : v.id)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 12, padding: "4px 8px", transform: isExp ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s" }}>▶</button>
                         </div>
                         {isExp && (
                           <div style={{ padding: "0 18px 16px", borderTop: "1px solid var(--border)", animation: "fadeUp 0.2s ease" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginTop: 14 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginTop: 14 }}>
                               {COMP_KEYS.map(ck => {
-                                const info = v.compliance[ck.key];
+                                const info = v.compliance[ck.key] || {};
                                 const dp = `${ck.drivePrefix}/${v.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim()}/`;
+                                const isVersionedDoc = ck.key === 'invoice' || ck.key === 'quote';
+                                const versionFiles = isVersionedDoc && Array.isArray(info.files) ? info.files : [];
                                 return (
                                   <div key={ck.key} style={{ background: info.done ? "#4ecb7108" : "#e8545408", border: `1px solid ${info.done ? "#4ecb7130" : "#e8545420"}`, borderRadius: 8, padding: 12, transition: "border-color 0.2s" }}>
-                                    <div style={{ fontSize: 10, fontWeight: 700, color: info.done ? "#4ecb71" : "#e85454", letterSpacing: 0.5, marginBottom: 6 }}>{ck.fullLabel}</div>
+                                    <div style={{ fontSize: 10, fontWeight: 700, color: info.done ? "#4ecb71" : "#e85454", letterSpacing: 0.5, marginBottom: 6 }}>{ck.fullLabel}{isVersionedDoc && versionFiles.length > 0 ? ` (V${versionFiles.length})` : ""}</div>
                                     {info.done ? <>
                                       <div style={{ fontSize: 11, color: "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}><span>📄</span> {info.file || "Received"}</div>
                                       <div style={{ fontSize: 9, color: "var(--textFaint)", marginBottom: 6 }}>Uploaded {info.date}</div>
                                       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                                         <button onClick={(e) => { e.stopPropagation(); const url = info.link || `https://drive.google.com/drive/search?q=${encodeURIComponent(info.file || ck.fullLabel)}`; window.open(url, '_blank'); }} style={{ padding: "3px 7px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>📂 Open</button>
-                                        <button onClick={(e) => { e.stopPropagation(); const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (ev) => { const f = ev.target.files[0]; if (f) handleFileDrop(v.id, ck.key, f, dp, ck.drivePrefix); }; input.click(); }} style={{ padding: "3px 7px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 4, color: "#dba94e", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>🔄 Replace</button>
+                                        <button onClick={(e) => { e.stopPropagation(); const input = document.createElement("input"); input.type = "file"; input.accept = ".pdf,.doc,.docx,.jpg,.png,.xlsx"; input.onchange = (ev) => { const f = ev.target.files[0]; if (f) handleFileDrop(v.id, ck.key, f, dp, ck.drivePrefix); }; input.click(); }} style={{ padding: "3px 7px", background: "#dba94e10", border: "1px solid #dba94e25", borderRadius: 4, color: "#dba94e", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>{isVersionedDoc ? "📤 New Ver." : "🔄 Replace"}</button>
                                         <button onClick={(e) => { e.stopPropagation(); handleClearCompliance(v.id, ck.key); }} style={{ padding: "3px 7px", background: "#e8545410", border: "1px solid #e8545425", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>✕ Clear</button>
                                       </div>
+                                      {/* Version history */}
+                                      {isVersionedDoc && versionFiles.length > 1 && (
+                                        <div style={{ marginTop: 8, borderTop: "1px solid var(--borderSub)", paddingTop: 4 }}>
+                                          <div style={{ fontSize: 8, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.3, marginBottom: 3 }}>VERSIONS</div>
+                                          {versionFiles.slice().reverse().map((f, i) => (
+                                            <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 0" }}>
+                                              <span style={{ fontSize: 9, color: "var(--textMuted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "70%" }}>{f.file}</span>
+                                              {f.link && <button onClick={(e) => { e.stopPropagation(); window.open(f.link, '_blank'); }} style={{ padding: "1px 5px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 3, color: "#3da5db", cursor: "pointer", fontSize: 7, fontWeight: 700 }}>Open</button>}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </> : <div style={{ fontSize: 11, color: "#6a4a4a" }}>Not received — drop above</div>}
                                     <div style={{ fontSize: 8, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", marginTop: 4 }}>📁 .../{dp.split("/").slice(-3).join("/")}</div>
                                   </div>
@@ -6374,7 +6656,7 @@ export default function Dashboard({ user, onLogout }) {
                     else if (role === "Client") updateProject("clientContacts", [...(project.clientContacts || []), entry]);
                     else if (role === "Billing") updateProject("billingContacts", [...(project.billingContacts || []), entry]);
                     else if (role === "Vendor" || role === "Contractor") {
-                      setVendors(prev => [...prev, { id: `v_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, name: entry.company || entry.name, type: role, email: entry.email, contact: entry.name, phone: entry.phone, title: "", contactType: role, deptId: "", source: "manual", address: entry.address || "", compliance: { coi: { done: false }, w9: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } }]);
+                      setVendors(prev => [...prev, { id: `v_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, name: entry.company || entry.name, type: role, email: entry.email, contact: entry.name, phone: entry.phone, title: "", contactType: role, deptId: "", source: "manual", address: entry.address || "", compliance: { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } }]);
                     }
                     else updateProject("pocs", [...(project.pocs || []), entry]);
                     setClipboardToast({ text: `${entry.name} added as ${role}!`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 1800);
@@ -7101,7 +7383,7 @@ export default function Dashboard({ user, onLogout }) {
                   {/* ── DATA PROTECTION ── */}
                   <div style={{ marginTop: 28, borderTop: "2px solid var(--borderSub)", paddingTop: 20 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>🛡️ Data Protection</div>
-                    <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>Auto-backups run every hour to Shared Drive → Internal → Command.Center</div>
+                    <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 16 }}>Auto-backup runs daily (8AM UTC) to Shared Drive → Internal → Command.Center</div>
 
                     {/* Backup path info */}
                     <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: 14, marginBottom: 20 }}>
@@ -7112,7 +7394,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: "var(--textSub)", marginTop: 4 }}>
                         👥 Shared Drive → Internal → <strong>Command.Center</strong> → Contacts → <em>*.vcf</em>
                       </div>
-                      <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 8 }}>Runs automatically via Vercel Cron every hour. Contacts sync as vCards with each backup.</div>
+                      <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 8 }}>Runs daily via Vercel Cron (8AM UTC). Upgrade to Pro for hourly. Contacts sync as vCards with each backup.</div>
                     </div>
 
                     {/* Action Buttons */}
@@ -7968,9 +8250,10 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* ═══ FILE RENAME MODAL ═══ */}
       {renameModal && (() => {
-        const DOC_LABELS = { coi: 'Certificate of Insurance', w9: 'W-9 Tax Form', banking: 'Banking Details', contract: 'Contract', invoice: 'Invoice' };
+        const DOC_LABELS = { coi: 'Certificate of Insurance', w9: 'W-9 Tax Form', banking: 'Banking Details', contract: 'Contract', quote: 'Quote', invoice: 'Invoice' };
         const isDrive = renameModal.mode === 'drive';
-        const isInvoice = !isDrive && renameModal.compKey === 'invoice';
+        const isVersioned = !isDrive && (renameModal.compKey === 'invoice' || renameModal.compKey === 'quote');
+        const versionLabel = renameModal.compKey === 'quote' ? 'Quote' : 'Invoice';
         return (
         <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setRenameModal(null); }}>
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 480, maxWidth: "92vw", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
@@ -7992,16 +8275,16 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>ORIGINAL FILE</div>
                 <div style={{ fontSize: 11, color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", padding: "8px 12px", background: "var(--bgCard)", borderRadius: 6, border: "1px solid var(--borderSub)", wordBreak: "break-all" }}>{renameModal.originalName}</div>
               </div>
-              {isInvoice && (
+              {isVersioned && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>PROJECT CODE</div>
-                  <input value={renameModal.projectCode || project?.code || ''} onChange={e => setRenameModal(prev => ({ ...prev, projectCode: e.target.value, suggestedName: `${e.target.value}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').trim()}_V${prev.version || '1'}${prev.ext}` }))} style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} placeholder="e.g. 26-GT-BLOOM" />
+                  <input value={renameModal.projectCode || project?.code || ''} onChange={e => setRenameModal(prev => ({ ...prev, projectCode: e.target.value, suggestedName: `${e.target.value}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').replace(/\s+/g, '_').trim()}_${versionLabel}_V${prev.version || '1'}${prev.ext}` }))} style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} placeholder="e.g. 26-GT-BLOOM" />
                 </div>
               )}
-              {isInvoice && (
+              {isVersioned && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>VERSION</div>
-                  <input type="number" min="1" value={renameModal.version || '1'} onChange={e => { const v = e.target.value; setRenameModal(prev => ({ ...prev, version: v, suggestedName: `${prev.projectCode || project?.code || 'PROJ'}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').trim()}_V${v}${prev.ext}` })); }} style={{ width: 80, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                  <input type="number" min="1" value={renameModal.version || '1'} onChange={e => { const v = e.target.value; setRenameModal(prev => ({ ...prev, version: v, suggestedName: `${prev.projectCode || project?.code || 'PROJ'}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').replace(/\s+/g, '_').trim()}_${versionLabel}_V${v}${prev.ext}` })); }} style={{ width: 80, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
                 </div>
               )}
               <div style={{ marginBottom: 8 }}>
@@ -8009,7 +8292,7 @@ export default function Dashboard({ user, onLogout }) {
                 <input value={renameModal.suggestedName} onChange={e => setRenameModal(prev => ({ ...prev, suggestedName: e.target.value }))} style={{ width: "100%", padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} onFocus={e => { const val = e.target.value; const dotIdx = val.lastIndexOf('.'); if (dotIdx > 0) e.target.setSelectionRange(0, dotIdx); }} autoFocus onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('rename-modal-upload-btn')?.click(); } }} />
               </div>
               <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 20 }}>
-                {isDrive ? "Rename the file before uploading to Drive" : isInvoice ? "Format: ProjectCode_Vendor Name_Version.ext" : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'banking' ? 'Banking' : 'Contract'} - Vendor Name.ext`}
+                {isDrive ? "Rename the file before uploading to Drive" : isVersioned ? `Format: ProjectCode_Vendor_Name_${versionLabel}_V#.ext` : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'banking' ? 'Banking' : renameModal.compKey === 'quote' ? 'Quote' : 'Contract'} - Vendor Name.ext`}
               </div>
             </div>
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -8323,7 +8606,7 @@ export default function Dashboard({ user, onLogout }) {
       {activeProjectId && (
         <>
           {/* Toggle button */}
-          {!showCommentPanel && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && (
+          {!showCommentPanel && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
             <button onClick={() => setShowCommentPanel(true)} style={{ position: "fixed", right: 24, bottom: 24, zIndex: 200, background: "#ff6b4a", border: "none", borderRadius: "50%", width: 56, height: 56, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, boxShadow: "0 4px 20px rgba(255,107,74,0.4)", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(255,107,74,0.5)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(255,107,74,0.4)"; }}>
               <span style={{ fontSize: 24, lineHeight: 1 }}>💬</span>
               {(projectComments[activeProjectId] || []).length > 0 && (
