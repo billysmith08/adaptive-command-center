@@ -2890,6 +2890,27 @@ export default function Dashboard({ user, onLogout }) {
             setClients(deduped);
           }
         }
+        // ONE-TIME MERGE: Recover any contacts/clients/projects from localStorage that aren't in Supabase
+        // This handles data that was saved locally but never synced
+        try {
+          const lsContacts = JSON.parse(localStorage.getItem(LS_KEYS.contacts) || "[]");
+          const lsClients = JSON.parse(localStorage.getItem(LS_KEYS.clients) || "[]");
+          const lsProjects = JSON.parse(localStorage.getItem(LS_KEYS.projects) || "[]");
+          const sbContactIds = new Set((s.contacts || []).map(c => c.id));
+          const sbClientIds = new Set((s.clients || []).map(c => c.id || c.name));
+          const sbProjectIds = new Set((s.projects || []).map(p => p.id));
+          const missingContacts = lsContacts.filter(c => c.id && !sbContactIds.has(c.id));
+          const missingClients = lsClients.filter(c => !sbClientIds.has(c.id || c.name));
+          const missingProjects = lsProjects.filter(p => p.id && !sbProjectIds.has(p.id));
+          if (missingContacts.length > 0 || missingClients.length > 0 || missingProjects.length > 0) {
+            console.log(`Recovery merge: +${missingContacts.length} contacts, +${missingClients.length} clients, +${missingProjects.length} projects from localStorage`);
+            if (missingContacts.length > 0) setContacts(prev => [...prev, ...missingContacts]);
+            if (missingClients.length > 0) setClients(prev => [...prev, ...missingClients]);
+            if (missingProjects.length > 0) setProjects(prev => [...prev, ...missingProjects.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null }))]);
+            // Mark as user edit so it saves to Supabase
+            remoteSyncRef.current = 0;
+          }
+        } catch (e) { console.warn('Recovery merge failed:', e); }
         setDataLoaded(true);
         // Sync compliance with Drive
         syncDriveCompliance();
