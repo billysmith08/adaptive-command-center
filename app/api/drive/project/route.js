@@ -7,14 +7,22 @@ const SD = { supportsAllDrives: true, includeItemsFromAllDrives: true };
 
 const DEFAULT_TEMPLATE = [
   { name: 'ADMIN', children: [
-    { name: 'BUDGET', children: [] },
-    { name: 'CREW', children: [] },
-    { name: 'From Client', children: [] },
+    { name: 'BUDGET', children: [
+      { name: 'Exports', children: [] },
+    ]},
+    { name: 'CLIENT DOCS', children: [
+      { name: 'Received from Client', children: [] },
+      { name: 'Sent to Client', children: [] },
+    ]},
+    { name: 'SOW', children: [] },
     { name: 'VENDORS', children: [] },
   ]},
-  { name: 'VENUE', children: [
-    { name: 'Floorplans', children: [] },
-  ]},
+  { name: 'PRODUCTION', children: [] },
+  { name: 'REFERENCE', children: [] },
+];
+
+const VENDOR_SUBFOLDER_TEMPLATE = [
+  'Agreements', 'COI', 'Invoices', 'Quotes', 'W9'
 ];
 
 function getDriveClient(readOnly = false) {
@@ -99,6 +107,14 @@ export async function POST(request) {
 
     if (action === 'scan-vendors') {
       return handleScanVendors(body);
+    }
+
+    if (action === 'audit-folders') {
+      return handleAuditFolders(body);
+    }
+
+    if (action === 'create-vendor-folder') {
+      return handleCreateVendorFolder(body);
     }
 
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
@@ -515,4 +531,171 @@ async function handleScanVendors(body) {
     globalComplianceFolder: globalComplianceFolder?.name || null,
     scannedAt: new Date().toISOString(),
   });
+}
+
+// ─── Audit & fix existing project folders ───
+async function handleAuditFolders(body) {
+  const { dryRun = true } = body; // default to dry run (report only)
+  const drive = getDriveClient();
+  const sharedDrive = await findSharedDrive(drive);
+  if (!sharedDrive) {
+    return NextResponse.json({ error: 'Shared drive not found' }, { status: 404 });
+  }
+  const driveId = sharedDrive.id;
+
+  // Required template structure (flat paths for easy checking)
+  const REQUIRED = DEFAULT_TEMPLATE;
+
+  // Helper: list all subfolders of a parent
+  async function listSubfolders(parentId) {
+    let all = [], pageToken = null;
+    do {
+      const res = await drive.files.list({
+        q: `'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+        fields: 'nextPageToken, files(id, name)',
+        ...SD, corpora: 'drive', driveId,
+        pageSize: 200,
+        ...(pageToken ? { pageToken } : {}),
+      });
+      all.push(...(res.data.files || []));
+      pageToken = res.data.nextPageToken;
+    } while (pageToken);
+    return all;
+  }
+
+  // Recursively ensure template exists under a parent, return report
+  async function auditRecursive(parentId, template) {
+    const existing = await listSubfolders(parentId);
+    const existingMap = new Map(existing.map(f => [f.name.toUpperCase(), f]));
+    const report = [];
+
+    for (const item of template) {
+      const match = existingMap.get(item.name.toUpperCase());
+      if (match) {
+        const childReport = (item.children && item.children.length > 0)
+          ? await auditRecursive(match.id, item.children)
+          : [];
+        report.push({ name: item.name, status: 'exists', id: match.id, children: childReport });
+      } else {
+        // Missing! Create if not dry run
+        if (!dryRun) {
+          const created = await createFolderInParent(drive, parentId, item.name);
+          let childReport = [];
+          if (item.children && item.children.length > 0) {
+            childReport = await auditRecursive(created.id, item.children);
+          }
+          report.push({ name: item.name, status: 'created', id: created.id, children: childReport });
+        } else {
+          // Just report missing (and all children would also be missing)
+          function markMissing(items) {
+            return items.map(i => ({ name: i.name, status: 'missing', children: markMissing(i.children || []) }));
+          }
+          report.push({ name: item.name, status: 'missing', children: markMissing(item.children || []) });
+        }
+      }
+    }
+    return report;
+  }
+
+  // Find CLIENTS folder
+  const clientsFolder = await findFolderInParent(drive, driveId, driveId, 'CLIENTS');
+  if (!clientsFolder) {
+    return NextResponse.json({ error: 'CLIENTS folder not found' }, { status: 404 });
+  }
+
+  // Iterate: CLIENTS → [Client] → [Year] → [Project]
+  const clientFolders = await listSubfolders(clientsFolder.id);
+  const results = [];
+
+  for (const client of clientFolders) {
+    const yearFolders = await listSubfolders(client.id);
+    for (const year of yearFolders) {
+      // Only process year-like folders (4 digits)
+      if (!/^\d{4}$/.test(year.name)) continue;
+      const projectFolders = await listSubfolders(year.id);
+      for (const project of projectFolders) {
+        const audit = await auditRecursive(project.id, REQUIRED);
+        const hasMissing = JSON.stringify(audit).includes('"missing"') || JSON.stringify(audit).includes('"created"');
+        results.push({
+          client: client.name,
+          year: year.name,
+          project: project.name,
+          projectId: project.id,
+          audit,
+          needsFix: hasMissing,
+        });
+      }
+    }
+  }
+
+  const needsFix = results.filter(r => r.needsFix);
+  const ok = results.filter(r => !r.needsFix);
+
+  return NextResponse.json({
+    success: true,
+    dryRun,
+    totalProjects: results.length,
+    compliant: ok.length,
+    needsFix: needsFix.length,
+    projects: results,
+  });
+}
+
+// ─── Create vendor subfolder inside project's ADMIN/VENDORS/ ───
+async function handleCreateVendorFolder(body) {
+  const { projectFolderId, vendorName } = body;
+  if (!projectFolderId || !vendorName) {
+    return NextResponse.json({ error: 'Missing projectFolderId or vendorName' }, { status: 400 });
+  }
+
+  const drive = getDriveClient();
+  const sharedDrive = await findSharedDrive(drive);
+  if (!sharedDrive) {
+    return NextResponse.json({ error: 'Shared drive not found' }, { status: 404 });
+  }
+  const driveId = sharedDrive.id;
+
+  // Helper to find or create a folder
+  async function findOrCreate(parentId, name) {
+    const existing = await findFolderInParent(drive, driveId, parentId, name);
+    if (existing) return { id: existing.id, created: false };
+    const created = await createFolderInParent(drive, parentId, name);
+    return { id: created.id, created: true };
+  }
+
+  try {
+    // Ensure ADMIN exists
+    const admin = await findOrCreate(projectFolderId, 'ADMIN');
+    // Ensure VENDORS exists inside ADMIN
+    const vendors = await findOrCreate(admin.id, 'VENDORS');
+    // Check if vendor folder already exists
+    const existingVendor = await findFolderInParent(drive, driveId, vendors.id, vendorName);
+    if (existingVendor) {
+      return NextResponse.json({
+        success: true,
+        vendorFolderId: existingVendor.id,
+        created: false,
+        message: `Vendor folder "${vendorName}" already exists`,
+      });
+    }
+    // Create vendor folder
+    const vendorFolder = await createFolderInParent(drive, vendors.id, vendorName);
+    // Create subfolders from template
+    const subfolders = [];
+    for (const sub of VENDOR_SUBFOLDER_TEMPLATE) {
+      const sf = await createFolderInParent(drive, vendorFolder.id, sub);
+      subfolders.push({ name: sub, id: sf.id });
+    }
+
+    return NextResponse.json({
+      success: true,
+      vendorFolderId: vendorFolder.id,
+      created: true,
+      subfolders,
+      message: `Created vendor folder "${vendorName}" with ${subfolders.length} subfolders`,
+    });
+  } catch (err) {
+    console.error('Create vendor folder error:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
 }

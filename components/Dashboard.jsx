@@ -1469,7 +1469,7 @@ export default function Dashboard({ user, onLogout }) {
   const saveTimeoutRef = useRef(null);
   
   // ─── LOCAL STORAGE PERSISTENCE (post-mount hydration for SSR safety) ──
-  const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
+  const LS_KEYS = { projects: "adptv_projects", clients: "adptv_clients", contacts: "adptv_contacts", vendors: "adptv_vendors", workback: "adptv_workback", progress: "adptv_progress", comments: "adptv_comments", ros: "adptv_ros", textSize: "adptv_textSize", updatedAt: "adptv_updated_at" };
   const lsHydrated = useRef(false);
   const pendingSaveRef = useRef(null); // holds the state object for beforeunload flush
   
@@ -1579,6 +1579,29 @@ export default function Dashboard({ user, onLogout }) {
       [activeProjectId]: typeof updater === 'function' ? updater(prev[activeProjectId] || []) : updater
     }));
   };
+  // ─── PER-PROJECT PROGRESS REPORT ──────────────────────────────
+  const [projectProgress, setProjectProgress] = useState({});
+  const progress = projectProgress[activeProjectId] || { rows: [], locations: [] };
+  const setProgress = (updater) => {
+    setProjectProgress(prev => ({
+      ...prev,
+      [activeProjectId]: typeof updater === 'function' ? updater(prev[activeProjectId] || { rows: [], locations: [] }) : updater
+    }));
+  };
+  const [prFilters, setPrFilters] = useState({ task: "", dept: "", location: "", responsible: "", status: "", notes: "" });
+  const [prSort, setPrSort] = useState({ col: null, dir: "asc" });
+  const [prShowFilters, setPrShowFilters] = useState(false);
+  // ─── PROJECT COMMENTS (COMMENT FEED) ──────────────────────────
+  const [projectComments, setProjectComments] = useState({});
+  const comments = projectComments[activeProjectId] || [];
+  const addComment = (text) => {
+    if (!text.trim()) return;
+    const c = { id: `cmt_${Date.now()}`, text, author: user?.name || user?.email || "Unknown", timestamp: new Date().toISOString() };
+    setProjectComments(prev => ({ ...prev, [activeProjectId]: [...(prev[activeProjectId] || []), c] }));
+  };
+  const deleteComment = (id) => setProjectComments(prev => ({ ...prev, [activeProjectId]: (prev[activeProjectId] || []).filter(c => c.id !== id) }));
+  const [commentInput, setCommentInput] = useState("");
+  const [notesCollapsed, setNotesCollapsed] = useState(false);
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
   const [projectROS, setProjectROS] = useState({});
   const ros = projectROS[activeProjectId] || [];
@@ -1592,7 +1615,7 @@ export default function Dashboard({ user, onLogout }) {
   const [time, setTime] = useState(new Date());
   const [uploadLog, setUploadLog] = useState([]);
   const [expandedVendor, setExpandedVendor] = useState(null);
-  useEffect(() => { setSelectedVendorIds(new Set()); setExpandedVendor(null); }, [activeProjectId]);
+  useEffect(() => { setSelectedVendorIds(new Set()); setExpandedVendor(null); setPrFilters({ task: "", dept: "", location: "", responsible: "", status: "", notes: "" }); setPrSort({ col: null, dir: "asc" }); setCommentInput(""); setNotesCollapsed(false); }, [activeProjectId]);
   
   // ─── TEXT SIZE SETTING ──────────────────────────────────────────
   const [textSize, setTextSize] = useState(100); // percentage: 75-130
@@ -1621,17 +1644,22 @@ export default function Dashboard({ user, onLogout }) {
     projectRoles: ["Agent", "Artist", "Billing", "Client", "Manager", "Point of Contact", "Producer", "Staff / Crew", "Talent", "Venue Rep"],
     folderTemplate: [
       { name: "ADMIN", children: [
-        { name: "BUDGET", children: [] },
-        { name: "CREW", children: [] },
-        { name: "From Client", children: [] },
+        { name: "BUDGET", children: [
+          { name: "Exports", children: [] },
+        ]},
+        { name: "CLIENT DOCS", children: [
+          { name: "Received from Client", children: [] },
+          { name: "Sent to Client", children: [] },
+        ]},
+        { name: "SOW", children: [] },
         { name: "VENDORS", children: [] },
       ]},
-      { name: "VENUE", children: [
-        { name: "Floorplans", children: [] },
-      ]},
+      { name: "PRODUCTION", children: [] },
+      { name: "REFERENCE", children: [] },
     ],
   });
   const [settingsDirty, setSettingsDirty] = useState(false);
+  const [folderAuditResult, setFolderAuditResult] = useState(null);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [backupStatus, setBackupStatus] = useState(null);
   const [lastBackup, setLastBackup] = useState(null);
@@ -1673,6 +1701,7 @@ export default function Dashboard({ user, onLogout }) {
     { key: "overview", label: "Overview" },
     { key: "budget", label: "Budget" },
     { key: "workback", label: "Work Back" },
+    { key: "progress", label: "Progress Report" },
     { key: "ros", label: "Run of Show" },
     { key: "drive", label: "Drive" },
     { key: "vendors", label: "Contractors/Vendors" },
@@ -1783,6 +1812,10 @@ export default function Dashboard({ user, onLogout }) {
       if (savedVendors && Object.keys(savedVendors).length > 0) setProjectVendors(savedVendors);
       const savedWB = g(LS_KEYS.workback);
       if (savedWB && Object.keys(savedWB).length > 0) setProjectWorkback(savedWB);
+      const savedPR = g(LS_KEYS.progress);
+      if (savedPR && Object.keys(savedPR).length > 0) setProjectProgress(savedPR);
+      const savedCMT = g(LS_KEYS.comments);
+      if (savedCMT && Object.keys(savedCMT).length > 0) setProjectComments(savedCMT);
       const savedROS = g(LS_KEYS.ros);
       if (savedROS && Object.keys(savedROS).length > 0) setProjectROS(savedROS);
       const savedTS = g(LS_KEYS.textSize);
@@ -1797,6 +1830,8 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.contacts, JSON.stringify(contacts)); stampLS(); } catch {} }, [contacts]);
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.vendors, JSON.stringify(projectVendors)); stampLS(); } catch {} }, [projectVendors]);
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.workback, JSON.stringify(projectWorkback)); stampLS(); } catch {} }, [projectWorkback]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.progress, JSON.stringify(projectProgress)); stampLS(); } catch {} }, [projectProgress]);
+  useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.comments, JSON.stringify(projectComments)); stampLS(); } catch {} }, [projectComments]);
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.ros, JSON.stringify(projectROS)); stampLS(); } catch {} }, [projectROS]);
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.textSize, JSON.stringify(textSize)); } catch {} }, [textSize]);
   useEffect(() => { saveSkipRef.current = false; }, []);
@@ -2705,10 +2740,12 @@ export default function Dashboard({ user, onLogout }) {
     setVendorForm({ ...emptyVendorForm });
     setW9ParsedData(null);
     setShowAddVendor(false);
-    // Pre-create vendor folders in Google Drive (COI + W9)
-    try {
-      fetch('/api/drive/create-folders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ vendorName: name }) });
-    } catch (e) { console.error('Drive folder pre-creation failed:', e); }
+    // Pre-create vendor folder in project's ADMIN/VENDORS/ on Google Drive
+    if (project?.driveFolderId) {
+      try {
+        fetch('/api/drive/project', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'create-vendor-folder', projectFolderId: project.driveFolderId, vendorName: name }) });
+      } catch (e) { console.error('Vendor folder creation failed:', e); }
+    }
     // Sync compliance from Drive — picks up any existing COI/W9 files for this vendor
     setTimeout(syncDriveCompliance, 2000);
   };
@@ -2795,7 +2832,7 @@ export default function Dashboard({ user, onLogout }) {
               try {
                 const localState = {};
                 ['projects', 'clients', 'contacts', 'vendors', 'workback', 'ros'].forEach(k => {
-                  try { const v = localStorage.getItem(LS_KEYS[k]); if (v) localState[k === 'vendors' ? 'projectVendors' : k === 'workback' ? 'projectWorkback' : k === 'ros' ? 'projectROS' : k] = JSON.parse(v); } catch {}
+                  try { const v = localStorage.getItem(LS_KEYS[k]); if (v) localState[k === 'vendors' ? 'projectVendors' : k === 'workback' ? 'projectWorkback' : k === 'progress' ? 'projectProgress' : k === 'comments' ? 'projectComments' : k === 'ros' ? 'projectROS' : k] = JSON.parse(v); } catch {}
                 });
                 if (Object.keys(localState).length > 0) {
                   const now = new Date().toISOString();
@@ -2843,6 +2880,19 @@ export default function Dashboard({ user, onLogout }) {
             const safe = {};
             Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; });
             setProjectWorkback(safe);
+          }
+          if (s.projectProgress && typeof s.projectProgress === 'object') {
+            const safe = {};
+            Object.keys(s.projectProgress).forEach(k => {
+              const v = s.projectProgress[k];
+              safe[k] = { rows: Array.isArray(v?.rows) ? v.rows : [], locations: Array.isArray(v?.locations) ? v.locations : [] };
+            });
+            setProjectProgress(safe);
+          }
+          if (s.projectComments && typeof s.projectComments === 'object') {
+            const safe = {};
+            Object.keys(s.projectComments).forEach(k => { safe[k] = Array.isArray(s.projectComments[k]) ? s.projectComments[k] : []; });
+            setProjectComments(safe);
           }
           if (s.projectROS && typeof s.projectROS === 'object') {
             const safe = {};
@@ -2962,7 +3012,7 @@ export default function Dashboard({ user, onLogout }) {
 
   useEffect(() => {
     if (!dataLoaded) return;
-    const stateToSave = { projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients };
+    const stateToSave = { projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients };
     pendingSaveRef.current = stateToSave;
     setSaveStatus("saving");
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
@@ -2971,7 +3021,7 @@ export default function Dashboard({ user, onLogout }) {
       saveToSupabase(stateToSave);
     }, delay);
     return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
-  }, [projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients, dataLoaded, forceSaveCounter]);
+  }, [projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients, dataLoaded, forceSaveCounter]);
 
   // Flush pending save on tab close / navigate away
   useEffect(() => {
@@ -3515,6 +3565,7 @@ export default function Dashboard({ user, onLogout }) {
     { id: "budget", label: "Budget", icon: "$" },
     { id: "todoist", label: "Todoist", icon: "✅" },
     { id: "workback", label: "Work Back", icon: "◄" },
+    { id: "progress", label: "Progress Report", icon: "☰" },
     { id: "ros", label: "Run of Show", icon: "▶" },
     { id: "drive", label: "Drive", icon: "◫" },
     { id: "vendors", label: "Contractors/Vendors", icon: "⊕" },
@@ -3706,7 +3757,7 @@ export default function Dashboard({ user, onLogout }) {
             <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
             <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast saved: ${(() => { try { return localStorage.getItem(LS_KEYS.updatedAt) || "never"; } catch { return "unknown"; } })()}`} onClick={() => { const stateToSave = { projects, projectVendors, projectWorkback, projectROS, rosDayDates, contacts, activityLog, clients }; pendingSaveRef.current = stateToSave; saveToSupabase(stateToSave); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ SYNCED"}</span></div>
+          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast saved: ${(() => { try { return localStorage.getItem(LS_KEYS.updatedAt) || "never"; } catch { return "unknown"; } })()}`} onClick={() => { const stateToSave = { projects, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, contacts, activityLog, clients }; pendingSaveRef.current = stateToSave; saveToSupabase(stateToSave); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ SYNCED"}</span></div>
           <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
           {user && <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{user.email}</span>}
           {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
@@ -3838,6 +3889,7 @@ export default function Dashboard({ user, onLogout }) {
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10 }}>{t.icon}</span>{t.label}
                   {t.id === "vendors" && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: compDone < compTotal ? "var(--borderSub)" : "var(--bgCard)", color: compDone < compTotal ? "#e85454" : "#4ecb71", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{compDone}/{compTotal}</span>}
+                  {t.id === "progress" && (() => { const pr = (projectProgress[activeProjectId]?.rows || []); const prDone = pr.filter(r => r.status === "Done").length; return pr.length > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: prDone === pr.length ? "#4ecb71" : "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{prDone}/{pr.length}</span> : null; })()}
                   {t.id === "contacts" && (() => { const ct = project.producers.length + project.managers.length + (project.staff?.length || 0) + (project.clientContacts || []).filter(p => p.name).length + (project.pocs || []).filter(p => p.name).length + (project.billingContacts || []).filter(p => p.name).length + vendors.filter(v => v.name).length; return ct > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{ct}</span> : null; })()}
                 </button>
               ))}
@@ -4495,6 +4547,25 @@ export default function Dashboard({ user, onLogout }) {
                               </div>
                             );
                           })()}
+                          {/* ── PROJECTS FOR THIS CLIENT ── */}
+                          {(() => {
+                            const clientProjects = projects.filter(p => p.client && p.client.toLowerCase() === c.name.toLowerCase());
+                            if (clientProjects.length === 0) return null;
+                            return (
+                              <div style={{ padding: "8px 16px 10px 52px" }}>
+                                <div style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.5, marginBottom: 6 }}>PROJECTS ({clientProjects.length})</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                  {clientProjects.sort((a, b) => (a.eventDates?.start || "").localeCompare(b.eventDates?.start || "")).map(p => (
+                                    <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ padding: "3px 8px", background: "#ff6b4a08", border: "1px solid #ff6b4a20", borderRadius: 6, fontSize: 10, color: "#ff6b4a", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a18"} onMouseLeave={e => e.currentTarget.style.background = "#ff6b4a08"}>
+                                      {p.name}
+                                      <span style={{ fontSize: 8, padding: "0 3px", borderRadius: 3, background: p.status === "In-Production" ? "#4ecb7115" : p.status === "Wrap" ? "#8a868015" : p.status === "Exploration" ? "#dba94e15" : "#3da5db15", color: p.status === "In-Production" ? "#4ecb71" : p.status === "Wrap" ? "#8a8680" : p.status === "Exploration" ? "#dba94e" : "#3da5db", fontWeight: 700 }}>{p.status}</span>
+                                      {p.eventDates?.start && <span style={{ fontSize: 8, color: "var(--textGhost)" }}>{p.eventDates.start.slice(5)}</span>}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                       </React.Fragment>
@@ -4706,22 +4777,101 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 </div>
 
-                {/* ── PROJECT NOTES / UPDATES ── */}
+                {/* ── PROJECT NOTES / UPDATES (COLLAPSIBLE) ── */}
                 <div style={{ marginTop: 22 }}>
+                  <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
+                    <div onClick={() => setNotesCollapsed(p => !p)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", cursor: "pointer", userSelect: "none" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>PROJECT NOTES & UPDATES</span>
+                        {project.notes && (() => { const pt = (project.notes || "").replace(/<[^>]*>/g, " ").trim(); return pt ? <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 8, background: "var(--bgCard)", color: "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace" }}>{pt.split(/\s+/).length}w</span> : null; })()}
+                      </div>
+                      <span style={{ fontSize: 10, color: "var(--textGhost)", transition: "transform 0.2s", transform: notesCollapsed ? "rotate(0deg)" : "rotate(90deg)" }}>▶</span>
+                    </div>
+                    {!notesCollapsed && (
+                      <div style={{ padding: "0 20px 18px", animation: "fadeUp 0.2s ease" }}>
+                        <RichTextEditor
+                          content={project.notes || ""}
+                          onChange={val => updateProject("notes", val)}
+                          placeholder={"Write updates, tag team members with @name, add formatting, links, lists..."}
+                        />
+                        {project.notes && (() => {
+                          const plainText = project.notes.replace(/<[^>]*>/g, " ");
+                          const mentions = [...new Set((plainText.match(/@[\w]+(?:\s[\w]+)?/g) || []).map(m => m.slice(1)))];
+                          if (mentions.length === 0) return null;
+                          return <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                            {mentions.map(m => <span key={m} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#9b6dff15", color: "#9b6dff", fontWeight: 600 }}>@{m}</span>)}
+                          </div>;
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── COMMENT FEED ── */}
+                <div style={{ marginTop: 16 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
-                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 10 }}>PROJECT NOTES & UPDATES</div>
-                    <RichTextEditor
-                      content={project.notes || ""}
-                      onChange={val => updateProject("notes", val)}
-                      placeholder={"Write updates, tag team members with @name, add formatting, links, lists..."}
-                    />
-                    {project.notes && (() => {
-                      const plainText = project.notes.replace(/<[^>]*>/g, " ");
-                      const mentions = [...new Set((plainText.match(/@[\w]+(?:\s[\w]+)?/g) || []).map(m => m.slice(1)))];
-                      if (mentions.length === 0) return null;
-                      return <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                        {mentions.map(m => <span key={m} style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#9b6dff15", color: "#9b6dff", fontWeight: 600 }}>@{m}</span>)}
-                      </div>;
+                    <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 12 }}>COMMENT FEED</div>
+                    {/* Comment input */}
+                    <div style={{ display: "flex", gap: 8, marginBottom: comments.length > 0 ? 14 : 0 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff6b4a10)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>
+                        {(user?.name || user?.email || "?").charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, display: "flex", gap: 6, alignItems: "flex-start" }}>
+                        <textarea value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addComment(commentInput); setCommentInput(""); } }} placeholder="Add a comment... (Enter to post, Shift+Enter for new line)" rows={1} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", resize: "none", lineHeight: 1.5, minHeight: 36, maxHeight: 100 }} />
+                        <button onClick={() => { addComment(commentInput); setCommentInput(""); }} disabled={!commentInput.trim()} style={{ padding: "8px 14px", background: commentInput.trim() ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: commentInput.trim() ? "#fff" : "var(--textGhost)", cursor: commentInput.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 700, flexShrink: 0, transition: "all 0.15s" }}>Post</button>
+                      </div>
+                    </div>
+                    {/* Comment list */}
+                    {comments.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                        {[...comments].reverse().map((cmt, i) => {
+                          const ts = new Date(cmt.timestamp);
+                          const timeAgo = (() => {
+                            const diff = Date.now() - ts.getTime();
+                            const mins = Math.floor(diff / 60000);
+                            if (mins < 1) return "just now";
+                            if (mins < 60) return `${mins}m ago`;
+                            const hrs = Math.floor(mins / 60);
+                            if (hrs < 24) return `${hrs}h ago`;
+                            const days = Math.floor(hrs / 24);
+                            if (days < 7) return `${days}d ago`;
+                            return ts.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                          })();
+                          const initials = (cmt.author || "?").split(/[\s@]+/)[0].charAt(0).toUpperCase();
+                          return (
+                            <div key={cmt.id} style={{ display: "flex", gap: 8, padding: "10px 0", borderTop: i === 0 ? "none" : "1px solid var(--calLine)" }}>
+                              <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#3da5db15", border: "1px solid #3da5db25", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#3da5db", flexShrink: 0, marginTop: 2 }}>{initials}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{cmt.author}</span>
+                                  <span style={{ fontSize: 9, color: "var(--textGhost)" }}>{timeAgo}</span>
+                                  <button onClick={() => deleteComment(cmt.id)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 10, opacity: 0.5, padding: 2 }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.5}>×</button>
+                                </div>
+                                <div style={{ fontSize: 12, color: "var(--textSub)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cmt.text}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {comments.length === 0 && <div style={{ fontSize: 11, color: "var(--textGhost)", textAlign: "center", padding: "8px 0" }}>No comments yet — start the conversation</div>}
+                    {/* Notes-derived entries */}
+                    {(() => {
+                      const prNotes = (progress.rows || []).filter(r => r.notes && r.notes.trim()).map(r => ({ task: r.task, note: r.notes, dept: r.dept, status: r.status }));
+                      if (prNotes.length === 0) return null;
+                      return (
+                        <div style={{ marginTop: 12, borderTop: "1px solid var(--borderSub)", paddingTop: 10 }}>
+                          <div style={{ fontSize: 8, color: "var(--textGhost)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 6 }}>FROM PROGRESS REPORT</div>
+                          {prNotes.slice(0, 5).map((n, i) => (
+                            <div key={i} style={{ display: "flex", gap: 6, padding: "4px 0", fontSize: 10 }}>
+                              <span style={{ color: WB_STATUS_STYLES[n.status]?.text || "var(--textFaint)", fontSize: 8, fontWeight: 700, minWidth: 10 }}>●</span>
+                              <span style={{ color: "var(--textMuted)", fontWeight: 600 }}>{n.task}:</span>
+                              <span style={{ color: "var(--textFaint)" }}>{n.note}</span>
+                            </div>
+                          ))}
+                          {prNotes.length > 5 && <div style={{ fontSize: 9, color: "var(--textGhost)", padding: "2px 0 0 16px" }}>+{prNotes.length - 5} more...</div>}
+                        </div>
+                      );
                     })()}
                   </div>
                 </div>
@@ -5122,6 +5272,183 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
             )}
+
+            {/* ═══ PROGRESS REPORT ═══ */}
+            {activeTab === "progress" && (() => {
+              const prRows = progress.rows || [];
+              const prLocs = progress.locations || [];
+              const allDepts = [...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean);
+              const eventContactNames = [...new Set([...contacts.map(c => c.name), ...project.producers, ...project.managers, ...(project.staff || [])])];
+
+              // Helpers
+              const addPRRow = () => {
+                const newRow = { id: `pr_${Date.now()}`, done: false, task: "", dept: "", location: "", responsible: "", status: "Not Started", notes: "" };
+                setProgress(prev => ({ ...prev, rows: [...(prev.rows || []), newRow] }));
+              };
+              const updatePRRow = (id, field, value) => {
+                setProgress(prev => ({
+                  ...prev,
+                  rows: (prev.rows || []).map(r => {
+                    if (r.id !== id) return r;
+                    const updated = { ...r, [field]: value };
+                    if (field === "status" && value === "Done") updated.done = true;
+                    if (field === "status" && value !== "Done") updated.done = false;
+                    return updated;
+                  })
+                }));
+              };
+              const togglePRDone = (id) => {
+                setProgress(prev => ({
+                  ...prev,
+                  rows: (prev.rows || []).map(r => {
+                    if (r.id !== id) return r;
+                    const newDone = !r.done;
+                    return { ...r, done: newDone, status: newDone ? "Done" : (r.status === "Done" ? "Not Started" : r.status) };
+                  })
+                }));
+              };
+              const deletePRRow = (id) => setProgress(prev => ({ ...prev, rows: (prev.rows || []).filter(r => r.id !== id) }));
+              const addPRLocation = () => {
+                const name = prompt("Enter location name:");
+                if (name && name.trim()) setProgress(prev => ({ ...prev, locations: [...(prev.locations || []), name.trim()].sort() }));
+              };
+              const removePRLocation = (idx) => setProgress(prev => ({ ...prev, locations: (prev.locations || []).filter((_, i) => i !== idx) }));
+
+              // Filtering
+              const filtered = prRows.filter(r => {
+                for (const key of Object.keys(prFilters)) {
+                  const fv = prFilters[key];
+                  if (!fv) continue;
+                  const rv = (r[key] || "").toLowerCase();
+                  if (key === "task" || key === "notes") { if (!rv.includes(fv.toLowerCase())) return false; }
+                  else { if (rv !== fv.toLowerCase()) return false; }
+                }
+                return true;
+              });
+
+              // Sorting
+              const sorted = [...filtered];
+              if (prSort.col) {
+                sorted.sort((a, b) => {
+                  let va, vb;
+                  if (prSort.col === "status") { va = WB_STATUSES.indexOf(a.status); vb = WB_STATUSES.indexOf(b.status); }
+                  else { va = (a[prSort.col] || "").toLowerCase(); vb = (b[prSort.col] || "").toLowerCase(); }
+                  if (va < vb) return prSort.dir === "asc" ? -1 : 1;
+                  if (va > vb) return prSort.dir === "asc" ? 1 : -1;
+                  return 0;
+                });
+              }
+
+              const hasActiveFilters = Object.values(prFilters).some(f => f);
+              const done = filtered.filter(r => r.status === "Done").length;
+              const inProg = filtered.filter(r => r.status === "In Progress").length;
+              const atRisk = filtered.filter(r => r.status === "At Risk").length;
+              const notStarted = filtered.filter(r => r.status === "Not Started").length;
+
+              const prColDefs = [
+                { key: "task", label: "TASK", type: "text" },
+                { key: "dept", label: "DEPARTMENT", type: "select", options: allDepts },
+                { key: "location", label: "LOCATION", type: "select", options: prLocs },
+                { key: "responsible", label: "RESPONSIBLE", type: "select", options: eventContactNames },
+                { key: "status", label: "STATUS", type: "select", options: WB_STATUSES },
+                { key: "notes", label: "NOTES", type: "text" },
+              ];
+
+              const handlePRSort = (col) => {
+                if (prSort.col === col) {
+                  if (prSort.dir === "asc") setPrSort({ col, dir: "desc" });
+                  else setPrSort({ col: null, dir: "asc" });
+                } else setPrSort({ col, dir: "asc" });
+              };
+
+              return (
+              <div style={{ animation: "fadeUp 0.3s ease" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PROGRESS REPORT</div><div style={{ fontSize: 12, color: "var(--textMuted)" }}>Track tasks, ownership, and status across all workstreams</div></div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => setPrShowFilters(p => !p)} style={{ padding: "7px 14px", background: prShowFilters ? "#3da5db20" : "#3da5db10", border: `1px solid ${prShowFilters ? "#3da5db40" : "#3da5db25"}`, borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>⊘ Filter</button>
+                    <button onClick={addPRRow} style={{ padding: "7px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add Row</button>
+                  </div>
+                </div>
+                {/* Location config */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: "10px 10px 0 0", fontSize: 11, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5 }}>LOCATIONS:</span>
+                  {prLocs.map((l, i) => <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "#9b6dff15", border: "1px solid #9b6dff30", borderRadius: 12, fontSize: 10, color: "#9b6dff", fontWeight: 600 }}>{l} <span onClick={() => removePRLocation(i)} style={{ cursor: "pointer", opacity: 0.6, fontSize: 11 }}>×</span></span>)}
+                  <button onClick={addPRLocation} style={{ padding: "2px 8px", background: "none", border: "1px dashed var(--borderSub)", borderRadius: 12, fontSize: 10, color: "var(--textFaint)", cursor: "pointer" }}>+ Add</button>
+                  <span style={{ marginLeft: "auto", fontSize: 9, color: "var(--textGhost)" }}>Define project locations → populates dropdown below</span>
+                </div>
+                {/* Active filters bar */}
+                {hasActiveFilters && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 16px", background: "#ff6b4a08", border: "1px solid var(--borderSub)", borderTop: "none", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700 }}>FILTERS:</span>
+                    {Object.entries(prFilters).filter(([,v]) => v).map(([k, v]) => (
+                      <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 12, fontSize: 10, color: "#ff6b4a", fontWeight: 600 }}>
+                        {prColDefs.find(c => c.key === k)?.label || k}: {v}
+                        <span onClick={() => setPrFilters(p => ({ ...p, [k]: "" }))} style={{ cursor: "pointer", opacity: 0.6, fontSize: 11 }}>×</span>
+                      </span>
+                    ))}
+                    <button onClick={() => setPrFilters({ task: "", dept: "", location: "", responsible: "", status: "", notes: "" })} style={{ padding: "2px 8px", background: "none", border: "1px solid #ff6b4a30", borderRadius: 12, fontSize: 9, color: "#ff6b4a", cursor: "pointer", fontWeight: 600, marginLeft: "auto" }}>Clear All</button>
+                  </div>
+                )}
+                <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderTop: hasActiveFilters ? "none" : undefined, borderRadius: hasActiveFilters ? 0 : "0 0 10px 10px" }}>
+                  <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 360px)", minHeight: 300 }}>
+                    <div style={{ minWidth: 1050 }}>
+                      {/* Column headers with sort + filter */}
+                      <div style={{ display: "grid", gridTemplateColumns: "40px 1.6fr 1fr 1fr 1fr 0.8fr 1.5fr 36px", padding: "0 16px", borderBottom: "1px solid var(--borderSub)", position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 2 }}>
+                        <div style={{ padding: "8px 0" }} />
+                        {prColDefs.map(col => {
+                          const isSorted = prSort.col === col.key;
+                          const arrow = isSorted ? (prSort.dir === "asc" ? "↑" : "↓") : "↕";
+                          const hasFilter = prFilters[col.key] && prFilters[col.key] !== "";
+                          return (
+                            <div key={col.key} style={{ padding: "8px 0 6px", display: "flex", flexDirection: "column" }}>
+                              <div onClick={() => handlePRSort(col.key)} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9, color: isSorted ? "#ff6b4a" : "var(--textFaint)", fontWeight: 700, letterSpacing: 1, cursor: "pointer", marginBottom: prShowFilters ? 4 : 0, userSelect: "none" }}>{col.label} <span style={{ fontSize: 8 }}>{arrow}</span></div>
+                              {prShowFilters && (col.type === "text" ? (
+                                <input value={prFilters[col.key]} onChange={e => setPrFilters(p => ({ ...p, [col.key]: e.target.value }))} placeholder="Filter..." style={{ fontSize: 10, padding: "3px 5px", borderRadius: 4, border: `1px solid ${hasFilter ? "#ff6b4a50" : "var(--borderSub)"}`, background: hasFilter ? "#ff6b4a08" : "var(--bgCard)", color: hasFilter ? "#ff6b4a" : "var(--textFaint)", outline: "none", width: "100%", fontFamily: "'DM Sans'" }} />
+                              ) : (
+                                <select value={prFilters[col.key]} onChange={e => setPrFilters(p => ({ ...p, [col.key]: e.target.value }))} style={{ fontSize: 10, padding: "3px 5px", borderRadius: 4, border: `1px solid ${hasFilter ? "#ff6b4a50" : "var(--borderSub)"}`, background: hasFilter ? "#ff6b4a08" : "var(--bgCard)", color: hasFilter ? "#ff6b4a" : "var(--textFaint)", outline: "none", width: "100%", fontFamily: "'DM Sans'", cursor: "pointer" }}>
+                                  <option value="">All</option>
+                                  {[...new Set([...col.options, ...prRows.map(r => r[col.key]).filter(Boolean)])].sort().map(o => <option key={o} value={o}>{o}</option>)}
+                                </select>
+                              ))}
+                            </div>
+                          );
+                        })}
+                        <div style={{ padding: "8px 0" }} />
+                      </div>
+                      {/* Rows */}
+                      {sorted.length === 0 && prRows.length > 0 && <div style={{ padding: 40, textAlign: "center", color: "var(--textFaint)", fontSize: 13 }}>No tasks match the current filters</div>}
+                      {sorted.length === 0 && prRows.length === 0 && <div style={{ padding: 40, textAlign: "center", color: "var(--textFaint)", fontSize: 13 }}><div style={{ fontSize: 32, marginBottom: 12, opacity: 0.5 }}>☰</div><div style={{ fontWeight: 600, marginBottom: 6 }}>No progress tasks yet</div><div style={{ fontSize: 11, color: "var(--textGhost)" }}>Click "+ Add Row" to start tracking</div></div>}
+                      {sorted.map(r => {
+                        const sc = WB_STATUS_STYLES[r.status] || {};
+                        return (
+                          <div key={r.id} style={{ display: "grid", gridTemplateColumns: "40px 1.6fr 1fr 1fr 1fr 0.8fr 1.5fr 36px", padding: "7px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center" }}>
+                            <div onClick={() => togglePRDone(r.id)} style={{ width: 16, height: 16, border: `1.5px solid ${r.done ? "#4ecb71" : "var(--borderActive)"}`, borderRadius: 4, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: r.done ? "#4ecb71" : "transparent", background: r.done ? "#4ecb7120" : "transparent", transition: "all 0.15s" }}>✓</div>
+                            <EditableText value={r.task} onChange={v => updatePRRow(r.id, "task", v)} fontSize={12} color={r.done ? "var(--textFaint)" : "var(--text)"} fontWeight={500} placeholder="Task name..." style={r.done ? { textDecoration: "line-through" } : {}} />
+                            <Dropdown value={r.dept} options={allDepts} onChange={v => updatePRRow(r.id, "dept", v)} width="100%" allowBlank blankLabel="—" />
+                            <Dropdown value={r.location} options={prLocs} onChange={v => updatePRRow(r.id, "location", v)} width="100%" allowBlank blankLabel="—" />
+                            <Dropdown value={r.responsible} options={eventContactNames} onChange={v => updatePRRow(r.id, "responsible", v)} width="100%" allowBlank blankLabel="—" />
+                            <Dropdown value={r.status} options={WB_STATUSES} onChange={v => updatePRRow(r.id, "status", v)} colors={Object.fromEntries(WB_STATUSES.map(s => [s, { bg: WB_STATUS_STYLES[s].bg, text: WB_STATUS_STYLES[s].text, dot: WB_STATUS_STYLES[s].text }]))} width="100%" />
+                            <EditableText value={r.notes} onChange={v => updatePRRow(r.id, "notes", v)} fontSize={11} color="var(--textFaint)" placeholder="Notes..." />
+                            <button onClick={() => deletePRRow(r.id)} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {/* Summary bar */}
+                  <div style={{ display: "flex", gap: 16, padding: "10px 16px", borderTop: "1px solid var(--borderSub)", fontSize: 10, color: "var(--textFaint)", alignItems: "center" }}>
+                    <span>{hasActiveFilters ? <span style={{ color: "#ff6b4a" }}>{filtered.length} of {prRows.length} shown</span> : `${prRows.length} tasks`}</span>
+                    <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#4ecb71", marginRight: 4 }} />{done} done</span>
+                    <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#3da5db", marginRight: 4 }} />{inProg} in progress</span>
+                    <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#e85454", marginRight: 4 }} />{atRisk} at risk</span>
+                    <span><span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#8a8680", marginRight: 4 }} />{notStarted} not started</span>
+                    <span style={{ marginLeft: "auto", fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>{filtered.length > 0 ? Math.round(done / filtered.length * 100) : 0}% complete</span>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
 
             {/* ═══ RUN OF SHOW ═══ */}
             {activeTab === "ros" && (
@@ -5526,6 +5853,24 @@ export default function Dashboard({ user, onLogout }) {
                                 );
                               })}
                             </div>
+                            {/* ── ASSIGNED TO PROJECTS ── */}
+                            {(() => {
+                              const vendorProjects = Object.entries(projectVendors).filter(([pid, vList]) => Array.isArray(vList) && vList.some(pv => pv.name === v.name || pv.email === v.email)).map(([pid]) => projects.find(p => p.id === pid)).filter(Boolean);
+                              if (vendorProjects.length === 0) return null;
+                              return (
+                                <div style={{ marginTop: 10, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8 }}>
+                                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 6 }}>ASSIGNED TO PROJECTS ({vendorProjects.length})</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                    {vendorProjects.map(p => (
+                                      <span key={p.id} onClick={(e) => { e.stopPropagation(); setActiveProjectId(p.id); setActiveTab("vendors"); }} style={{ padding: "3px 8px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, fontSize: 10, color: "#3da5db", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#3da5db20"} onMouseLeave={e => e.currentTarget.style.background = "#3da5db10"}>
+                                        {p.name}
+                                        <span style={{ fontSize: 8, padding: "0 3px", borderRadius: 3, background: p.status === "In-Production" ? "#4ecb7115" : p.status === "Wrap" ? "#8a868015" : "#dba94e15", color: p.status === "In-Production" ? "#4ecb71" : p.status === "Wrap" ? "#8a8680" : "#dba94e", fontWeight: 700 }}>{p.status}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div style={{ display: "flex", gap: 12, fontSize: 11, color: "var(--textFaint)" }}>
                                 <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.phone || v.contact, "Phone", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📞 {v.contact}{v.phone ? ` · ${v.phone}` : ""} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>
@@ -6187,6 +6532,15 @@ export default function Dashboard({ user, onLogout }) {
                     {(() => {
                       const tmpl = appSettings.folderTemplate || [];
 
+                      // Recursive sort helper
+                      const sortTemplateAlpha = (items) => {
+                        const sorted = [...items].sort((a, b) => a.name.localeCompare(b.name));
+                        return sorted.map(item => ({
+                          ...item,
+                          children: item.children ? sortTemplateAlpha(item.children) : [],
+                        }));
+                      };
+
                       const renderTreeFixed = (items, depth, getTarget) => items.map((item, idx) => (
                         <div key={`${depth}-${idx}`} style={{ marginLeft: depth * 20 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 0" }}>
@@ -6228,6 +6582,94 @@ export default function Dashboard({ user, onLogout }) {
                             setAppSettings(prev => ({ ...prev, folderTemplate: [...(prev.folderTemplate || []), { name: "New Folder", children: [] }] }));
                             setSettingsDirty(true);
                           }} style={{ marginTop: 8, padding: "6px 14px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add Top-Level Folder</button>
+                          <button onClick={() => {
+                            setAppSettings(prev => ({ ...prev, folderTemplate: sortTemplateAlpha(prev.folderTemplate || []) }));
+                            setSettingsDirty(true);
+                          }} style={{ marginTop: 8, marginLeft: 8, padding: "6px 14px", background: "#4ecb7115", border: "1px solid #4ecb7130", borderRadius: 6, color: "#4ecb71", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>↕ Sort A→Z</button>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* ── AUDIT EXISTING PROJECTS ── */}
+                  <div style={{ marginTop: 20, padding: 16, background: "var(--bgCard)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>🔍 Audit Existing Project Folders</div>
+                        <div style={{ fontSize: 10, color: "var(--textFaint)" }}>Check all projects in Drive have the required folder structure</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          onClick={async () => {
+                            setClipboardToast({ text: "Auditing project folders...", x: window.innerWidth / 2, y: 60 });
+                            try {
+                              const res = await fetch("/api/drive/project", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ action: "audit-folders", dryRun: true }),
+                              });
+                              const data = await res.json();
+                              if (!data.success) throw new Error(data.error || "Audit failed");
+                              setFolderAuditResult(data);
+                              setClipboardToast({ text: `Audit complete: ${data.compliant} OK, ${data.needsFix} need fixes`, x: window.innerWidth / 2, y: 60 });
+                              setTimeout(() => setClipboardToast(null), 4000);
+                            } catch (err) {
+                              setClipboardToast({ text: `Audit error: ${err.message}`, x: window.innerWidth / 2, y: 60 });
+                              setTimeout(() => setClipboardToast(null), 4000);
+                            }
+                          }}
+                          style={{ padding: "6px 14px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", fontSize: 10, fontWeight: 600, cursor: "pointer" }}
+                        >Check (Dry Run)</button>
+                        <button
+                          onClick={async () => {
+                            if (!confirm("This will CREATE all missing folders in every project. Continue?")) return;
+                            setClipboardToast({ text: "Fixing project folders...", x: window.innerWidth / 2, y: 60 });
+                            try {
+                              const res = await fetch("/api/drive/project", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ action: "audit-folders", dryRun: false }),
+                              });
+                              const data = await res.json();
+                              if (!data.success) throw new Error(data.error || "Fix failed");
+                              setFolderAuditResult(data);
+                              const created = data.needsFix;
+                              setClipboardToast({ text: `Done! Fixed ${created} project${created !== 1 ? "s" : ""}`, x: window.innerWidth / 2, y: 60 });
+                              setTimeout(() => setClipboardToast(null), 4000);
+                            } catch (err) {
+                              setClipboardToast({ text: `Fix error: ${err.message}`, x: window.innerWidth / 2, y: 60 });
+                              setTimeout(() => setClipboardToast(null), 4000);
+                            }
+                          }}
+                          style={{ padding: "6px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 6, color: "#ff6b4a", fontSize: 10, fontWeight: 600, cursor: "pointer" }}
+                        >Fix All Missing</button>
+                      </div>
+                    </div>
+                    {typeof folderAuditResult !== "undefined" && folderAuditResult && (() => {
+                      const r = folderAuditResult;
+                      const renderAuditItem = (item, depth = 0) => {
+                        const color = item.status === "exists" ? "#4ecb71" : item.status === "created" ? "#3da5db" : "#ff6b4a";
+                        const icon = item.status === "exists" ? "✓" : item.status === "created" ? "+" : "✗";
+                        return (
+                          <div key={item.name}>
+                            <div style={{ paddingLeft: depth * 16, fontSize: 10, color, display: "flex", alignItems: "center", gap: 4, lineHeight: "18px" }}>
+                              <span style={{ fontFamily: "'JetBrains Mono'", fontWeight: 700, width: 12 }}>{icon}</span>
+                              <span>{item.name}</span>
+                            </div>
+                            {(item.children || []).map(c => renderAuditItem(c, depth + 1))}
+                          </div>
+                        );
+                      };
+                      return (
+                        <div style={{ maxHeight: 300, overflowY: "auto", marginTop: 8 }}>
+                          <div style={{ fontSize: 10, color: "var(--textFaint)", marginBottom: 6 }}>{r.dryRun ? "DRY RUN — " : ""}Total: {r.totalProjects} | ✓ {r.compliant} OK | {r.dryRun ? "✗" : "+"} {r.needsFix} {r.dryRun ? "need fixes" : "fixed"}</div>
+                          {r.projects.filter(p => p.needsFix).map(p => (
+                            <div key={p.projectId} style={{ marginBottom: 8, padding: "6px 8px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)" }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>{p.client} / {p.year} / {p.project}</div>
+                              {p.audit.map(a => renderAuditItem(a, 0))}
+                            </div>
+                          ))}
+                          {r.projects.filter(p => p.needsFix).length === 0 && <div style={{ fontSize: 11, color: "#4ecb71", fontWeight: 600 }}>All projects have the required folder structure! ✓</div>}
                         </div>
                       );
                     })()}
