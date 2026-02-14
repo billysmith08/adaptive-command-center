@@ -2066,21 +2066,27 @@ export default function Dashboard({ user, onLogout }) {
       EVENT_NAME: project.name || "",
       EVENT_DATES: eventDateStr,
       EVENT_TIME: "",
-      VENUE_NAME: project.venue ? project.venue.split(",")[0] : project.location || "",
-      VENUE_ADDRESS: project.venue || "",
+      VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location || "",
+      VENUE_ADDRESS: project.venue && project.venue.includes(",") ? project.venue : "",
       VENDOR_DELIVERABLES: "",
       PAYMENT_TERMS: "Net 15 — upon completion of the Event",
       TIMELINE: termStr || eventDateStr,
     };
 
+    // Check for saved draft on this vendor
+    const draft = vendor.contractDraft;
+    const useFields = contractType === "contractor" ? contractorFields : vendorFields;
+    const mergedFields = draft ? { ...useFields, ...Object.fromEntries(Object.entries(draft).filter(([_, v]) => v && v.trim())) } : useFields;
+
     setContractModal({
       vendor,
       contractType,
-      fields: contractType === "contractor" ? contractorFields : vendorFields,
+      fields: mergedFields,
       generating: false,
       error: null,
-      invoiceLink: null,
+      invoiceLink: draft?.invoiceLink || null,
       success: null,
+      hasDraft: !!draft,
     });
   };
 
@@ -2107,6 +2113,7 @@ export default function Dashboard({ user, onLogout }) {
       setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : {
         ...v,
         compliance: { ...v.compliance, contract: { done: true, file: data.pdfName || data.docName, date: new Date().toISOString().split("T")[0], link: data.pdfUrl || data.docUrl } },
+        contractDraft: undefined,
       }));
       logActivity("contract", `generated ${contractModal.contractType} agreement for "${contractModal.vendor.name}"${data.hasInvoiceMerged ? " (with invoice)" : ""}`, project?.name);
       // Show success state with links
@@ -2115,6 +2122,22 @@ export default function Dashboard({ user, onLogout }) {
       setContractModal(prev => ({ ...prev, generating: false, error: e.message }));
     }
   };
+
+  const saveContractDraft = () => {
+    if (!contractModal) return;
+    const draftData = { ...contractModal.fields, _contractType: contractModal.contractType, _savedAt: new Date().toISOString(), invoiceLink: contractModal.invoiceLink };
+    setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : { ...v, contractDraft: draftData }));
+    setContractModal(prev => ({ ...prev, hasDraft: true, error: null, draftSaved: true }));
+    setTimeout(() => setContractModal(prev => prev ? ({ ...prev, draftSaved: false }) : null), 2000);
+    logActivity("contract", `saved contract draft for "${contractModal.vendor.name}"`, project?.name);
+  };
+
+  const clearContractDraft = () => {
+    if (!contractModal) return;
+    setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : { ...v, contractDraft: undefined }));
+    setContractModal(prev => ({ ...prev, hasDraft: false }));
+  };
+
   const [w9Scanning, setW9Scanning] = useState(false);
   const [w9ParsedData, setW9ParsedData] = useState(null);
   const [vendorSearch, setVendorSearch] = useState("");
@@ -7426,7 +7449,7 @@ export default function Dashboard({ user, onLogout }) {
                                 {v.address && <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.address, "Address", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} title={v.address}>📍 {v.address} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>}
                               </div>
                               <div style={{ display: "flex", gap: 6 }}>
-                                <button onClick={() => openContractModal(v)} style={{ padding: "4px 10px", background: "#9b6dff10", border: "1px solid #9b6dff25", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📝 Contract</button>
+                                <button onClick={() => openContractModal(v)} style={{ padding: "4px 10px", background: v.contractDraft ? "#3da5db10" : "#9b6dff10", border: `1px solid ${v.contractDraft ? "#3da5db25" : "#9b6dff25"}`, borderRadius: 5, color: v.contractDraft ? "#3da5db" : "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>{v.contractDraft ? "📝 Resume Draft" : "📝 Contract"}</button>
                                 <button onClick={() => {
                                   const names = (v.contact || "").split(" ");
                                   setVendorForm({ contactType: v.contactType || "", resourceType: v.type || "", firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: v.phone || "", email: v.email || "", company: v.name || "", title: v.title || "", dept: v.deptId || DEPT_OPTIONS[0], address: v.address || "" });
@@ -9395,8 +9418,8 @@ export default function Dashboard({ user, onLogout }) {
               ...base, VENDOR_NAME: v.name, VENDOR_ENTITY_DESC: v.ein ? "a limited liability company" : "an individual",
               VENDOR_TITLE: v.deptId || v.type || "", CLIENT_NAME: project.client || "",
               EVENT_NAME: project.name || "", EVENT_DATES: eventDateStr, EVENT_TIME: "",
-              VENUE_NAME: project.venue ? project.venue.split(",")[0] : project.location || "",
-              VENUE_ADDRESS: project.venue || "", VENDOR_DELIVERABLES: "",
+              VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location || "",
+              VENUE_ADDRESS: project.venue && project.venue.includes(",") ? project.venue : "", VENDOR_DELIVERABLES: "",
               PAYMENT_TERMS: "Net 15 — upon completion of the Event", TIMELINE: termStr || eventDateStr,
             }}));
           }
@@ -9432,7 +9455,7 @@ export default function Dashboard({ user, onLogout }) {
             { key: "EVENT_DATES", label: "Event Date(s)", auto: !!(project.eventDates?.start) },
             { key: "EVENT_TIME", label: "Event Time", placeholder: "10:00 AM – 6:00 PM" },
             { key: "VENUE_NAME", label: "Venue", auto: !!(project.venue || project.location) },
-            { key: "VENUE_ADDRESS", label: "Venue Address", auto: !!project.venue },
+            { key: "VENUE_ADDRESS", label: "Venue Address", auto: !!(project.venue && project.venue.includes(",")) },
             { key: "VENDOR_DELIVERABLES", label: "Vendor Deliverables", placeholder: "Describe scope of services...", required: true, multiline: true },
             { key: "PAYMENT_TERMS", label: "Payment Terms", auto: true },
             { key: "TIMELINE", label: "Timeline", auto: !!(project.engagementDates?.start || project.eventDates?.start) },
@@ -9598,11 +9621,18 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             ) : (
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontSize: 10, color: "var(--textGhost)" }}>
-                Saved to ADMIN/VENDORS/{contractModal.vendor.name}/Agreement/
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ fontSize: 10, color: "var(--textGhost)" }}>
+                  Saved to ADMIN/VENDORS/{contractModal.vendor.name}/Agreement/
+                </div>
+                {contractModal.hasDraft && <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 3, background: "#3da5db15", color: "#3da5db", fontWeight: 700, border: "1px solid #3da5db25" }}>DRAFT</span>}
+                {contractModal.draftSaved && <span style={{ fontSize: 9, color: "#4ecb71", fontWeight: 600, animation: "fadeInUp 0.3s ease" }}>✓ Draft saved</span>}
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setContractModal(null)} style={{ padding: "9px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
+                <button onClick={saveContractDraft} disabled={contractModal.generating} style={{ padding: "9px 18px", background: "var(--bgCard)", border: "1px solid #3da5db30", borderRadius: 8, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                  💾 Save Draft
+                </button>
                 <button onClick={generateContract} disabled={contractModal.generating} style={{ padding: "9px 24px", background: contractModal.generating ? "var(--borderActive)" : ct === "contractor" ? "#ff6b4a" : "#9b6dff", border: "none", borderRadius: 8, color: "#fff", cursor: contractModal.generating ? "wait" : "pointer", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
                   {contractModal.generating ? <><span style={{ animation: "pulse 1s ease infinite" }}>⟳</span> Generating...</> : <>📝 Generate Contract</>}
                 </button>

@@ -101,7 +101,7 @@ export async function POST(request) {
         
         // Create all template subfolders if vendor folder was just created
         if (vendorFolder.created) {
-          for (const sub of ['Agreements', 'Banking', 'COI', 'Invoices', 'Quotes', 'W9']) {
+          for (const sub of ['Agreement', 'COI', 'Invoices', 'Quotes', 'W9']) {
             await findOrCreateFolder(vendorFolder.id, sub);
           }
           steps.push({ step: 'vendorFolder', status: 'created_with_template', name: vendorName });

@@ -394,27 +394,66 @@ async function handleScanVendors(body) {
   }
 
   // ═══════════════════════════════════════════════════════
-  // PASS 1: Scan project ADMIN/VENDORS (category/vendor structure)
+  // PASS 1: Scan project ADMIN/VENDORS (VendorName/DocType structure)
+  // Structure: VENDORS / VendorName / {Agreement, COI, Invoices, Quotes, W9}
   // ═══════════════════════════════════════════════════════
   const projAdmin = await findFolderInParent(drive, driveId, projectFolderId, 'ADMIN');
   const projVendorsFolder = projAdmin ? await findFolderInParent(drive, driveId, projAdmin.id, 'VENDORS') : null;
 
+  // Map folder names to compliance keys
+  const FOLDER_TO_KEY = {
+    'agreement': 'contract',
+    'agreements': 'contract',
+    'coi': 'coi',
+    'invoices': 'invoice',
+    'invoice': 'invoice',
+    'quotes': 'quote',
+    'quote': 'quote',
+    'w9': 'w9',
+    'w-9': 'w9',
+  };
+
   if (projVendorsFolder) {
-    const categories = await listSubfolders(projVendorsFolder.id);
-    for (const cat of categories) {
-      // Each category folder (Experience, Operations, etc.) contains vendor folders
-      const vendorFolders = await listSubfolders(cat.id);
-      // Check if category folder itself has files (flat structure)
-      const catFiles = await listFiles(cat.id);
-      if (catFiles.length > 0 && vendorFolders.length === 0) {
-        // Category IS the vendor folder (flat: VENDORS/VendorName/files)
-        vendors[cat.name] = { docs: classifyFiles(catFiles), fileCount: catFiles.length, folderId: cat.id, projectFolderId: cat.id };
-      } else {
-        for (const vf of vendorFolders) {
-          const files = await listFiles(vf.id);
+    const vendorFolders = await listSubfolders(projVendorsFolder.id);
+    for (const vf of vendorFolders) {
+      const subfolders = await listSubfolders(vf.id);
+      const subNames = subfolders.map(s => s.name.toLowerCase());
+      
+      // Check if subfolders match known doc-type folders
+      const isDocTypeStructure = subNames.some(n => FOLDER_TO_KEY[n] !== undefined);
+      
+      if (isDocTypeStructure) {
+        // New structure: VendorName / {Agreement, COI, Invoices, ...}
+        const docs = {};
+        let totalFiles = 0;
+        for (const sub of subfolders) {
+          const docKey = FOLDER_TO_KEY[sub.name.toLowerCase()];
+          if (!docKey) continue;
+          const files = await listFiles(sub.id);
+          totalFiles += files.length;
           if (files.length > 0) {
-            vendors[vf.name] = { docs: classifyFiles(files), fileCount: files.length, folderId: vf.id, projectFolderId: vf.id };
+            // For versioned types (invoice, quote), get latest by modified time
+            const sorted = files.sort((a, b) => (b.modifiedTime || '').localeCompare(a.modifiedTime || ''));
+            docs[docKey] = { done: true, file: sorted[0].name, link: sorted[0].webViewLink, modified: sorted[0].modifiedTime, fileId: sorted[0].id };
           }
+        }
+        // Also check for files directly in vendor folder (flat files)
+        const directFiles = await listFiles(vf.id);
+        if (directFiles.length > 0) {
+          const classified = classifyFiles(directFiles);
+          for (const [key, val] of Object.entries(classified)) {
+            if (key !== 'other' && !docs[key]) docs[key] = val;
+          }
+          totalFiles += directFiles.length;
+        }
+        if (totalFiles > 0 || subfolders.length > 0) {
+          vendors[vf.name] = { docs, fileCount: totalFiles, folderId: vf.id, projectFolderId: vf.id };
+        }
+      } else {
+        // Legacy flat structure: VendorName / files (no doc-type subfolders)
+        const files = await listFiles(vf.id);
+        if (files.length > 0) {
+          vendors[vf.name] = { docs: classifyFiles(files), fileCount: files.length, folderId: vf.id, projectFolderId: vf.id };
         }
       }
     }
