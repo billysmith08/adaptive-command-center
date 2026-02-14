@@ -2066,8 +2066,8 @@ export default function Dashboard({ user, onLogout }) {
       EVENT_NAME: project.name || "",
       EVENT_DATES: eventDateStr,
       EVENT_TIME: "",
-      VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location || "",
-      VENUE_ADDRESS: project.venue && project.venue.includes(",") ? project.venue : "",
+      VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location ? project.location.split(",")[0].trim() : "",
+      VENUE_ADDRESS: project.venueAddress || (project.venue && project.venue.includes(",") ? project.venue : project.location || ""),
       VENDOR_DELIVERABLES: "",
       PAYMENT_TERMS: "Net 15 — upon completion of the Event",
       TIMELINE: termStr || eventDateStr,
@@ -2093,14 +2093,19 @@ export default function Dashboard({ user, onLogout }) {
   const generateContract = async () => {
     if (!contractModal) return;
     setContractModal(prev => ({ ...prev, generating: true, error: null }));
-    try {
+    // Format currency fields before sending
+    const fmtCurrency = (val) => { const n = parseFloat((val || '').toString().replace(/[^0-9.]/g, '')); return isNaN(n) ? val : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+    const fieldsToSend = { ...contractModal.fields };
+    if (fieldsToSend.SOW_COMPENSATION && !/^\$/.test(fieldsToSend.SOW_COMPENSATION)) fieldsToSend.SOW_COMPENSATION = fmtCurrency(fieldsToSend.SOW_COMPENSATION);
+    
+    const doGenerate = async (retry = false) => {
       const res = await fetch("/api/contracts/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "generate",
           contractType: contractModal.contractType,
-          fields: contractModal.fields,
+          fields: fieldsToSend,
           projectFolderId: project.driveFolderId || null,
           vendorName: contractModal.vendor.name,
           projectCode: project.code || "",
@@ -2108,7 +2113,18 @@ export default function Dashboard({ user, onLogout }) {
         }),
       });
       const data = await res.json();
+      if (data.error && data.error.includes("Template not found") && !retry) {
+        // Auto-bootstrap templates and retry
+        setContractModal(prev => ({ ...prev, error: "Creating templates... please wait" }));
+        await fetch("/api/contracts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "bootstrap-templates" }) });
+        return doGenerate(true);
+      }
       if (data.error) throw new Error(data.error);
+      return data;
+    };
+
+    try {
+      const data = await doGenerate();
       // Update vendor compliance to mark contract as done
       setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : {
         ...v,
@@ -2116,7 +2132,6 @@ export default function Dashboard({ user, onLogout }) {
         contractDraft: undefined,
       }));
       logActivity("contract", `generated ${contractModal.contractType} agreement for "${contractModal.vendor.name}"${data.hasInvoiceMerged ? " (with invoice)" : ""}`, project?.name);
-      // Show success state with links
       setContractModal(prev => ({ ...prev, generating: false, success: data }));
     } catch (e) {
       setContractModal(prev => ({ ...prev, generating: false, error: e.message }));
@@ -6107,7 +6122,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>{f.q}</span><EditableText value={project[f.key]} onChange={v => updateProject(f.key, v)} fontSize={12} color="var(--textSub)" multiline={f.multi} /></div>
                     ))}
                     {/* Venue address (Google autocomplete) */}
-                    <div style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>VENUE</span><AddressAutocomplete value={project.venue || ""} onChange={v => updateProject("venue", v)} showIcon={false} placeholder="On-site address..." inputStyle={{ padding: "2px 6px", background: "var(--bgInput)", border: "1px solid #ff6b4a40", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} /></div>
+                    <div style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>VENUE</span><AddressAutocomplete value={project.venue || ""} onChange={v => { updateProject("venue", v); if (v && v.includes(",")) updateProject("venueAddress", v); }} showIcon={false} placeholder="On-site address..." inputStyle={{ padding: "2px 6px", background: "var(--bgInput)", border: "1px solid #ff6b4a40", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} /></div>
                     
                     {/* SERVICE NEEDS */}
                     <div style={{ marginBottom: 12 }}>
@@ -7783,7 +7798,7 @@ export default function Dashboard({ user, onLogout }) {
               </div>
               {/* Tabs */}
               <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
-                {[["profile", "🪪 Profile"], ...(isAdmin ? [["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["display", "🔤 Display"], ["notifications", "🔔 Notifications"]] : []), ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
+                {[["profile", "🪪 Profile"], ...(isAdmin ? [["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["templates", "📝 Templates"], ["display", "🔤 Display"], ["notifications", "🔔 Notifications"]] : []), ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
                   <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
                 ))}
               </div>
@@ -8506,6 +8521,106 @@ export default function Dashboard({ user, onLogout }) {
                   </div>
                 </div>
               )}
+
+              {/* ── DISPLAY TAB ── */}
+              {/* ── TEMPLATES TAB ── */}
+              {settingsTab === "templates" && (() => {
+                const [tplLoading, setTplLoading] = useState(false);
+                const [tplData, setTplData] = useState(null);
+                const [tplError, setTplError] = useState(null);
+                const [bootstrapping, setBootstrapping] = useState(false);
+
+                const loadTemplates = async () => {
+                  setTplLoading(true); setTplError(null);
+                  try {
+                    const res = await fetch("/api/contracts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list-templates" }) });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
+                    setTplData(data.templates);
+                  } catch (e) { setTplError(e.message); }
+                  setTplLoading(false);
+                };
+
+                const bootstrapTemplates = async () => {
+                  setBootstrapping(true); setTplError(null);
+                  try {
+                    const res = await fetch("/api/contracts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "bootstrap-templates" }) });
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.error);
+                    setTplData(data.templates);
+                  } catch (e) { setTplError(e.message); }
+                  setBootstrapping(false);
+                };
+
+                useEffect(() => { loadTemplates(); }, []);
+
+                return (
+                  <div>
+                    <div style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 16 }}>TEMPLATE DOCUMENTS</div>
+                    <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20, lineHeight: 1.7 }}>
+                      Contract templates are Google Docs with {"{{PLACEHOLDER}}"} markers that get replaced when generating contracts. Templates are stored in the <strong>TEMPLATES</strong> folder on Google Drive.
+                    </div>
+
+                    {tplError && <div style={{ padding: "10px 14px", background: "#e8545410", border: "1px solid #e8545420", borderRadius: 8, color: "#e85454", fontSize: 11, marginBottom: 16 }}>⚠️ {tplError}</div>}
+
+                    {tplLoading ? (
+                      <div style={{ color: "var(--textFaint)", fontSize: 11 }}>Loading templates...</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {["contractor", "vendor"].map(type => {
+                          const tpl = tplData?.[type];
+                          return (
+                            <div key={type} style={{ background: "var(--bgInput)", border: `1px solid ${tpl ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 20px" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                  <span style={{ fontSize: 16 }}>{type === "contractor" ? "👤" : "🏢"}</span>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{type === "contractor" ? "Contractor Agreement" : "Vendor Agreement"}</span>
+                                  {tpl && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: tpl.status === "created" ? "#4ecb7120" : "#3da5db15", color: tpl.status === "created" ? "#4ecb71" : "#3da5db", fontWeight: 700 }}>{tpl.status === "created" ? "NEW" : "ACTIVE"}</span>}
+                                </div>
+                                {tpl && (
+                                  <button onClick={() => window.open(tpl.url, "_blank")} style={{ padding: "5px 12px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>
+                                    📝 Edit in Google Docs
+                                  </button>
+                                )}
+                              </div>
+                              {tpl ? (
+                                <div style={{ fontSize: 10, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>
+                                  ID: {tpl.id}
+                                  {tpl.modified && <span style={{ marginLeft: 12 }}>Modified: {new Date(tpl.modified).toLocaleDateString()}</span>}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 11, color: "var(--textMuted)" }}>Not found — click "Create Default Templates" below</div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+                          <button onClick={bootstrapTemplates} disabled={bootstrapping} style={{ padding: "10px 20px", background: (tplData?.contractor && tplData?.vendor) ? "var(--bgCard)" : "#ff6b4a", border: `1px solid ${(tplData?.contractor && tplData?.vendor) ? "var(--borderSub)" : "#ff6b4a"}`, borderRadius: 8, color: (tplData?.contractor && tplData?.vendor) ? "var(--textMuted)" : "#fff", cursor: bootstrapping ? "wait" : "pointer", fontSize: 12, fontWeight: 700 }}>
+                            {bootstrapping ? "⟳ Creating..." : (tplData?.contractor && tplData?.vendor) ? "↻ Recreate Templates" : "✨ Create Default Templates"}
+                          </button>
+                          <button onClick={loadTemplates} style={{ padding: "10px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>
+                            ↻ Refresh
+                          </button>
+                        </div>
+
+                        <div style={{ marginTop: 16, padding: "14px 18px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 8 }}>CUSTOM TEMPLATE</div>
+                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 10, lineHeight: 1.6 }}>
+                            To use your own template: Create a Google Doc on the shared drive with {"{{PLACEHOLDER}}"} markers (e.g. {"{{VENDOR_NAME}}"}, {"{{EVENT_DATES}}"}). The template will be copied and markers replaced each time a contract is generated.
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6 }}>
+                            <strong>Vendor placeholders:</strong> EFFECTIVE_DAY, EFFECTIVE_MONTH, EFFECTIVE_YEAR, VENDOR_NAME, VENDOR_ENTITY_DESC, VENDOR_TITLE, CLIENT_NAME, EVENT_NAME, EVENT_DATES, EVENT_TIME, VENUE_NAME, VENUE_ADDRESS, VENDOR_DELIVERABLES, PAYMENT_TERMS, TIMELINE
+                          </div>
+                          <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6, marginTop: 4 }}>
+                            <strong>Contractor placeholders:</strong> EFFECTIVE_DAY, EFFECTIVE_MONTH, EFFECTIVE_YEAR, CONTRACTOR_NAME, CONTRACTOR_ENTITY_TYPE, CONTRACTOR_ADDRESS, CONTRACTOR_EXPERTISE, SOW_TERM, SOW_PROJECT, SOW_COMPENSATION, SOW_PAYMENT_TERMS, SOW_DELIVERABLES, SOW_TIMELINE, SOW_EXECUTION_DATE, AGREEMENT_DATE
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── DISPLAY TAB ── */}
               {settingsTab === "display" && (
@@ -9417,6 +9532,11 @@ export default function Dashboard({ user, onLogout }) {
         const ct = contractModal.contractType;
         const f = contractModal.fields;
         const updateField = (key, val) => setContractModal(prev => ({ ...prev, fields: { ...prev.fields, [key]: val } }));
+        const formatCurrency = (val) => {
+          const num = parseFloat(val.replace(/[^0-9.]/g, ''));
+          if (isNaN(num)) return val;
+          return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        };
         const switchType = (newType) => {
           const v = contractModal.vendor;
           // Re-initialize fields for the new type
@@ -9449,8 +9569,8 @@ export default function Dashboard({ user, onLogout }) {
               ...base, VENDOR_NAME: v.name, VENDOR_ENTITY_DESC: v.ein ? "a limited liability company" : "an individual",
               VENDOR_TITLE: v.deptId || v.type || "", CLIENT_NAME: project.client || "",
               EVENT_NAME: project.name || "", EVENT_DATES: eventDateStr, EVENT_TIME: "",
-              VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location || "",
-              VENUE_ADDRESS: project.venue && project.venue.includes(",") ? project.venue : "", VENDOR_DELIVERABLES: "",
+              VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location ? project.location.split(",")[0].trim() : "",
+              VENUE_ADDRESS: project.venueAddress || (project.venue && project.venue.includes(",") ? project.venue : project.location || ""), VENDOR_DELIVERABLES: "",
               PAYMENT_TERMS: "Net 15 — upon completion of the Event", TIMELINE: termStr || eventDateStr,
             }}));
           }
@@ -9467,7 +9587,7 @@ export default function Dashboard({ user, onLogout }) {
           { section: "Statement of Work (Exhibit A)", fields: [
             { key: "SOW_TERM", label: "Term", auto: !!(project.engagementDates?.start) },
             { key: "SOW_PROJECT", label: "Project / Service Description", auto: true },
-            { key: "SOW_COMPENSATION", label: "Compensation / Fee", placeholder: "$X,XXX.XX", required: true },
+            { key: "SOW_COMPENSATION", label: "Compensation / Fee", placeholder: "$0,000.00", required: true, currency: true },
             { key: "SOW_PAYMENT_TERMS", label: "Payment Terms", auto: true },
             { key: "SOW_DELIVERABLES", label: "Deliverables", placeholder: "Describe scope of work...", required: true, multiline: true },
             { key: "SOW_TIMELINE", label: "Timeline", auto: !!(project.eventDates?.start) },
@@ -9486,7 +9606,7 @@ export default function Dashboard({ user, onLogout }) {
             { key: "EVENT_DATES", label: "Event Date(s)", auto: !!(project.eventDates?.start) },
             { key: "EVENT_TIME", label: "Event Time", placeholder: "10:00 AM – 6:00 PM" },
             { key: "VENUE_NAME", label: "Venue", auto: !!(project.venue || project.location) },
-            { key: "VENUE_ADDRESS", label: "Venue Address", auto: !!(project.venue && project.venue.includes(",")) },
+            { key: "VENUE_ADDRESS", label: "Venue Address", auto: !!(project.venueAddress || (project.venue && project.venue.includes(",")) || project.location) },
             { key: "VENDOR_DELIVERABLES", label: "Vendor Deliverables", placeholder: "Describe scope of services...", required: true, multiline: true },
             { key: "PAYMENT_TERMS", label: "Payment Terms", auto: true },
             { key: "TIMELINE", label: "Timeline", auto: !!(project.engagementDates?.start || project.eventDates?.start) },
@@ -9559,7 +9679,7 @@ export default function Dashboard({ user, onLogout }) {
                         {fd.multiline ? (
                           <textarea value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} rows={3} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
                         ) : (
-                          <input value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                          <input value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} onBlur={fd.currency ? (e => { const formatted = formatCurrency(e.target.value); if (formatted !== e.target.value) updateField(fd.key, formatted); }) : undefined} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
                         )}
                       </div>
                     ))}
