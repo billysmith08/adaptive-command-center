@@ -1734,9 +1734,70 @@ export default function Dashboard({ user, onLogout }) {
   const comments = projectComments[activeProjectId] || [];
   const addComment = (text) => {
     if (!text.trim()) return;
-    const c = { id: `cmt_${Date.now()}`, text, author: user?.name || user?.email || "Unknown", timestamp: new Date().toISOString() };
+    // Parse @mentions from text
+    const mentionRegex = /@([\w\s.'-]+?)(?=\s@|\s[^@]|$)/g;
+    const mentions = [];
+    let match;
+    while ((match = mentionRegex.exec(text)) !== null) {
+      const name = match[1].trim();
+      // Match against project team members
+      const proj = projects.find(p => p.id === activeProjectId);
+      const teamEmails = getProjectTeamMembers(proj);
+      const found = teamEmails.find(m => m.name.toLowerCase() === name.toLowerCase() || m.name.toLowerCase().startsWith(name.toLowerCase()));
+      if (found) mentions.push({ name: found.name, email: found.email });
+    }
+    const c = { id: `cmt_${Date.now()}`, text, author: user?.name || user?.email || "Unknown", authorEmail: user?.email, timestamp: new Date().toISOString(), mentions: mentions.map(m => m.email) };
     setProjectComments(prev => ({ ...prev, [activeProjectId]: [...(prev[activeProjectId] || []), c] }));
+    // Send instant email for @mentions
+    if (mentions.length > 0) {
+      const proj = projects.find(p => p.id === activeProjectId);
+      mentions.forEach(m => {
+        const recipientNotifs = getNotifPrefsForEmail(m.email);
+        if (recipientNotifs?.frequency === "instant" || recipientNotifs?.frequency === "daily" || recipientNotifs?.frequency === "weekly") {
+          // Fire instant notification API call
+          fetch("/api/notify/mention", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ to: m.email, toName: m.name, from: user?.name || user?.email, projectName: proj?.name || "Unknown", message: text, projectId: activeProjectId })
+          }).catch(err => console.error("Mention notify failed:", err));
+        }
+      });
+    }
   };
+  // Get notification preferences for a specific email
+  const getNotifPrefsForEmail = (email) => {
+    const profiles = appSettings.userProfiles || {};
+    const notifs = appSettings.notifications || {};
+    // Check if this email has profile and notification settings
+    if (profiles[email]) return notifs;
+    return null;
+  };
+  // Get all team members for a project (for @mention autocomplete)
+  const getProjectTeamMembers = (proj) => {
+    if (!proj) return [];
+    const members = [];
+    const profiles = appSettings.userProfiles || {};
+    const seen = new Set();
+    // Add producers, managers, staff from project
+    [...(proj.producers || []), ...(proj.managers || []), ...(proj.staff || [])].forEach(name => {
+      if (!name || seen.has(name.toLowerCase())) return;
+      seen.add(name.toLowerCase());
+      // Try to find email from profiles
+      const email = Object.keys(profiles).find(e => { const p = profiles[e]; return `${p.firstName || ""} ${p.lastName || ""}`.trim().toLowerCase() === name.toLowerCase(); }) || "";
+      members.push({ name, email });
+    });
+    // Add POCs
+    (proj.pocs || []).forEach(poc => {
+      if (!poc.name || seen.has(poc.name.toLowerCase())) return;
+      seen.add(poc.name.toLowerCase());
+      members.push({ name: poc.name, email: poc.email || "" });
+    });
+    return members;
+  };
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const [showMentionDropdown, setShowMentionDropdown] = useState(false);
+  const [mentionCursorPos, setMentionCursorPos] = useState(0);
   const deleteComment = (id) => setProjectComments(prev => ({ ...prev, [activeProjectId]: (prev[activeProjectId] || []).filter(c => c.id !== id) }));
   const [commentInput, setCommentInput] = useState("");
   const [notesCollapsed, setNotesCollapsed] = useState(false);
@@ -2658,7 +2719,7 @@ export default function Dashboard({ user, onLogout }) {
     return `${yr}-${mo}-${clientCode}-${proj}-${loc}`;
   };
 
-  const emptyProject = { name: "", client: "", location: "", why: "", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, budget: 0, spent: 0, services: [] };
+  const emptyProject = { name: "", client: "", location: "", venue: "", why: "", status: "Exploration", projectType: "Brand Event", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, budget: 0, spent: 0, services: [] };
   const [newProjectForm, setNewProjectForm] = useState({ ...emptyProject });
   const updateNPF = (k, v) => setNewProjectForm(p => ({ ...p, [k]: v }));
 
@@ -5827,8 +5888,10 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 14 }}>PROJECT BRIEF</div>
                     {[{ q: "WHAT", key: "name" }, { q: "WHERE", key: "location" }, { q: "WHY", key: "why", multi: true }].map((f, i) => (
-                      <div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>{f.q}</span>{f.key === "location" ? <AddressAutocomplete value={project[f.key]} onChange={v => updateProject(f.key, v)} showIcon={false} placeholder="Click to edit" inputStyle={{ padding: "2px 6px", background: "var(--bgInput)", border: "1px solid #ff6b4a40", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} /> : <EditableText value={project[f.key]} onChange={v => updateProject(f.key, v)} fontSize={12} color="var(--textSub)" multiline={f.multi} />}</div>
+                      <div key={i} style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>{f.q}</span><EditableText value={project[f.key]} onChange={v => updateProject(f.key, v)} fontSize={12} color="var(--textSub)" multiline={f.multi} /></div>
                     ))}
+                    {/* Venue address (Google autocomplete) */}
+                    <div style={{ marginBottom: 12 }}><span style={{ fontSize: 9, color: "#ff6b4a", fontWeight: 700, letterSpacing: 0.8, marginRight: 8 }}>VENUE</span><AddressAutocomplete value={project.venue || ""} onChange={v => updateProject("venue", v)} showIcon={false} placeholder="On-site address..." inputStyle={{ padding: "2px 6px", background: "var(--bgInput)", border: "1px solid #ff6b4a40", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontFamily: "'DM Sans', sans-serif", outline: "none", width: "100%" }} /></div>
                     
                     {/* SERVICE NEEDS */}
                     <div style={{ marginBottom: 12 }}>
@@ -8375,6 +8438,7 @@ export default function Dashboard({ user, onLogout }) {
                       )}
                     </div>
                     {appSettings.branding?.dashboardBg ? (
+                      <>
                       <div style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: "1px solid var(--borderSub)" }}>
                         <img src={appSettings.branding.dashboardBg} alt="Dashboard BG" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
                         <div style={{ position: "absolute", bottom: 6, right: 6, fontSize: 8, padding: "2px 6px", background: "rgba(0,0,0,0.6)", color: "#fff", borderRadius: 4 }}>Current dashboard background</div>
@@ -8399,6 +8463,7 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
                         </div>
                       </div>
+                      </>
                     ) : (
                       <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 100, border: "2px dashed var(--borderSub)", borderRadius: 8, cursor: "pointer", color: "var(--textGhost)", fontSize: 11, gap: 4 }}>
                         <span style={{ fontSize: 20 }}>🖼</span>
@@ -8431,85 +8496,99 @@ export default function Dashboard({ user, onLogout }) {
               {/* ═══ NOTIFICATIONS TAB ═══ */}
               {settingsTab === "notifications" && (
                 <div style={{ padding: "0 6px" }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Notification Preferences</div>
-                  <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 16, lineHeight: 1.5 }}>Get notified about deadlines, vendor compliance, and project updates.</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Email Notifications</div>
+                  <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 16, lineHeight: 1.5 }}>Get notified about deadlines, @mentions, vendor compliance, and project updates. Sends to: <strong>{user?.email}</strong></div>
 
-                  {/* Email notifications */}
+                  {/* Master toggle */}
                   <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <div>
                         <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>📧 Email Notifications</div>
-                        <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 2 }}>Sends to your login email: {user?.email}</div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 2 }}>Enable to receive email notifications from Command Center</div>
                       </div>
                       <button onClick={() => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), emailEnabled: !(prev.notifications?.emailEnabled) } })); setSettingsDirty(true); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid var(--borderSub)", background: appSettings.notifications?.emailEnabled ? "#4ecb7118" : "var(--bgCard)", color: appSettings.notifications?.emailEnabled ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
                         {appSettings.notifications?.emailEnabled ? "✓ Enabled" : "Enable"}
                       </button>
                     </div>
-                    {appSettings.notifications?.emailEnabled && (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 8, borderTop: "1px solid var(--borderSub)" }}>
-                        {[
-                          { key: "workbackDue", label: "Work Back items due soon (48hr warning)", icon: "◄" },
-                          { key: "workbackOverdue", label: "Work Back items overdue", icon: "🔴" },
-                          { key: "vendorCompliance", label: "Vendor compliance docs missing/expired", icon: "⊕" },
-                          { key: "projectUpdate", label: "Project status changes", icon: "📁" },
-                          { key: "dailyDigest", label: "Daily digest summary (9 AM)", icon: "📋" },
-                        ].map(n => (
-                          <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 11, color: "var(--text)" }}>
-                            <input type="checkbox" checked={!!(appSettings.notifications?.email || {})[n.key]} onChange={() => {
-                              setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), email: { ...(prev.notifications?.email || {}), [n.key]: !(prev.notifications?.email || {})[n.key] } } }));
-                              setSettingsDirty(true);
-                            }} style={{ cursor: "pointer" }} />
-                            <span style={{ fontSize: 12, width: 16, textAlign: "center" }}>{n.icon}</span>
-                            {n.label}
-                          </label>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
-                  {/* SMS/iMessage notifications */}
-                  <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>💬 SMS / Text Notifications</div>
-                        <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 2 }}>Critical alerts sent via SMS</div>
+                  {appSettings.notifications?.emailEnabled && (
+                    <>
+                    {/* Frequency selector */}
+                    <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 10 }}>FREQUENCY</div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {[
+                          { key: "instant", label: "Instant", desc: "@mentions only", icon: "⚡" },
+                          { key: "daily", label: "Daily Digest", desc: "9 AM every morning", icon: "📋" },
+                          { key: "weekly", label: "Weekly Summary", desc: "Monday 9 AM", icon: "📊" },
+                        ].map(f => {
+                          const freq = appSettings.notifications?.frequency || "daily";
+                          const isActive = freq === f.key;
+                          return (
+                            <button key={f.key} onClick={() => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), frequency: f.key } })); setSettingsDirty(true); }} style={{ flex: 1, padding: "10px 8px", borderRadius: 8, border: `1px solid ${isActive ? "#ff6b4a" : "var(--borderSub)"}`, background: isActive ? "#ff6b4a10" : "var(--bgCard)", cursor: "pointer", textAlign: "center" }}>
+                              <div style={{ fontSize: 14, marginBottom: 4 }}>{f.icon}</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: isActive ? "#ff6b4a" : "var(--text)" }}>{f.label}</div>
+                              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 2 }}>{f.desc}</div>
+                            </button>
+                          );
+                        })}
                       </div>
-                      <button onClick={() => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), smsEnabled: !(prev.notifications?.smsEnabled) } })); setSettingsDirty(true); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid var(--borderSub)", background: appSettings.notifications?.smsEnabled ? "#4ecb7118" : "var(--bgCard)", color: appSettings.notifications?.smsEnabled ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
-                        {appSettings.notifications?.smsEnabled ? "✓ Enabled" : "Enable"}
-                      </button>
                     </div>
-                    {appSettings.notifications?.smsEnabled && (
-                      <div style={{ paddingTop: 8, borderTop: "1px solid var(--borderSub)" }}>
-                        <div style={{ marginBottom: 8 }}>
-                          <label style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>PHONE NUMBER</label>
-                          <input value={appSettings.notifications?.smsPhone || ""} onChange={e => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), smsPhone: e.target.value } })); setSettingsDirty(true); }} placeholder="+1 (310) 555-1234" style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+
+                    {/* @mention notifications (always on if email enabled) */}
+                    <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 14 }}>💬</span>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>Chat @Mentions</div>
+                          <div style={{ fontSize: 9, color: "var(--textGhost)" }}>When someone tags you in a project chat, you'll get an email immediately regardless of frequency setting</div>
+                        </div>
+                        <span style={{ marginLeft: "auto", fontSize: 9, fontWeight: 700, color: "#4ecb71", background: "#4ecb7112", padding: "3px 8px", borderRadius: 4 }}>Always On</span>
+                      </div>
+                    </div>
+
+                    {/* Digest sections (for daily/weekly) */}
+                    {(appSettings.notifications?.frequency || "daily") !== "instant" && (
+                      <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 10 }}>
+                          {(appSettings.notifications?.frequency || "daily") === "weekly" ? "WEEKLY SUMMARY" : "DAILY DIGEST"} — INCLUDE THESE SECTIONS
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {[
-                            { key: "smsOverdue", label: "Overdue work back alerts", icon: "🔴" },
-                            { key: "smsUrgent", label: "Urgent compliance deadlines", icon: "⚠️" },
+                            { key: "digestOverdue", label: "Overdue work back items", icon: "🔴", desc: "Items past their due date" },
+                            { key: "digestDueSoon", label: "Due today / tomorrow", icon: "⏰", desc: "Items due within 48 hours" },
+                            { key: "digestTodoist", label: "Todoist task snapshot", icon: "✅", desc: "Your open tasks from Todoist" },
+                            { key: "digestCompliance", label: "Vendor compliance gaps", icon: "📄", desc: "Missing W9s and COIs" },
+                            { key: "digestStatusChanges", label: "Project status changes", icon: "📊", desc: "Projects that changed status" },
+                            { key: "digestMentions", label: "Unread @mentions", icon: "💬", desc: "Chat messages you were tagged in" },
                           ].map(n => (
-                            <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 11, color: "var(--text)" }}>
-                              <input type="checkbox" checked={!!(appSettings.notifications?.sms || {})[n.key]} onChange={() => {
-                                setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), sms: { ...(prev.notifications?.sms || {}), [n.key]: !(prev.notifications?.sms || {})[n.key] } } }));
+                            <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "6px 8px", borderRadius: 6, background: (appSettings.notifications?.digest || {})[n.key] ? "#ff6b4a06" : "transparent" }}>
+                              <input type="checkbox" checked={!!(appSettings.notifications?.digest || {})[n.key]} onChange={() => {
+                                setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), digest: { ...(prev.notifications?.digest || {}), [n.key]: !(prev.notifications?.digest || {})[n.key] } } }));
                                 setSettingsDirty(true);
-                              }} style={{ cursor: "pointer" }} />
-                              <span style={{ fontSize: 12, width: 16, textAlign: "center" }}>{n.icon}</span>
-                              {n.label}
+                              }} style={{ cursor: "pointer", accentColor: "#ff6b4a" }} />
+                              <span style={{ fontSize: 14, width: 20, textAlign: "center" }}>{n.icon}</span>
+                              <div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{n.label}</div>
+                                <div style={{ fontSize: 9, color: "var(--textGhost)" }}>{n.desc}</div>
+                              </div>
                             </label>
                           ))}
                         </div>
                       </div>
                     )}
-                  </div>
+                    </>
+                  )}
 
                   {/* Setup info */}
                   <div style={{ padding: "14px 16px", background: "#3da5db08", border: "1px solid #3da5db20", borderRadius: 8 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#3da5db", marginBottom: 6 }}>💡 Notification Setup</div>
-                    <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6 }}>
-                      Email notifications require a <strong>Resend</strong> or <strong>SendGrid</strong> API key in your Vercel env vars (<code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>RESEND_API_KEY</code>).
-                      SMS uses <strong>Twilio</strong> (<code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>TWILIO_SID</code>, <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>TWILIO_AUTH_TOKEN</code>, <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>TWILIO_PHONE</code>).
-                      A cron job at <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>/api/cron/notify</code> checks for due items daily.
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#3da5db", marginBottom: 6 }}>💡 Setup</div>
+                    <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.8 }}>
+                      <strong>1.</strong> Sign up free at <span style={{ color: "#ff6b4a" }}>resend.com</span> and get your API key<br />
+                      <strong>2.</strong> Add <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>RESEND_API_KEY</code> to your Vercel environment variables<br />
+                      <strong>3.</strong> Verify your sending domain in the Resend dashboard<br />
+                      <strong>4.</strong> Cron runs daily at 9 AM ET via <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>/api/cron/notify</code>
                     </div>
                   </div>
                 </div>
@@ -8979,11 +9058,15 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Row 2: Location + Status + Project Type */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 20 }}>
+              {/* Row 2: Location + Venue + Status + Project Type */}
+              <div style={{ display: "grid", gridTemplateColumns: "0.8fr 1.2fr 0.8fr 1fr", gap: 20, marginBottom: 20 }}>
                 <div>
-                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>LOCATION</label>
-                  <AddressAutocomplete value={newProjectForm.location} onChange={v => updateNPF("location", v)} showIcon={false} placeholder="Los Angeles, Brooklyn, Bali..." inputStyle={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>LOCATION <span style={{ color: "var(--textGhost)", fontWeight: 400 }}>(for code)</span></label>
+                  <input value={newProjectForm.location} onChange={e => updateNPF("location", e.target.value)} placeholder="LA, MIA, Tulum..." style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
+                </div>
+                <div>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>VENUE ADDRESS <span style={{ color: "var(--textGhost)", fontWeight: 400 }}>(on-site)</span></label>
+                  <AddressAutocomplete value={newProjectForm.venue || ""} onChange={v => updateNPF("venue", v)} showIcon={false} placeholder="Search venue address..." inputStyle={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
                 </div>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>STATUS</label>
@@ -9470,7 +9553,7 @@ export default function Dashboard({ user, onLogout }) {
                           <span style={{ fontSize: 9, color: "var(--textGhost)" }}>{timeAgo}</span>
                           <button onClick={() => deleteComment(cmt.id)} style={{ marginLeft: "auto", background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 12, opacity: 0.4, padding: 2 }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.4}>×</button>
                         </div>
-                        <div style={{ fontSize: 12, color: "var(--textSub)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cmt.text}</div>
+                        <div style={{ fontSize: 12, color: "var(--textSub)", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{cmt.text.split(/(@[\w\s.'-]+)/g).map((part, pi) => part.startsWith("@") ? <span key={pi} style={{ color: "#ff6b4a", fontWeight: 600 }}>{part}</span> : part)}</div>
                       </div>
                     </div>
                   );
@@ -9497,12 +9580,78 @@ export default function Dashboard({ user, onLogout }) {
               })()}
             </div>
             {/* Input area */}
-            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--borderSub)", background: "var(--topBar)", flexShrink: 0 }}>
+            <div style={{ padding: "12px 16px", borderTop: "1px solid var(--borderSub)", background: "var(--topBar)", flexShrink: 0, position: "relative" }}>
+              {/* @mention dropdown */}
+              {showMentionDropdown && (() => {
+                const proj = projects.find(p => p.id === activeProjectId);
+                const team = getProjectTeamMembers(proj);
+                const filtered = mentionQuery ? team.filter(m => m.name.toLowerCase().includes(mentionQuery.toLowerCase())) : team;
+                if (filtered.length === 0) return null;
+                return (
+                  <div style={{ position: "absolute", bottom: "100%", left: 16, right: 16, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, boxShadow: "0 -4px 20px rgba(0,0,0,0.15)", maxHeight: 160, overflowY: "auto", zIndex: 10 }}>
+                    <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--textGhost)", fontWeight: 700, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)" }}>TAG A TEAM MEMBER</div>
+                    {filtered.map((m, i) => (
+                      <div key={m.name} onClick={() => {
+                        // Replace @query with @Name
+                        const before = commentInput.substring(0, mentionCursorPos - mentionQuery.length - 1);
+                        const after = commentInput.substring(mentionCursorPos);
+                        setCommentInput(before + "@" + m.name + " " + after);
+                        setShowMentionDropdown(false);
+                        setMentionQuery("");
+                      }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} style={{ padding: "8px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8, background: i === mentionIndex ? "var(--bgHover)" : "transparent" }}>
+                        <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#3da5db15", border: "1px solid #3da5db25", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#3da5db" }}>{m.name.charAt(0)}</div>
+                        <div>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{m.name}</div>
+                          {m.email && <div style={{ fontSize: 9, color: "var(--textGhost)" }}>{m.email}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff6b4a10)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>{(user?.name || user?.email || "?").charAt(0).toUpperCase()}</div>
-                <textarea value={commentInput} onChange={e => { setCommentInput(e.target.value); e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px"; }} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (commentInput.trim()) { addComment(commentInput); setCommentInput(""); e.target.style.height = "36px"; } } }} placeholder="Add a comment..." rows={1} style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", resize: "none", lineHeight: 1.5, minHeight: 36, maxHeight: 100 }} />
-                <button onClick={() => { if (commentInput.trim()) { addComment(commentInput); setCommentInput(""); } }} disabled={!commentInput.trim()} style={{ padding: "8px 14px", background: commentInput.trim() ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: commentInput.trim() ? "#fff" : "var(--textGhost)", cursor: commentInput.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 700, flexShrink: 0, transition: "all 0.15s", height: 36 }}>Post</button>
+                <textarea value={commentInput} onChange={e => {
+                  const val = e.target.value;
+                  setCommentInput(val);
+                  e.target.style.height = "auto";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 100) + "px";
+                  // Detect @mention trigger
+                  const pos = e.target.selectionStart;
+                  const textBefore = val.substring(0, pos);
+                  const atMatch = textBefore.match(/@(\w*)$/);
+                  if (atMatch) {
+                    setMentionQuery(atMatch[1]);
+                    setMentionCursorPos(pos);
+                    setShowMentionDropdown(true);
+                    setMentionIndex(0);
+                  } else {
+                    setShowMentionDropdown(false);
+                  }
+                }} onKeyDown={e => {
+                  if (showMentionDropdown) {
+                    const proj = projects.find(p => p.id === activeProjectId);
+                    const team = getProjectTeamMembers(proj);
+                    const filtered = mentionQuery ? team.filter(m => m.name.toLowerCase().includes(mentionQuery.toLowerCase())) : team;
+                    if (e.key === "ArrowDown") { e.preventDefault(); setMentionIndex(i => Math.min(i + 1, filtered.length - 1)); return; }
+                    if (e.key === "ArrowUp") { e.preventDefault(); setMentionIndex(i => Math.max(i - 1, 0)); return; }
+                    if ((e.key === "Enter" || e.key === "Tab") && filtered.length > 0) {
+                      e.preventDefault();
+                      const m = filtered[mentionIndex];
+                      const before = commentInput.substring(0, mentionCursorPos - mentionQuery.length - 1);
+                      const after = commentInput.substring(mentionCursorPos);
+                      setCommentInput(before + "@" + m.name + " " + after);
+                      setShowMentionDropdown(false);
+                      setMentionQuery("");
+                      return;
+                    }
+                    if (e.key === "Escape") { setShowMentionDropdown(false); return; }
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); if (commentInput.trim()) { addComment(commentInput); setCommentInput(""); e.target.style.height = "36px"; setShowMentionDropdown(false); } }
+                }} placeholder="Add a comment... use @ to tag" rows={1} style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", resize: "none", lineHeight: 1.5, minHeight: 36, maxHeight: 100 }} />
+                <button onClick={() => { if (commentInput.trim()) { addComment(commentInput); setCommentInput(""); setShowMentionDropdown(false); } }} disabled={!commentInput.trim()} style={{ padding: "8px 14px", background: commentInput.trim() ? "#ff6b4a" : "var(--bgCard)", border: "none", borderRadius: 8, color: commentInput.trim() ? "#fff" : "var(--textGhost)", cursor: commentInput.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 700, flexShrink: 0, transition: "all 0.15s", height: 36 }}>Post</button>
               </div>
+              <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 4, textAlign: "center" }}>Type <strong>@</strong> to tag someone on this project</div>
             </div>
           </div>
           {/* Backdrop */}
