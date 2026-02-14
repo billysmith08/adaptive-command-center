@@ -2092,6 +2092,11 @@ export default function Dashboard({ user, onLogout }) {
 
   const generateContract = async () => {
     if (!contractModal) return;
+    const tplId = (appSettings.templateDocs || {})[contractModal.contractType]?.id || null;
+    if (!tplId) {
+      setContractModal(prev => ({ ...prev, error: `No ${contractModal.contractType} template linked. Go to Settings → Templates to link a Google Doc.` }));
+      return;
+    }
     setContractModal(prev => ({ ...prev, generating: true, error: null }));
     // Format currency fields before sending
     const fmtCurrency = (val) => { const n = parseFloat((val || '').toString().replace(/[^0-9.]/g, '')); return isNaN(n) ? val : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
@@ -2099,6 +2104,7 @@ export default function Dashboard({ user, onLogout }) {
     if (fieldsToSend.SOW_COMPENSATION && !/^\$/.test(fieldsToSend.SOW_COMPENSATION)) fieldsToSend.SOW_COMPENSATION = fmtCurrency(fieldsToSend.SOW_COMPENSATION);
     
     const doGenerate = async (retry = false) => {
+      const tplId = (appSettings.templateDocs || {})[contractModal.contractType]?.id || null;
       const res = await fetch("/api/contracts/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2110,15 +2116,10 @@ export default function Dashboard({ user, onLogout }) {
           vendorName: contractModal.vendor.name,
           projectCode: project.code || "",
           invoiceLink: contractModal.invoiceLink || null,
+          templateId: tplId,
         }),
       });
       const data = await res.json();
-      if (data.error && data.error.includes("Template not found") && !retry) {
-        // Auto-bootstrap templates and retry
-        setContractModal(prev => ({ ...prev, error: "Creating templates... please wait" }));
-        await fetch("/api/contracts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "bootstrap-templates" }) });
-        return doGenerate(true);
-      }
       if (data.error) throw new Error(data.error);
       return data;
     };
@@ -8524,103 +8525,91 @@ export default function Dashboard({ user, onLogout }) {
 
               {/* ── DISPLAY TAB ── */}
               {/* ── TEMPLATES TAB ── */}
-              {settingsTab === "templates" && (() => {
-                const [tplLoading, setTplLoading] = useState(false);
-                const [tplData, setTplData] = useState(null);
-                const [tplError, setTplError] = useState(null);
-                const [bootstrapping, setBootstrapping] = useState(false);
-
-                const loadTemplates = async () => {
-                  setTplLoading(true); setTplError(null);
-                  try {
-                    const res = await fetch("/api/contracts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "list-templates" }) });
-                    const data = await res.json();
-                    if (data.error) throw new Error(data.error);
-                    setTplData(data.templates);
-                  } catch (e) { setTplError(e.message); }
-                  setTplLoading(false);
-                };
-
-                const bootstrapTemplates = async () => {
-                  setBootstrapping(true); setTplError(null);
-                  try {
-                    const res = await fetch("/api/contracts/generate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "bootstrap-templates" }) });
-                    const data = await res.json();
-                    if (data.error) throw new Error(data.error);
-                    setTplData(data.templates);
-                  } catch (e) { setTplError(e.message); }
-                  setBootstrapping(false);
-                };
-
-                useEffect(() => { loadTemplates(); }, []);
-
-                return (
+              {settingsTab === "templates" && (
                   <div>
                     <div style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 16 }}>TEMPLATE DOCUMENTS</div>
                     <div style={{ fontSize: 11, color: "var(--textMuted)", marginBottom: 20, lineHeight: 1.7 }}>
-                      Contract templates are Google Docs with {"{{PLACEHOLDER}}"} markers that get replaced when generating contracts. Templates are stored in the <strong>TEMPLATES</strong> folder on Google Drive.
+                      Link your Google Doc templates below. Each template should contain <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 10 }}>{"{{PLACEHOLDER}}"}</code> markers that get replaced when generating contracts.
                     </div>
 
-                    {tplError && <div style={{ padding: "10px 14px", background: "#e8545410", border: "1px solid #e8545420", borderRadius: 8, color: "#e85454", fontSize: 11, marginBottom: 16 }}>⚠️ {tplError}</div>}
+                    {["vendor", "contractor"].map(type => {
+                      const tplDocs = appSettings.templateDocs || {};
+                      const tpl = tplDocs[type] || {};
+                      const extractId = (url) => {
+                        if (!url) return null;
+                        if (/^[a-zA-Z0-9_-]{20,}$/.test(url)) return url;
+                        const m = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
+                        return m ? m[1] : null;
+                      };
+                      const placeholders = type === "vendor"
+                        ? ["EFFECTIVE_DAY", "EFFECTIVE_MONTH", "EFFECTIVE_YEAR", "VENDOR_NAME", "VENDOR_ENTITY_DESC", "VENDOR_TITLE", "CLIENT_NAME", "EVENT_NAME", "EVENT_DATES", "EVENT_TIME", "VENUE_NAME", "VENUE_ADDRESS", "VENDOR_DELIVERABLES", "PAYMENT_TERMS", "TIMELINE"]
+                        : ["EFFECTIVE_DAY", "EFFECTIVE_MONTH", "EFFECTIVE_YEAR", "CONTRACTOR_NAME", "CONTRACTOR_ENTITY_TYPE", "CONTRACTOR_ADDRESS", "CONTRACTOR_EXPERTISE", "SOW_TERM", "SOW_PROJECT", "SOW_COMPENSATION", "SOW_PAYMENT_TERMS", "SOW_DELIVERABLES", "SOW_TIMELINE", "SOW_EXECUTION_DATE", "AGREEMENT_DATE"];
 
-                    {tplLoading ? (
-                      <div style={{ color: "var(--textFaint)", fontSize: 11 }}>Loading templates...</div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        {["contractor", "vendor"].map(type => {
-                          const tpl = tplData?.[type];
-                          return (
-                            <div key={type} style={{ background: "var(--bgInput)", border: `1px solid ${tpl ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 20px" }}>
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                  <span style={{ fontSize: 16 }}>{type === "contractor" ? "👤" : "🏢"}</span>
-                                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{type === "contractor" ? "Contractor Agreement" : "Vendor Agreement"}</span>
-                                  {tpl && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: tpl.status === "created" ? "#4ecb7120" : "#3da5db15", color: tpl.status === "created" ? "#4ecb71" : "#3da5db", fontWeight: 700 }}>{tpl.status === "created" ? "NEW" : "ACTIVE"}</span>}
-                                </div>
-                                {tpl && (
-                                  <button onClick={() => window.open(tpl.url, "_blank")} style={{ padding: "5px 12px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>
-                                    📝 Edit in Google Docs
-                                  </button>
-                                )}
-                              </div>
-                              {tpl ? (
-                                <div style={{ fontSize: 10, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>
-                                  ID: {tpl.id}
-                                  {tpl.modified && <span style={{ marginLeft: 12 }}>Modified: {new Date(tpl.modified).toLocaleDateString()}</span>}
-                                </div>
-                              ) : (
-                                <div style={{ fontSize: 11, color: "var(--textMuted)" }}>Not found — click "Create Default Templates" below</div>
-                              )}
+                      return (
+                        <div key={type} style={{ background: "var(--bgInput)", border: `1px solid ${tpl.id ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 20px", marginBottom: 14 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                            <span style={{ fontSize: 16 }}>{type === "contractor" ? "👤" : "🏢"}</span>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{type === "contractor" ? "Contractor Agreement" : "Vendor Agreement"}</span>
+                            {tpl.id && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: "#4ecb7120", color: "#4ecb71", fontWeight: 700 }}>LINKED</span>}
+                          </div>
+
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                            <input
+                              value={tpl.url || ""}
+                              onChange={e => {
+                                const url = e.target.value;
+                                const id = extractId(url);
+                                setAppSettings(prev => ({ ...prev, templateDocs: { ...prev.templateDocs, [type]: { url, id } } }));
+                                setSettingsDirty(true);
+                              }}
+                              placeholder="Paste Google Doc URL..."
+                              style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: `1px solid ${tpl.id ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 6, color: "var(--text)", fontSize: 11, fontFamily: "'DM Sans', sans-serif", outline: "none" }}
+                            />
+                            {tpl.id && (
+                              <button onClick={() => window.open(`https://docs.google.com/document/d/${tpl.id}/edit`, "_blank")} style={{ padding: "7px 12px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>
+                                Open ↗
+                              </button>
+                            )}
+                          </div>
+
+                          {tpl.id && (
+                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
+                              Doc ID: {tpl.id}
                             </div>
-                          );
-                        })}
+                          )}
 
-                        <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-                          <button onClick={bootstrapTemplates} disabled={bootstrapping} style={{ padding: "10px 20px", background: (tplData?.contractor && tplData?.vendor) ? "var(--bgCard)" : "#ff6b4a", border: `1px solid ${(tplData?.contractor && tplData?.vendor) ? "var(--borderSub)" : "#ff6b4a"}`, borderRadius: 8, color: (tplData?.contractor && tplData?.vendor) ? "var(--textMuted)" : "#fff", cursor: bootstrapping ? "wait" : "pointer", fontSize: 12, fontWeight: 700 }}>
-                            {bootstrapping ? "⟳ Creating..." : (tplData?.contractor && tplData?.vendor) ? "↻ Recreate Templates" : "✨ Create Default Templates"}
-                          </button>
-                          <button onClick={loadTemplates} style={{ padding: "10px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>
-                            ↻ Refresh
-                          </button>
+                          <details style={{ marginTop: 4 }}>
+                            <summary style={{ fontSize: 10, color: "var(--textMuted)", cursor: "pointer", userSelect: "none" }}>
+                              Available placeholders ({placeholders.length})
+                            </summary>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                              {placeholders.map(p => (
+                                <code key={p} onClick={() => { navigator.clipboard.writeText(`{{${p}}}`); }} style={{ fontSize: 9, padding: "2px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, color: "var(--textSub)", cursor: "pointer" }} title="Click to copy">{`{{${p}}}`}</code>
+                              ))}
+                            </div>
+                          </details>
                         </div>
+                      );
+                    })}
 
-                        <div style={{ marginTop: 16, padding: "14px 18px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)" }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 8 }}>CUSTOM TEMPLATE</div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 10, lineHeight: 1.6 }}>
-                            To use your own template: Create a Google Doc on the shared drive with {"{{PLACEHOLDER}}"} markers (e.g. {"{{VENDOR_NAME}}"}, {"{{EVENT_DATES}}"}). The template will be copied and markers replaced each time a contract is generated.
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6 }}>
-                            <strong>Vendor placeholders:</strong> EFFECTIVE_DAY, EFFECTIVE_MONTH, EFFECTIVE_YEAR, VENDOR_NAME, VENDOR_ENTITY_DESC, VENDOR_TITLE, CLIENT_NAME, EVENT_NAME, EVENT_DATES, EVENT_TIME, VENUE_NAME, VENUE_ADDRESS, VENDOR_DELIVERABLES, PAYMENT_TERMS, TIMELINE
-                          </div>
-                          <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6, marginTop: 4 }}>
-                            <strong>Contractor placeholders:</strong> EFFECTIVE_DAY, EFFECTIVE_MONTH, EFFECTIVE_YEAR, CONTRACTOR_NAME, CONTRACTOR_ENTITY_TYPE, CONTRACTOR_ADDRESS, CONTRACTOR_EXPERTISE, SOW_TERM, SOW_PROJECT, SOW_COMPENSATION, SOW_PAYMENT_TERMS, SOW_DELIVERABLES, SOW_TIMELINE, SOW_EXECUTION_DATE, AGREEMENT_DATE
-                          </div>
-                        </div>
+                    <div style={{ marginTop: 16, padding: "14px 18px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)" }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 8 }}>HOW TO SET UP</div>
+                      <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.8 }}>
+                        1. Create your contract template in <strong>Google Docs</strong> with your branding and formatting<br/>
+                        2. Add <code style={{ background: "var(--bgCard)", padding: "1px 4px", borderRadius: 3 }}>{"{{PLACEHOLDER}}"}</code> markers where fields should be filled (e.g. <code style={{ background: "var(--bgCard)", padding: "1px 4px", borderRadius: 3 }}>{"{{VENDOR_NAME}}"}</code>)<br/>
+                        3. Make sure the doc is on your shared drive (<strong>ADPTV LLC</strong>)<br/>
+                        4. Paste the Google Doc URL above and save
+                      </div>
+                    </div>
+
+                    {!(appSettings.templateDocs?.vendor?.id) && !(appSettings.templateDocs?.contractor?.id) && (
+                      <div style={{ marginTop: 12, padding: "12px 16px", background: "#f5a62310", border: "1px solid #f5a62325", borderRadius: 8 }}>
+                        <div style={{ fontSize: 11, color: "#f5a623", fontWeight: 600 }}>⚠️ No templates linked</div>
+                        <div style={{ fontSize: 10, color: "var(--textMuted)", marginTop: 4 }}>Contract generation requires at least one linked template. Create a Google Doc on the shared drive and paste its URL above.</div>
                       </div>
                     )}
                   </div>
-                );
-              })()}
+              )}
 
               {/* ── DISPLAY TAB ── */}
               {settingsTab === "display" && (

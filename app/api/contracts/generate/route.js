@@ -264,7 +264,7 @@ async function handleGenerate(body) {
       templateId = r.data.files?.[0]?.id;
     }
   }
-  if (!templateId) return NextResponse.json({ error: `Template not found for "${contractType}". Go to Settings → Template Documents → Create Default Templates first.` }, { status: 404 });
+  if (!templateId) return NextResponse.json({ error: `No template found for "${contractType}". Link a Google Doc template in Settings → Templates.` }, { status: 404 });
 
   const safeName = (vendorName || 'Unknown').replace(/[^a-zA-Z0-9 &'()-]/g, '').trim();
   const dateStr = new Date().toISOString().slice(0, 10);
@@ -272,6 +272,7 @@ async function handleGenerate(body) {
   const docName = `${projectCode || 'CONTRACT'}_${safeName}_${typeLabel}_Agreement_${dateStr}`;
 
   console.log(`[Contract] Copying template ${templateId} as "${docName}"...`);
+  console.log(`[Contract] Fields to replace:`, Object.entries(fields).filter(([k, v]) => !k.startsWith('_') && v).map(([k, v]) => `${k}=${v.substring(0, 30)}`).join(', '));
   const copy = await drive.files.copy({ fileId: templateId, requestBody: { name: docName }, ...SD });
   const newDocId = copy.data.id;
   console.log(`[Contract] Created doc: ${newDocId}`);
