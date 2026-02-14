@@ -486,7 +486,7 @@ const SUB_EVENT_STATUS_COLORS = {
 
 const initProjects = () => [
   { id: "p1", code: "", name: "Adaptive Rebrand", client: "Adaptive", status: "In-Production", projectType: "Internal", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2025-12-31", end: "" }, engagementDates: { start: "", end: "" }, location: "", why: "", budget: 0, spent: 0 },
-  { id: "p2", code: "", name: "Cloonee Retainer", client: "Cloonee Touring LLC", status: "In-Production", projectType: "Touring", isTour: true, producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-01", end: "2026-12-31" }, engagementDates: { start: "2026-01-01", end: "2026-12-31" }, location: "Multi-City", why: "Tour Direction, Production Direction", budget: 0, spent: 0, services: ["Tour Direction", "Production Direction"], subEvents: [] },
+  { id: "p2", code: "", name: "Cloonee Retainer", client: "Cloonee Touring LLC", status: "In-Production", projectType: "Touring", isTour: true, isRetainer: true, producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-01", end: "2026-12-31" }, engagementDates: { start: "2026-01-01", end: "2026-12-31" }, location: "Multi-City", why: "Tour Direction, Production Direction", budget: 0, spent: 0, services: ["Tour Direction", "Production Direction"], subEvents: [] },
   { id: "p3", code: "", name: "Vintage Culture Tehmplo", client: "Lost Nights", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-05", end: "" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
   { id: "p4", code: "", name: "Solomun Tehmplo", client: "Lost Nights", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-09", end: "" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "Event Management & Ops", budget: 0, spent: 0, services: ["Event Management & Ops"] },
   { id: "p5", code: "", name: "Day Zero Festival 2026", client: "Crosstown Rebels", status: "Wrap", projectType: "Festival", producers: [], managers: [], staff: [], pocs: [], clientContacts: [], billingContacts: [], eventDates: { start: "2026-01-10", end: "2026-01-11" }, engagementDates: { start: "", end: "" }, location: "Tulum", why: "", budget: 0, spent: 0 },
@@ -1824,7 +1824,9 @@ export default function Dashboard({ user, onLogout }) {
   const [driveShareLoading, setDriveShareLoading] = useState(false);
   const [finFilterMonth, setFinFilterMonth] = useState("all");
   const [finFilterStatus, setFinFilterStatus] = useState("all");
+  const [expandedRetainers, setExpandedRetainers] = useState(new Set());
   const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [profileSetupForm, setProfileSetupForm] = useState({ firstName: "", lastName: "", title: "", company: "", phone: "", department: "", address: "", avatar: "" });
   const [presenceUsers, setPresenceUsers] = useState([]);
   const [appSettingsLoaded, setAppSettingsLoaded] = useState(false);
   const [avatarCropSrc, setAvatarCropSrc] = useState(null); // raw image to crop
@@ -4169,6 +4171,17 @@ export default function Dashboard({ user, onLogout }) {
     sessionStorage.setItem(sessionKey, '1');
     const profile = (appSettings.userProfiles || {})[user.email];
     if (!profile || !profile.setupAt) {
+      const existing = profile || {};
+      setProfileSetupForm({
+        firstName: existing.firstName || user?.name?.split(" ")[0] || "",
+        lastName: existing.lastName || user?.name?.split(" ").slice(1).join(" ") || "",
+        title: existing.title || "",
+        company: existing.company || "",
+        phone: existing.phone || "",
+        department: existing.department || "",
+        address: existing.address || "",
+        avatar: existing.avatar || "",
+      });
       setShowProfileSetup(true);
     }
   }, [dataLoaded, appSettingsLoaded, user, isUserAuthorized]);
@@ -4180,6 +4193,15 @@ export default function Dashboard({ user, onLogout }) {
       userProfiles: { ...(appSettings.userProfiles || {}), [user.email]: { ...profileData, email: user.email, setupAt: new Date().toISOString() } },
     };
     await saveSettings(updated);
+    // Sync avatar to matching Global Partners contact
+    if (profileData.avatar) {
+      setContacts(prev => prev.map(c => {
+        if (c.email && c.email.toLowerCase() === user.email.toLowerCase()) {
+          return { ...c, avatar: profileData.avatar };
+        }
+        return c;
+      }));
+    }
     setShowProfileSetup(false);
   };
 
@@ -4219,7 +4241,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: "cover", backgroundPosition: "center" } : {}) }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: `${appSettings.branding?.bgZoom || 100}%`, backgroundPosition: appSettings.branding?.bgPosition || "center center", backgroundRepeat: "no-repeat" } : {}) }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -4670,7 +4692,7 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* ── Master Work Back ── */}
                 {glanceTab === "masterWB" && (() => {
-                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => (Array.isArray(items) ? items : []).map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
+                  const allWB = Object.entries(projectWorkback).flatMap(([pid, items]) => (Array.isArray(items) ? items : []).filter(w => w.task && w.task.trim() !== "" && w.task !== "–").map(w => ({ ...w, _pid: pid, _pName: projects.find(p => p.id === pid)?.name || "Unknown" })));
                   const sorted = [...allWB].sort((a, b) => {
                     if (!a.date && !b.date) return 0;
                     if (!a.date) return 1;
@@ -4940,9 +4962,17 @@ export default function Dashboard({ user, onLogout }) {
                       <div key={c.id} style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12, background: selectedContacts.has(c.id) ? "#ff6b4a08" : "transparent", minWidth: 1600 }}>
                         <span><input type="checkbox" checked={selectedContacts.has(c.id)} onChange={(e) => { const next = new Set(selectedContacts); if (e.target.checked) next.add(c.id); else next.delete(c.id); setSelectedContacts(next); }} style={{ cursor: "pointer" }} /></span>
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
-                            {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                          </div>
+                          {(() => {
+                            // Check if contact has avatar or matches a user profile with avatar
+                            const profileAvatar = c.avatar || (c.email && (appSettings.userProfiles || {})[c.email]?.avatar) || null;
+                            return profileAvatar ? (
+                              <img src={profileAvatar} alt="" onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", objectFit: "cover", border: "1px solid #ff6b4a30", flexShrink: 0, cursor: "pointer" }} />
+                            ) : (
+                              <div onClick={(e) => viewContact(c, e)} style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#ff6b4a", flexShrink: 0, cursor: "pointer" }}>
+                                {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                              </div>
+                            );
+                          })()}
                           <div style={{ overflow: "hidden" }}>
                             <div style={{ fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.name}</div>
                             {c.company && <div style={{ fontSize: 10, color: "var(--textFaint)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.company}</div>}
@@ -5342,12 +5372,38 @@ export default function Dashboard({ user, onLogout }) {
                 saveSettings(updated);
               };
 
-              // Calculate sums
-              const sumField = (field) => sorted.reduce((s, p) => s + parseNum(p[field]), 0);
+              // Calculate sums (including retainer monthly data)
+              const retainerMonthSum = (p, field) => {
+                const months = p.fin_retainer_months || {};
+                return Object.values(months).reduce((s, m) => s + parseNum(m[field]), 0);
+              };
+              const sumField = (field) => sorted.reduce((s, p) => {
+                if (p.isRetainer) return s + retainerMonthSum(p, field);
+                return s + parseNum(p[field]);
+              }, 0);
               const rowSum = (p) => {
+                if (p.isRetainer) {
+                  const months = p.fin_retainer_months || {};
+                  return Object.values(months).reduce((s, m) => {
+                    let ms = parseNum(m.fin_walkout) + parseNum(m.fin_talent) + parseNum(m.fin_prodCoord) + parseNum(m.fin_showCoord);
+                    savedCols.forEach(c => { ms += parseNum(m[c.key]); });
+                    return s + ms;
+                  }, 0);
+                }
                 let s = parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord);
                 savedCols.forEach(c => { s += parseNum(p[c.key]); });
                 return s;
+              };
+              const updateRetainerMonth = (projectId, month, field, value) => {
+                setProjects(prev => prev.map(p => {
+                  if (p.id !== projectId) return p;
+                  const months = { ...(p.fin_retainer_months || {}) };
+                  months[month] = { ...(months[month] || {}), [field]: value };
+                  return { ...p, fin_retainer_months: months };
+                }));
+              };
+              const toggleRetainer = (projectId) => {
+                setProjects(prev => prev.map(p => p.id === projectId ? { ...p, isRetainer: !p.isRetainer } : p));
               };
               const totalWalkout = sumField("fin_walkout");
               const totalTalent = sumField("fin_talent");
@@ -5449,38 +5505,66 @@ export default function Dashboard({ user, onLogout }) {
                             const code = p.code || "";
                             const month = getProjectMonth(p);
                             const monthIdx = monthOrder.indexOf(month);
-                            return (
+                            const isExpanded = expandedRetainers.has(p.id);
+                            const rows = [];
+
+                            // Main project row
+                            rows.push(
                               <tr key={p.id} style={{ background: idx % 2 === 0 ? "transparent" : "var(--bgHover)" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a08"} onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? "transparent" : "var(--bgHover)"}>
                                 <td style={{ ...colStyle, textAlign: "left" }}>
-                                  <div style={{ fontWeight: 600, color: "var(--text)", cursor: "pointer" }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }}>{p.name}</div>
-                                  {code && <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{code}</div>}
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    {p.isRetainer && (
+                                      <button onClick={() => setExpandedRetainers(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#9b6dff", padding: 0, width: 16 }}>{isExpanded ? "▼" : "▶"}</button>
+                                    )}
+                                    <div>
+                                      <div style={{ fontWeight: 600, color: "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} onContextMenu={(e) => { e.preventDefault(); if (confirm(`${p.isRetainer ? "Remove" : "Mark"} "${p.name}" as a retainer project?`)) toggleRetainer(p.id); }}>
+                                        {p.name}
+                                        {p.isRetainer && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#9b6dff18", color: "#9b6dff", fontWeight: 700 }}>RETAINER</span>}
+                                      </div>
+                                      {code && <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{code}</div>}
+                                    </div>
+                                  </div>
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "center" }}>
                                   <span style={{ display: "inline-block", background: (statusColors[p.status] || "#888") + "20", color: statusColors[p.status] || "var(--text)", borderRadius: 4, padding: "3px 8px", fontWeight: 700, fontSize: 9, fontFamily: "'Instrument Sans', sans-serif", whiteSpace: "nowrap" }}>
                                     {statusMap[p.status] || p.status}
                                   </span>
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "center", fontSize: 10, color: month ? "var(--text)" : "var(--textGhost)", fontFamily: "'Instrument Sans', sans-serif" }}>
-                                  {monthIdx >= 0 ? monthAbbr[monthIdx] : "—"}
+                                <td style={{ ...colStyle, textAlign: "center", fontSize: 10, color: p.isRetainer ? "#9b6dff" : (month ? "var(--text)" : "var(--textGhost)"), fontFamily: "'Instrument Sans', sans-serif" }}>
+                                  {p.isRetainer ? "Recurring" : (monthIdx >= 0 ? monthAbbr[monthIdx] : "—")}
                                 </td>
                                 <td style={{ ...colStyle, textAlign: "left" }}>
-                                  <input value={p.fin_notes || ""} onChange={e => updateFinField(p.id, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 11, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
+                                  {p.isRetainer ? (
+                                    <span style={{ fontSize: 10, color: "var(--textFaint)", fontStyle: "italic" }}>{isExpanded ? "Monthly breakdown below" : "Click ▶ to expand months"}</span>
+                                  ) : (
+                                    <input value={p.fin_notes || ""} onChange={e => updateFinField(p.id, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 11, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
+                                  )}
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_walkout || ""} onChange={e => updateFinField(p.id, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_walkout) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_walkout", v.toFixed(2)); }} />
+                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_walkout")) : moneyColor(p.fin_walkout) }}>
+                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_walkout")) || "—") : (
+                                    <input value={p.fin_walkout || ""} onChange={e => updateFinField(p.id, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_walkout) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_walkout", v.toFixed(2)); }} />
+                                  )}
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_talent || ""} onChange={e => updateFinField(p.id, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_talent) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_talent", v.toFixed(2)); }} />
+                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_talent")) : moneyColor(p.fin_talent) }}>
+                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_talent")) || "—") : (
+                                    <input value={p.fin_talent || ""} onChange={e => updateFinField(p.id, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_talent) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_talent", v.toFixed(2)); }} />
+                                  )}
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_prodCoord || ""} onChange={e => updateFinField(p.id, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_prodCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_prodCoord", v.toFixed(2)); }} />
+                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_prodCoord")) : moneyColor(p.fin_prodCoord) }}>
+                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_prodCoord")) || "—") : (
+                                    <input value={p.fin_prodCoord || ""} onChange={e => updateFinField(p.id, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_prodCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_prodCoord", v.toFixed(2)); }} />
+                                  )}
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "right" }}>
-                                  <input value={p.fin_showCoord || ""} onChange={e => updateFinField(p.id, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_showCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_showCoord", v.toFixed(2)); }} />
+                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_showCoord")) : moneyColor(p.fin_showCoord) }}>
+                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_showCoord")) || "—") : (
+                                    <input value={p.fin_showCoord || ""} onChange={e => updateFinField(p.id, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_showCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_showCoord", v.toFixed(2)); }} />
+                                  )}
                                 </td>
                                 {savedCols.map(c => (
-                                  <td key={c.key} style={{ ...colStyle, textAlign: "right" }}>
-                                    <input value={p[c.key] || ""} onChange={e => updateFinField(p.id, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p[c.key]) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, c.key, v.toFixed(2)); }} />
+                                  <td key={c.key} style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, c.key)) : moneyColor(p[c.key]) }}>
+                                    {p.isRetainer ? (fmtMoney(retainerMonthSum(p, c.key)) || "—") : (
+                                      <input value={p[c.key] || ""} onChange={e => updateFinField(p.id, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p[c.key]) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, c.key, v.toFixed(2)); }} />
+                                    )}
                                   </td>
                                 ))}
                                 <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(rs) }}>
@@ -5488,6 +5572,51 @@ export default function Dashboard({ user, onLogout }) {
                                 </td>
                               </tr>
                             );
+
+                            // Retainer monthly sub-rows
+                            if (p.isRetainer && isExpanded) {
+                              const retainerData = p.fin_retainer_months || {};
+                              monthOrder.forEach((mo, mi) => {
+                                const md = retainerData[mo] || {};
+                                const monthRowSum = parseNum(md.fin_walkout) + parseNum(md.fin_talent) + parseNum(md.fin_prodCoord) + parseNum(md.fin_showCoord) + savedCols.reduce((s, c) => s + parseNum(md[c.key]), 0);
+                                rows.push(
+                                  <tr key={`${p.id}_${mo}`} style={{ background: "#9b6dff06" }}>
+                                    <td style={{ ...colStyle, textAlign: "left", paddingLeft: 40 }}>
+                                      <span style={{ fontSize: 11, color: "#9b6dff", fontWeight: 600 }}>{mo}</span>
+                                    </td>
+                                    <td style={{ ...colStyle, textAlign: "center" }}>
+                                      <span style={{ fontSize: 8, color: "var(--textGhost)" }}>{monthAbbr[mi]}</span>
+                                    </td>
+                                    <td style={{ ...colStyle, textAlign: "center", fontSize: 9, color: "var(--textGhost)" }}>{monthAbbr[mi]}</td>
+                                    <td style={{ ...colStyle, textAlign: "left" }}>
+                                      <input value={md.fin_notes || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 10, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
+                                    </td>
+                                    <td style={{ ...colStyle, textAlign: "right" }}>
+                                      <input value={md.fin_walkout || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_walkout), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_walkout", v.toFixed(2)); }} />
+                                    </td>
+                                    <td style={{ ...colStyle, textAlign: "right" }}>
+                                      <input value={md.fin_talent || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_talent), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_talent", v.toFixed(2)); }} />
+                                    </td>
+                                    <td style={{ ...colStyle, textAlign: "right" }}>
+                                      <input value={md.fin_prodCoord || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_prodCoord), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_prodCoord", v.toFixed(2)); }} />
+                                    </td>
+                                    <td style={{ ...colStyle, textAlign: "right" }}>
+                                      <input value={md.fin_showCoord || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_showCoord), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_showCoord", v.toFixed(2)); }} />
+                                    </td>
+                                    {savedCols.map(c => (
+                                      <td key={c.key} style={{ ...colStyle, textAlign: "right" }}>
+                                        <input value={md[c.key] || ""} onChange={e => updateRetainerMonth(p.id, mo, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md[c.key]), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, c.key, v.toFixed(2)); }} />
+                                      </td>
+                                    ))}
+                                    <td style={{ ...colStyle, textAlign: "right", fontWeight: 600, color: moneyColor(monthRowSum), fontSize: 11 }}>
+                                      {monthRowSum !== 0 ? fmtMoney(monthRowSum) : "—"}
+                                    </td>
+                                  </tr>
+                                );
+                              });
+                            }
+
+                            return rows;
                           })}
                           {/* Totals row */}
                           <tr style={{ background: "var(--bgHover)", borderTop: "2px solid var(--border)" }}>
@@ -5509,7 +5638,7 @@ export default function Dashboard({ user, onLogout }) {
                       </table>
                     </div>
                   </div>
-                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Data saves live to Supabase · Month auto-derived from event date · Click project name to jump to overview</div>
+                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Data saves live to Supabase · Month auto-derived from event date · Click project name to jump to overview · Right-click project name to toggle retainer</div>
                 </div>
               );
             })()}
@@ -7330,7 +7459,7 @@ export default function Dashboard({ user, onLogout }) {
               </div>
               {/* Tabs */}
               <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
-                {[["profile", "🪪 Profile"], ...(isAdmin ? [["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["display", "🔤 Display"]] : []), ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
+                {[["profile", "🪪 Profile"], ...(isAdmin ? [["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["display", "🔤 Display"], ["notifications", "🔔 Notifications"]] : []), ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
                   <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
                 ))}
               </div>
@@ -8250,6 +8379,26 @@ export default function Dashboard({ user, onLogout }) {
                         <img src={appSettings.branding.dashboardBg} alt="Dashboard BG" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
                         <div style={{ position: "absolute", bottom: 6, right: 6, fontSize: 8, padding: "2px 6px", background: "rgba(0,0,0,0.6)", color: "#fff", borderRadius: 4 }}>Current dashboard background</div>
                       </div>
+                      {/* Zoom & Position Controls */}
+                      <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", minWidth: 40 }}>ZOOM</label>
+                          <input type="range" min="50" max="250" step="5" value={appSettings.branding?.bgZoom || 100} onChange={e => {
+                            const val = parseInt(e.target.value);
+                            setAppSettings(prev => ({ ...prev, branding: { ...(prev.branding || {}), bgZoom: val } }));
+                            setSettingsDirty(true);
+                          }} style={{ flex: 1, cursor: "pointer", accentColor: "#ff6b4a" }} />
+                          <span style={{ fontSize: 10, fontWeight: 600, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace", minWidth: 36, textAlign: "right" }}>{appSettings.branding?.bgZoom || 100}%</span>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <label style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", minWidth: 40 }}>ALIGN</label>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {[["top left", "↖"], ["top center", "↑"], ["top right", "↗"], ["center left", "←"], ["center center", "•"], ["center right", "→"], ["bottom left", "↙"], ["bottom center", "↓"], ["bottom right", "↘"]].map(([pos, icon]) => (
+                              <button key={pos} onClick={() => { setAppSettings(prev => ({ ...prev, branding: { ...(prev.branding || {}), bgPosition: pos } })); setSettingsDirty(true); }} style={{ width: 26, height: 26, borderRadius: 4, border: `1px solid ${(appSettings.branding?.bgPosition || "center center") === pos ? "#ff6b4a" : "var(--borderSub)"}`, background: (appSettings.branding?.bgPosition || "center center") === pos ? "#ff6b4a18" : "var(--bgInput)", color: (appSettings.branding?.bgPosition || "center center") === pos ? "#ff6b4a" : "var(--textGhost)", cursor: "pointer", fontSize: 10, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}>{icon}</button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     ) : (
                       <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 100, border: "2px dashed var(--borderSub)", borderRadius: 8, cursor: "pointer", color: "var(--textGhost)", fontSize: 11, gap: 4 }}>
                         <span style={{ fontSize: 20 }}>🖼</span>
@@ -8274,6 +8423,93 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 11, fontWeight: 700, color: "#3da5db", marginBottom: 6 }}>💡 Browser Tab Icon (Favicon)</div>
                     <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6 }}>
                       The tab icon is set via a file in the codebase. To change it, replace <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>app/favicon.ico</code> with your own 32×32px .ico file and redeploy. You can generate one at <span style={{ color: "#ff6b4a" }}>favicon.io</span>.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ═══ NOTIFICATIONS TAB ═══ */}
+              {settingsTab === "notifications" && (
+                <div style={{ padding: "0 6px" }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", marginBottom: 4 }}>Notification Preferences</div>
+                  <div style={{ fontSize: 10, color: "var(--textMuted)", marginBottom: 16, lineHeight: 1.5 }}>Get notified about deadlines, vendor compliance, and project updates.</div>
+
+                  {/* Email notifications */}
+                  <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>📧 Email Notifications</div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 2 }}>Sends to your login email: {user?.email}</div>
+                      </div>
+                      <button onClick={() => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), emailEnabled: !(prev.notifications?.emailEnabled) } })); setSettingsDirty(true); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid var(--borderSub)", background: appSettings.notifications?.emailEnabled ? "#4ecb7118" : "var(--bgCard)", color: appSettings.notifications?.emailEnabled ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+                        {appSettings.notifications?.emailEnabled ? "✓ Enabled" : "Enable"}
+                      </button>
+                    </div>
+                    {appSettings.notifications?.emailEnabled && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingTop: 8, borderTop: "1px solid var(--borderSub)" }}>
+                        {[
+                          { key: "workbackDue", label: "Work Back items due soon (48hr warning)", icon: "◄" },
+                          { key: "workbackOverdue", label: "Work Back items overdue", icon: "🔴" },
+                          { key: "vendorCompliance", label: "Vendor compliance docs missing/expired", icon: "⊕" },
+                          { key: "projectUpdate", label: "Project status changes", icon: "📁" },
+                          { key: "dailyDigest", label: "Daily digest summary (9 AM)", icon: "📋" },
+                        ].map(n => (
+                          <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 11, color: "var(--text)" }}>
+                            <input type="checkbox" checked={!!(appSettings.notifications?.email || {})[n.key]} onChange={() => {
+                              setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), email: { ...(prev.notifications?.email || {}), [n.key]: !(prev.notifications?.email || {})[n.key] } } }));
+                              setSettingsDirty(true);
+                            }} style={{ cursor: "pointer" }} />
+                            <span style={{ fontSize: 12, width: 16, textAlign: "center" }}>{n.icon}</span>
+                            {n.label}
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SMS/iMessage notifications */}
+                  <div style={{ marginBottom: 16, padding: "14px 16px", background: "var(--bgInput)", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text)", display: "flex", alignItems: "center", gap: 6 }}>💬 SMS / Text Notifications</div>
+                        <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 2 }}>Critical alerts sent via SMS</div>
+                      </div>
+                      <button onClick={() => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), smsEnabled: !(prev.notifications?.smsEnabled) } })); setSettingsDirty(true); }} style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid var(--borderSub)", background: appSettings.notifications?.smsEnabled ? "#4ecb7118" : "var(--bgCard)", color: appSettings.notifications?.smsEnabled ? "#4ecb71" : "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+                        {appSettings.notifications?.smsEnabled ? "✓ Enabled" : "Enable"}
+                      </button>
+                    </div>
+                    {appSettings.notifications?.smsEnabled && (
+                      <div style={{ paddingTop: 8, borderTop: "1px solid var(--borderSub)" }}>
+                        <div style={{ marginBottom: 8 }}>
+                          <label style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>PHONE NUMBER</label>
+                          <input value={appSettings.notifications?.smsPhone || ""} onChange={e => { setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), smsPhone: e.target.value } })); setSettingsDirty(true); }} placeholder="+1 (310) 555-1234" style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {[
+                            { key: "smsOverdue", label: "Overdue work back alerts", icon: "🔴" },
+                            { key: "smsUrgent", label: "Urgent compliance deadlines", icon: "⚠️" },
+                          ].map(n => (
+                            <label key={n.key} style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 11, color: "var(--text)" }}>
+                              <input type="checkbox" checked={!!(appSettings.notifications?.sms || {})[n.key]} onChange={() => {
+                                setAppSettings(prev => ({ ...prev, notifications: { ...(prev.notifications || {}), sms: { ...(prev.notifications?.sms || {}), [n.key]: !(prev.notifications?.sms || {})[n.key] } } }));
+                                setSettingsDirty(true);
+                              }} style={{ cursor: "pointer" }} />
+                              <span style={{ fontSize: 12, width: 16, textAlign: "center" }}>{n.icon}</span>
+                              {n.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Setup info */}
+                  <div style={{ padding: "14px 16px", background: "#3da5db08", border: "1px solid #3da5db20", borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#3da5db", marginBottom: 6 }}>💡 Notification Setup</div>
+                    <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.6 }}>
+                      Email notifications require a <strong>Resend</strong> or <strong>SendGrid</strong> API key in your Vercel env vars (<code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>RESEND_API_KEY</code>).
+                      SMS uses <strong>Twilio</strong> (<code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>TWILIO_SID</code>, <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>TWILIO_AUTH_TOKEN</code>, <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>TWILIO_PHONE</code>).
+                      A cron job at <code style={{ background: "var(--bgInput)", padding: "1px 4px", borderRadius: 3, fontSize: 9 }}>/api/cron/notify</code> checks for due items daily.
                     </div>
                   </div>
                 </div>
@@ -8530,80 +8766,68 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* ═══ FIRST-LOGIN PROFILE SETUP MODAL ═══ */}
       {showProfileSetup && (() => {
-        const existingProfile = (appSettings.userProfiles || {})[user?.email] || {};
-        const ProfileSetupInner = () => {
-          const [pf, setPf] = useState({
-            firstName: existingProfile.firstName || user?.name?.split(" ")[0] || "",
-            lastName: existingProfile.lastName || user?.name?.split(" ").slice(1).join(" ") || "",
-            title: existingProfile.title || "",
-            company: existingProfile.company || "",
-            phone: existingProfile.phone || "",
-            department: existingProfile.department || "",
-            address: existingProfile.address || "",
-            avatar: existingProfile.avatar || "",
-          });
-          const handleAvatar = (e) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            if (file.size > 5000000) { alert("Image must be under 5MB"); return; }
-            const reader = new FileReader();
-            reader.onload = (ev) => { setAvatarCropSrc(ev.target.result); setAvatarCropCallback(() => (dataUrl) => setPf(p => ({ ...p, avatar: dataUrl }))); };
-            reader.readAsDataURL(file);
-            e.target.value = "";
-          };
-          const initials = ((pf.firstName || "")[0] || "") + ((pf.lastName || "")[0] || "");
-          const canSave = pf.firstName && pf.lastName;
-          const fieldStyle = { width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" };
-          return (
-            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.3s ease", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
-                <div style={{ padding: "28px 28px 20px", textAlign: "center", borderBottom: "1px solid var(--borderSub)" }}>
-                  <div style={{ fontSize: 32, marginBottom: 8 }}>👋</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>Welcome to Command Center</div>
-                  <div style={{ fontSize: 12, color: "var(--textMuted)", marginTop: 6, lineHeight: 1.5 }}>Set up your profile so your team knows who you are. This only takes a moment.</div>
-                </div>
-                <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
-                  {/* Avatar */}
-                  <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
-                    <div style={{ position: "relative" }}>
-                      {pf.avatar ? (
-                        <img src={pf.avatar} alt="" style={{ width: 80, height: 80, borderRadius: "50%", objectFit: "cover", border: "3px solid #ff6b4a40" }} />
-                      ) : (
-                        <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#ff6b4a20", border: "3px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#ff6b4a" }}>{initials.toUpperCase() || "?"}</div>
-                      )}
-                      <label style={{ position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: "50%", background: "var(--bgCard)", border: "1px solid var(--borderActive)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13 }} title="Upload photo">
-                        📷
-                        <input type="file" accept="image/*" onChange={handleAvatar} style={{ display: "none" }} />
-                      </label>
-                    </div>
-                  </div>
-                  {/* Fields */}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME *</label><input value={pf.firstName} onChange={e => setPf(p => ({ ...p, firstName: e.target.value }))} style={fieldStyle} /></div>
-                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME *</label><input value={pf.lastName} onChange={e => setPf(p => ({ ...p, lastName: e.target.value }))} style={fieldStyle} /></div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>TITLE / POSITION</label><input value={pf.title} onChange={e => setPf(p => ({ ...p, title: e.target.value }))} placeholder="Executive Producer" style={fieldStyle} /></div>
-                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY</label><input value={pf.company} onChange={e => setPf(p => ({ ...p, company: e.target.value }))} placeholder="WE ARE ADPTV" style={fieldStyle} /></div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><input value={pf.phone} onChange={e => setPf(p => ({ ...p, phone: e.target.value }))} placeholder="(555) 123-4567" type="tel" style={fieldStyle} /></div>
-                    <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label><input value={pf.department} onChange={e => setPf(p => ({ ...p, department: e.target.value }))} placeholder="Production" style={fieldStyle} /></div>
-                  </div>
-                  <div style={{ marginBottom: 14 }}>
-                    <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
-                    <input value={pf.address} onChange={e => setPf(p => ({ ...p, address: e.target.value }))} placeholder="123 Main St, Miami FL" style={fieldStyle} />
+        const pf = profileSetupForm;
+        const setPf = (updater) => setProfileSetupForm(typeof updater === "function" ? updater : () => updater);
+        const handleAvatar = (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          if (file.size > 5000000) { alert("Image must be under 5MB"); return; }
+          const reader = new FileReader();
+          reader.onload = (ev) => { setAvatarCropSrc(ev.target.result); setAvatarCropCallback(() => (dataUrl) => setProfileSetupForm(p => ({ ...p, avatar: dataUrl }))); };
+          reader.readAsDataURL(file);
+          e.target.value = "";
+        };
+        const initials = ((pf.firstName || "")[0] || "") + ((pf.lastName || "")[0] || "");
+        const canSave = pf.firstName && pf.lastName;
+        const fieldStyle = { width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" };
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.3s ease", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+              <div style={{ padding: "28px 28px 20px", textAlign: "center", borderBottom: "1px solid var(--borderSub)" }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>👋</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>Welcome to Command Center</div>
+                <div style={{ fontSize: 12, color: "var(--textMuted)", marginTop: 6, lineHeight: 1.5 }}>Set up your profile so your team knows who you are. This only takes a moment.</div>
+              </div>
+              <div style={{ padding: "20px 28px 24px", overflowY: "auto", flex: 1 }}>
+                {/* Avatar */}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 20 }}>
+                  <div style={{ position: "relative" }}>
+                    {pf.avatar ? (
+                      <img src={pf.avatar} alt="" style={{ width: 80, height: 80, borderRadius: "50%", objectFit: "cover", border: "3px solid #ff6b4a40" }} />
+                    ) : (
+                      <div style={{ width: 80, height: 80, borderRadius: "50%", background: "#ff6b4a20", border: "3px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 700, color: "#ff6b4a" }}>{initials.toUpperCase() || "?"}</div>
+                    )}
+                    <label style={{ position: "absolute", bottom: 0, right: 0, width: 28, height: 28, borderRadius: "50%", background: "var(--bgCard)", border: "1px solid var(--borderActive)", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 13 }} title="Upload photo">
+                      📷
+                      <input type="file" accept="image/*" onChange={handleAvatar} style={{ display: "none" }} />
+                    </label>
                   </div>
                 </div>
-                <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid var(--borderSub)" }}>
-                  <button onClick={() => setShowProfileSetup(false)} style={{ padding: "10px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Skip for now</button>
-                  <button disabled={!canSave} onClick={() => saveUserProfile(pf)} style={{ padding: "10px 28px", background: canSave ? "#ff6b4a" : "#ff6b4a40", border: "none", borderRadius: 8, color: "#fff", cursor: canSave ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700, opacity: canSave ? 1 : 0.5 }}>Save Profile</button>
+                {/* Fields */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>FIRST NAME *</label><input value={pf.firstName} onChange={e => setPf(p => ({ ...p, firstName: e.target.value }))} style={fieldStyle} /></div>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>LAST NAME *</label><input value={pf.lastName} onChange={e => setPf(p => ({ ...p, lastName: e.target.value }))} style={fieldStyle} /></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>TITLE / POSITION</label><input value={pf.title} onChange={e => setPf(p => ({ ...p, title: e.target.value }))} placeholder="Executive Producer" style={fieldStyle} /></div>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>COMPANY</label><input value={pf.company} onChange={e => setPf(p => ({ ...p, company: e.target.value }))} placeholder="WE ARE ADPTV" style={fieldStyle} /></div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>PHONE</label><input value={pf.phone} onChange={e => setPf(p => ({ ...p, phone: e.target.value }))} placeholder="(555) 123-4567" type="tel" style={fieldStyle} /></div>
+                  <div><label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>DEPARTMENT</label><input value={pf.department} onChange={e => setPf(p => ({ ...p, department: e.target.value }))} placeholder="Production" style={fieldStyle} /></div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, display: "block", marginBottom: 4 }}>ADDRESS</label>
+                  <input value={pf.address} onChange={e => setPf(p => ({ ...p, address: e.target.value }))} placeholder="123 Main St, Miami FL" style={fieldStyle} />
                 </div>
               </div>
+              <div style={{ padding: "16px 28px 24px", display: "flex", gap: 10, justifyContent: "flex-end", borderTop: "1px solid var(--borderSub)" }}>
+                <button onClick={() => setShowProfileSetup(false)} style={{ padding: "10px 20px", background: "transparent", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>Skip for now</button>
+                <button disabled={!canSave} onClick={() => saveUserProfile(pf)} style={{ padding: "10px 28px", background: canSave ? "#ff6b4a" : "#ff6b4a40", border: "none", borderRadius: 8, color: "#fff", cursor: canSave ? "pointer" : "not-allowed", fontSize: 13, fontWeight: 700, opacity: canSave ? 1 : 0.5 }}>Save Profile</button>
+              </div>
             </div>
-          );
-        };
-        return <ProfileSetupInner />;
+          </div>
+        );
       })()}
 
       {showAddContact && (
