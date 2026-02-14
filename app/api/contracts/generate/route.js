@@ -187,6 +187,7 @@ export async function POST(request) {
     if (body.action === 'bootstrap-templates') return handleBootstrap();
     if (body.action === 'list-templates') return handleListTemplates();
     if (body.action === 'generate') return handleGenerate(body);
+    if (body.action === 'export-pdf') return handleExportPdf(body);
     return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
   } catch (error) {
     console.error('[Contract] Fatal error:', error);
@@ -284,7 +285,7 @@ async function handleGenerate(body) {
   }
   const allPH = contractType === 'contractor'
     ? ['EFFECTIVE_DAY','EFFECTIVE_MONTH','EFFECTIVE_YEAR','CONTRACTOR_NAME','CONTRACTOR_ENTITY_TYPE','CONTRACTOR_ADDRESS','CONTRACTOR_EXPERTISE','SOW_TERM','SOW_PROJECT','SOW_COMPENSATION','SOW_PAYMENT_TERMS','SOW_DELIVERABLES','SOW_TIMELINE','SOW_EXECUTION_DATE','AGREEMENT_DATE']
-    : ['EFFECTIVE_DAY','EFFECTIVE_MONTH','EFFECTIVE_YEAR','VENDOR_NAME','VENDOR_ENTITY_DESC','VENDOR_TITLE','CLIENT_NAME','EVENT_NAME','EVENT_DATES','EVENT_TIME','VENUE_NAME','VENUE_ADDRESS','VENDOR_DELIVERABLES','PAYMENT_TERMS','TIMELINE'];
+    : ['EFFECTIVE_DAY','EFFECTIVE_MONTH','EFFECTIVE_YEAR','VENDOR_NAME','VENDOR_ENTITY_DESC','VENDOR_TITLE','CLIENT_NAME','EVENT_NAME','EVENT_DATES','EVENT_TIME','VENUE_NAME','VENUE_ADDRESS','DOCUMENT_TYPE','DOCUMENT_DATE','VENDOR_DELIVERABLES','PAYMENT_TERMS','TIMELINE','INSURANCE_COVERAGE'];
   for (const p of allPH) {
     if (!fields[p]) requests.push({ replaceAllText: { containsText: { text: `{{${p}}}`, matchCase: true }, replaceText: '_______________' } });
   }
@@ -313,12 +314,27 @@ async function handleGenerate(body) {
     } catch (e) { console.error('[Contract] Folder error:', e.message); }
   }
 
+  const docFile = await drive.files.get({ fileId: newDocId, fields: 'id, name, webViewLink', ...SD });
+  return NextResponse.json({ success: true, docId: newDocId, docName: docFile.data.name, docUrl: docFile.data.webViewLink || `https://docs.google.com/document/d/${newDocId}/edit`, folderPath, targetFolderId });
+}
+
+// ─── EXPORT PDF: Convert existing doc to PDF (step 2) ───
+async function handleExportPdf(body) {
+  const { docId, docName, invoiceLink, contractType, targetFolderId: folderId } = body;
+  if (!docId) return NextResponse.json({ error: 'Missing docId' }, { status: 400 });
+
+  const auth = getAuth();
+  const drive = google.drive({ version: 'v3', auth });
+  const sharedDrive = await findSharedDrive(drive);
+  const driveId = sharedDrive?.id;
+  const targetFolderId = folderId || driveId;
+
   let contractPdfUrl = null, contractPdfName = null, combinedPdfUrl = null, combinedPdfName = null, hasInvoiceMerged = false;
   try {
     console.log('[Contract] Exporting as PDF...');
-    const pdfRes = await drive.files.export({ fileId: newDocId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' });
+    const pdfRes = await drive.files.export({ fileId: docId, mimeType: 'application/pdf' }, { responseType: 'arraybuffer' });
     const contractPdfBytes = Buffer.from(pdfRes.data);
-    contractPdfName = `${docName}.pdf`;
+    contractPdfName = `${docName || 'Contract'}.pdf`;
     const invoiceFileId = invoiceLink ? extractDriveFileId(invoiceLink) : null;
     if (contractType === 'vendor' && invoiceFileId) {
       try {
@@ -333,17 +349,17 @@ async function handleGenerate(body) {
         sep.drawText('Vendor Invoice / Proposal', { x: width / 2 - 95, y: height / 2 - 15, size: 14 });
         try { const iDoc = await PDFDocument.load(invoiceBytes); for (const p of await merged.copyPages(iDoc, iDoc.getPageIndices())) merged.addPage(p); }
         catch { try { let img; try { img = await merged.embedPng(invoiceBytes); } catch { img = await merged.embedJpg(invoiceBytes); } const ip = merged.addPage(); const s = Math.min(ip.getWidth() / img.width, ip.getHeight() / img.height) * 0.9; ip.drawImage(img, { x: (ip.getWidth() - img.width * s) / 2, y: (ip.getHeight() - img.height * s) / 2, width: img.width * s, height: img.height * s }); } catch { merged.addPage().drawText('Invoice could not be embedded.', { x: 50, y: 500, size: 14 }); } }
-        combinedPdfName = `${docName}_COMBINED.pdf`;
-        const cf = await drive.files.create({ requestBody: { name: combinedPdfName, mimeType: 'application/pdf', parents: [targetFolderId || driveId] }, media: { mimeType: 'application/pdf', body: Readable.from([Buffer.from(await merged.save())]) }, fields: 'id, name, webViewLink', supportsAllDrives: true });
+        combinedPdfName = `${docName || 'Contract'}_COMBINED.pdf`;
+        const cf = await drive.files.create({ requestBody: { name: combinedPdfName, mimeType: 'application/pdf', parents: [targetFolderId] }, media: { mimeType: 'application/pdf', body: Readable.from([Buffer.from(await merged.save())]) }, fields: 'id, name, webViewLink', supportsAllDrives: true });
         combinedPdfUrl = cf.data.webViewLink; hasInvoiceMerged = true;
       } catch (e) { console.error('[Contract] PDF merge failed:', e.message); }
     }
     if (!combinedPdfUrl) {
-      const pf = await drive.files.create({ requestBody: { name: contractPdfName, mimeType: 'application/pdf', parents: [targetFolderId || driveId] }, media: { mimeType: 'application/pdf', body: Readable.from([contractPdfBytes]) }, fields: 'id, name, webViewLink', supportsAllDrives: true });
+      const pf = await drive.files.create({ requestBody: { name: contractPdfName, mimeType: 'application/pdf', parents: [targetFolderId] }, media: { mimeType: 'application/pdf', body: Readable.from([contractPdfBytes]) }, fields: 'id, name, webViewLink', supportsAllDrives: true });
       contractPdfUrl = pf.data.webViewLink;
     }
-  } catch (e) { console.error('[Contract] PDF export failed:', e.message); }
+  } catch (e) { console.error('[Contract] PDF export failed:', e.message); return NextResponse.json({ error: 'PDF export failed: ' + e.message }, { status: 500 }); }
 
-  const docFile = await drive.files.get({ fileId: newDocId, fields: 'id, name, webViewLink', ...SD });
-  return NextResponse.json({ success: true, docId: newDocId, docName: docFile.data.name, docUrl: docFile.data.webViewLink || `https://docs.google.com/document/d/${newDocId}/edit`, pdfUrl: combinedPdfUrl || contractPdfUrl, pdfName: combinedPdfUrl ? combinedPdfName : contractPdfName, folderPath, hasCombinedPdf: !!(combinedPdfUrl || contractPdfUrl), hasInvoiceMerged });
+  console.log(`[Contract] PDF saved: ${combinedPdfName || contractPdfName}`);
+  return NextResponse.json({ success: true, pdfUrl: combinedPdfUrl || contractPdfUrl, pdfName: combinedPdfUrl ? combinedPdfName : contractPdfName, hasInvoiceMerged });
 }

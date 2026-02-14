@@ -2068,9 +2068,12 @@ export default function Dashboard({ user, onLogout }) {
       EVENT_TIME: "",
       VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location ? project.location.split(",")[0].trim() : "",
       VENUE_ADDRESS: project.venueAddress || (project.venue && project.venue.includes(",") ? project.venue : project.location || ""),
+      DOCUMENT_TYPE: "proposal",
+      DOCUMENT_DATE: "",
       VENDOR_DELIVERABLES: "",
       PAYMENT_TERMS: "Net 15 — upon completion of the Event",
       TIMELINE: termStr || eventDateStr,
+      INSURANCE_COVERAGE: "One Million Dollars ($1,000,000) per occurrence and Two Million Dollars ($2,000,000) in the aggregate",
     };
 
     // Check for saved draft on this vendor
@@ -2126,13 +2129,13 @@ export default function Dashboard({ user, onLogout }) {
 
     try {
       const data = await doGenerate();
-      // Update vendor compliance to mark contract as done
+      // Update vendor compliance to mark contract as done (doc created, PDF comes later)
       setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : {
         ...v,
-        compliance: { ...v.compliance, contract: { done: true, file: data.pdfName || data.docName, date: new Date().toISOString().split("T")[0], link: data.pdfUrl || data.docUrl } },
+        compliance: { ...v.compliance, contract: { done: true, file: data.docName, date: new Date().toISOString().split("T")[0], link: data.docUrl } },
         contractDraft: undefined,
       }));
-      logActivity("contract", `generated ${contractModal.contractType} agreement for "${contractModal.vendor.name}"${data.hasInvoiceMerged ? " (with invoice)" : ""}`, project?.name);
+      logActivity("contract", `generated ${contractModal.contractType} agreement for "${contractModal.vendor.name}"`, project?.name);
       setContractModal(prev => ({ ...prev, generating: false, success: data }));
     } catch (e) {
       setContractModal(prev => ({ ...prev, generating: false, error: e.message }));
@@ -8542,14 +8545,14 @@ export default function Dashboard({ user, onLogout }) {
                         return m ? m[1] : null;
                       };
                       const placeholders = type === "vendor"
-                        ? ["EFFECTIVE_DAY", "EFFECTIVE_MONTH", "EFFECTIVE_YEAR", "VENDOR_NAME", "VENDOR_ENTITY_DESC", "VENDOR_TITLE", "CLIENT_NAME", "EVENT_NAME", "EVENT_DATES", "EVENT_TIME", "VENUE_NAME", "VENUE_ADDRESS", "VENDOR_DELIVERABLES", "PAYMENT_TERMS", "TIMELINE"]
+                        ? ["EFFECTIVE_DAY", "EFFECTIVE_MONTH", "EFFECTIVE_YEAR", "VENDOR_NAME", "VENDOR_ENTITY_DESC", "VENDOR_TITLE", "CLIENT_NAME", "EVENT_NAME", "EVENT_DATES", "EVENT_TIME", "VENUE_NAME", "VENUE_ADDRESS", "DOCUMENT_TYPE", "DOCUMENT_DATE", "VENDOR_DELIVERABLES", "PAYMENT_TERMS", "TIMELINE", "INSURANCE_COVERAGE"]
                         : ["EFFECTIVE_DAY", "EFFECTIVE_MONTH", "EFFECTIVE_YEAR", "CONTRACTOR_NAME", "CONTRACTOR_ENTITY_TYPE", "CONTRACTOR_ADDRESS", "CONTRACTOR_EXPERTISE", "SOW_TERM", "SOW_PROJECT", "SOW_COMPENSATION", "SOW_PAYMENT_TERMS", "SOW_DELIVERABLES", "SOW_TIMELINE", "SOW_EXECUTION_DATE", "AGREEMENT_DATE"];
 
                       return (
-                        <div key={type} style={{ background: "var(--bgInput)", border: `1px solid ${tpl.id ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 10, padding: "16px 20px", marginBottom: 14 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-                            <span style={{ fontSize: 16 }}>{type === "contractor" ? "👤" : "🏢"}</span>
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{type === "contractor" ? "Contractor Agreement" : "Vendor Agreement"}</span>
+                        <div key={type} style={{ background: "var(--bgInput)", border: `1px solid ${tpl.id ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 8, padding: "12px 16px", marginBottom: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                            <span style={{ fontSize: 14 }}>{type === "contractor" ? "👤" : "🏢"}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{type === "contractor" ? "Contractor Agreement" : "Vendor Agreement"}</span>
                             {tpl.id && <span style={{ fontSize: 8, padding: "2px 6px", borderRadius: 3, background: "#4ecb7120", color: "#4ecb71", fontWeight: 700 }}>LINKED</span>}
                           </div>
 
@@ -8563,7 +8566,7 @@ export default function Dashboard({ user, onLogout }) {
                                 setSettingsDirty(true);
                               }}
                               placeholder="Paste Google Doc URL..."
-                              style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: `1px solid ${tpl.id ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 6, color: "var(--text)", fontSize: 11, fontFamily: "'DM Sans', sans-serif", outline: "none" }}
+                              style={{ flex: 1, padding: "6px 10px", background: "var(--bgCard)", border: `1px solid ${tpl.id ? "#4ecb7130" : "var(--borderSub)"}`, borderRadius: 6, color: "var(--text)", fontSize: 10, fontFamily: "'DM Sans', sans-serif", outline: "none", minWidth: 0 }}
                             />
                             {tpl.id && (
                               <button onClick={() => window.open(`https://docs.google.com/document/d/${tpl.id}/edit`, "_blank")} style={{ padding: "7px 12px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -8573,18 +8576,18 @@ export default function Dashboard({ user, onLogout }) {
                           </div>
 
                           {tpl.id && (
-                            <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 8 }}>
-                              Doc ID: {tpl.id}
+                            <div style={{ fontSize: 8, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginBottom: 6, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              ID: {tpl.id}
                             </div>
                           )}
 
-                          <details style={{ marginTop: 4 }}>
-                            <summary style={{ fontSize: 10, color: "var(--textMuted)", cursor: "pointer", userSelect: "none" }}>
-                              Available placeholders ({placeholders.length})
+                          <details style={{ marginTop: 2 }}>
+                            <summary style={{ fontSize: 9, color: "var(--textMuted)", cursor: "pointer", userSelect: "none" }}>
+                              Placeholders ({placeholders.length})
                             </summary>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 6 }}>
                               {placeholders.map(p => (
-                                <code key={p} onClick={() => { navigator.clipboard.writeText(`{{${p}}}`); }} style={{ fontSize: 9, padding: "2px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, color: "var(--textSub)", cursor: "pointer" }} title="Click to copy">{`{{${p}}}`}</code>
+                                <code key={p} onClick={() => { navigator.clipboard.writeText(`{{${p}}}`); }} style={{ fontSize: 8, padding: "1px 4px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 2, color: "var(--textSub)", cursor: "pointer", lineHeight: 1.4 }} title="Click to copy">{`{{${p}}}`}</code>
                               ))}
                             </div>
                           </details>
@@ -8592,9 +8595,9 @@ export default function Dashboard({ user, onLogout }) {
                       );
                     })}
 
-                    <div style={{ marginTop: 16, padding: "14px 18px", background: "var(--bgInput)", borderRadius: 8, border: "1px solid var(--borderSub)" }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 8 }}>HOW TO SET UP</div>
-                      <div style={{ fontSize: 10, color: "var(--textMuted)", lineHeight: 1.8 }}>
+                    <div style={{ marginTop: 10, padding: "10px 14px", background: "var(--bgInput)", borderRadius: 6, border: "1px solid var(--borderSub)" }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.5, marginBottom: 6 }}>HOW TO SET UP</div>
+                      <div style={{ fontSize: 9, color: "var(--textMuted)", lineHeight: 1.8 }}>
                         1. Create your contract template in <strong>Google Docs</strong> with your branding and formatting<br/>
                         2. Add <code style={{ background: "var(--bgCard)", padding: "1px 4px", borderRadius: 3 }}>{"{{PLACEHOLDER}}"}</code> markers where fields should be filled (e.g. <code style={{ background: "var(--bgCard)", padding: "1px 4px", borderRadius: 3 }}>{"{{VENDOR_NAME}}"}</code>)<br/>
                         3. Make sure the doc is on your shared drive (<strong>ADPTV LLC</strong>)<br/>
@@ -9559,8 +9562,10 @@ export default function Dashboard({ user, onLogout }) {
               VENDOR_TITLE: v.deptId || v.type || "", CLIENT_NAME: project.client || "",
               EVENT_NAME: project.name || "", EVENT_DATES: eventDateStr, EVENT_TIME: "",
               VENUE_NAME: project.venue ? project.venue.split(",")[0].trim() : project.location ? project.location.split(",")[0].trim() : "",
-              VENUE_ADDRESS: project.venueAddress || (project.venue && project.venue.includes(",") ? project.venue : project.location || ""), VENDOR_DELIVERABLES: "",
+              VENUE_ADDRESS: project.venueAddress || (project.venue && project.venue.includes(",") ? project.venue : project.location || ""),
+              DOCUMENT_TYPE: "proposal", DOCUMENT_DATE: "", VENDOR_DELIVERABLES: "",
               PAYMENT_TERMS: "Net 15 — upon completion of the Event", TIMELINE: termStr || eventDateStr,
+              INSURANCE_COVERAGE: "One Million Dollars ($1,000,000) per occurrence and Two Million Dollars ($2,000,000) in the aggregate",
             }}));
           }
         };
@@ -9589,6 +9594,15 @@ export default function Dashboard({ user, onLogout }) {
             { key: "VENDOR_ENTITY_DESC", label: "Entity Description", placeholder: "a California LLC" },
             { key: "VENDOR_TITLE", label: "Vendor Role / Title", auto: !!contractModal.vendor.deptId },
           ]},
+          { section: "Document Reference", fields: [
+            { key: "DOCUMENT_TYPE", label: "Document Type", select: [
+              { value: "proposal", label: "Proposal" },
+              { value: "quote", label: "Quote" },
+              { value: "invoice", label: "Invoice" },
+              { value: "budget", label: "Budget" },
+            ]},
+            { key: "DOCUMENT_DATE", label: "Document Date", placeholder: "March 1, 2026" },
+          ]},
           { section: "Event Details (Exhibit A)", fields: [
             { key: "CLIENT_NAME", label: "Client Name", auto: !!project.client },
             { key: "EVENT_NAME", label: "Event Name", auto: true },
@@ -9599,6 +9613,12 @@ export default function Dashboard({ user, onLogout }) {
             { key: "VENDOR_DELIVERABLES", label: "Vendor Deliverables", placeholder: "Describe scope of services...", required: true, multiline: true },
             { key: "PAYMENT_TERMS", label: "Payment Terms", auto: true },
             { key: "TIMELINE", label: "Timeline", auto: !!(project.engagementDates?.start || project.eventDates?.start) },
+          ]},
+          { section: "Insurance", fields: [
+            { key: "INSURANCE_COVERAGE", label: "Coverage Level", select: [
+              { value: "One Million Dollars ($1,000,000) per occurrence and Two Million Dollars ($2,000,000) in the aggregate", label: "Standard — $1M / $2M" },
+              { value: "Five Million Dollars ($5,000,000) per occurrence and Ten Million Dollars ($10,000,000) in the aggregate", label: "High Risk — $5M / $10M" },
+            ]},
           ]},
         ];
 
@@ -9667,6 +9687,10 @@ export default function Dashboard({ user, onLogout }) {
                         </div>
                         {fd.multiline ? (
                           <textarea value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} rows={3} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
+                        ) : fd.select ? (
+                          <select value={f[fd.key] || fd.select[0]?.value || ""} onChange={e => updateField(fd.key, e.target.value)} style={{ width: "100%", padding: "8px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'", cursor: "pointer", appearance: "auto" }}>
+                            {fd.select.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+                          </select>
                         ) : (
                           <input value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} onBlur={fd.currency ? (e => { const formatted = formatCurrency(e.target.value); if (formatted !== e.target.value) updateField(fd.key, formatted); }) : undefined} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
                         )}
@@ -9744,19 +9768,59 @@ export default function Dashboard({ user, onLogout }) {
                     <div style={{ fontSize: 10, color: "var(--textFaint)" }}>Saved to {contractModal.success.folderPath || "Google Drive"}</div>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button onClick={() => { window.open(contractModal.success.docUrl, "_blank"); }} style={{ padding: "9px 18px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 8, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                    📝 Open Google Doc <span style={{ fontSize: 9, color: "#3da5db80" }}>(editable)</span>
+
+                {/* Step 1: Review Google Doc */}
+                <div style={{ marginBottom: 12, padding: "12px 16px", background: "var(--bgCard)", borderRadius: 8, border: "1px solid #3da5db25" }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: "#3da5db", letterSpacing: 0.8, marginBottom: 8 }}>STEP 1 — REVIEW DOCUMENT</div>
+                  <button onClick={() => { window.open(contractModal.success.docUrl, "_blank"); }} style={{ padding: "10px 20px", background: "#3da5db", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center" }}>
+                    📝 Open in Google Docs
                   </button>
-                  {contractModal.success.pdfUrl && (
-                    <button onClick={() => { window.open(contractModal.success.pdfUrl, "_blank"); }} style={{ padding: "9px 18px", background: contractModal.success.hasInvoiceMerged ? "#9b6dff15" : "#ff6b4a15", border: `1px solid ${contractModal.success.hasInvoiceMerged ? "#9b6dff30" : "#ff6b4a30"}`, borderRadius: 8, color: contractModal.success.hasInvoiceMerged ? "#9b6dff" : "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                      📄 {contractModal.success.hasInvoiceMerged ? "Open Combined PDF" : "Open PDF"} <span style={{ fontSize: 9, opacity: 0.6 }}>{contractModal.success.hasInvoiceMerged ? "(contract + invoice)" : "(contract only)"}</span>
+                  <div style={{ fontSize: 9, color: "var(--textFaint)", marginTop: 6, textAlign: "center" }}>Review and make any edits before exporting to PDF</div>
+                </div>
+
+                {/* Step 2: Export PDF */}
+                <div style={{ padding: "12px 16px", background: "var(--bgCard)", borderRadius: 8, border: `1px solid ${contractModal.success.pdfUrl ? "#4ecb7125" : "var(--borderSub)"}` }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: contractModal.success.pdfUrl ? "#4ecb71" : "var(--textFaint)", letterSpacing: 0.8, marginBottom: 8 }}>STEP 2 — EXPORT PDF{contractModal.success.pdfUrl ? " ✓" : ""}</div>
+                  {contractModal.success.pdfUrl ? (
+                    <button onClick={() => { window.open(contractModal.success.pdfUrl, "_blank"); }} style={{ padding: "10px 20px", background: contractModal.success.hasInvoiceMerged ? "#9b6dff15" : "#ff6b4a15", border: `1px solid ${contractModal.success.hasInvoiceMerged ? "#9b6dff30" : "#ff6b4a30"}`, borderRadius: 8, color: contractModal.success.hasInvoiceMerged ? "#9b6dff" : "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center" }}>
+                      📄 {contractModal.success.hasInvoiceMerged ? "Open Combined PDF (contract + invoice)" : "Open PDF"}
+                    </button>
+                  ) : (
+                    <button onClick={async () => {
+                      setContractModal(prev => ({ ...prev, success: { ...prev.success, exportingPdf: true } }));
+                      try {
+                        const res = await fetch("/api/contracts/generate", {
+                          method: "POST", headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            action: "export-pdf",
+                            docId: contractModal.success.docId,
+                            docName: contractModal.success.docName,
+                            invoiceLink: contractModal.invoiceLink || null,
+                            contractType: contractModal.contractType,
+                            targetFolderId: contractModal.success.targetFolderId,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.error) throw new Error(data.error);
+                        // Update compliance with PDF link
+                        setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : {
+                          ...v, compliance: { ...v.compliance, contract: { ...v.compliance?.contract, file: data.pdfName, link: data.pdfUrl } }
+                        }));
+                        setContractModal(prev => ({ ...prev, success: { ...prev.success, pdfUrl: data.pdfUrl, pdfName: data.pdfName, hasInvoiceMerged: data.hasInvoiceMerged, exportingPdf: false } }));
+                      } catch (e) {
+                        setContractModal(prev => ({ ...prev, error: e.message, success: { ...prev.success, exportingPdf: false } }));
+                      }
+                    }} disabled={contractModal.success.exportingPdf} style={{ padding: "10px 20px", background: contractModal.success.exportingPdf ? "var(--borderActive)" : "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: contractModal.success.exportingPdf ? "wait" : "pointer", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, width: "100%", justifyContent: "center" }}>
+                      {contractModal.success.exportingPdf ? <><span style={{ animation: "pulse 1s ease infinite" }}>⟳</span> Exporting PDF...</> : <>📄 Export to PDF</>}
                     </button>
                   )}
-                  <button onClick={() => setContractModal(null)} style={{ padding: "9px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, marginLeft: "auto" }}>Done</button>
                 </div>
-                <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 10 }}>
-                  💡 To send for signature: Open the Google Doc → File → eSignature → add signer's email
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14 }}>
+                  <div style={{ fontSize: 9, color: "var(--textGhost)" }}>
+                    💡 To send for signature: Open the Google Doc → File → eSignature → add signer's email
+                  </div>
+                  <button onClick={() => setContractModal(null)} style={{ padding: "8px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap" }}>Done</button>
                 </div>
               </div>
             ) : (
