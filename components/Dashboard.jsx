@@ -2017,6 +2017,106 @@ export default function Dashboard({ user, onLogout }) {
   const [showPrintROS, setShowPrintROS] = useState(false);
   const [showAddVendor, setShowAddVendor] = useState(false);
   const [editingVendorId, setEditingVendorId] = useState(null);
+  // ─── CONTRACT GENERATION ────────────────────────────────────
+  const [contractModal, setContractModal] = useState(null); // { vendor, contractType, fields, generating, error }
+  const openContractModal = (vendor) => {
+    const now = new Date();
+    const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const dayNum = String(now.getDate());
+    const monthName = months[now.getMonth()];
+    const year2 = String(now.getFullYear()).slice(-2);
+    const eventStart = project.eventDates?.start ? new Date(project.eventDates.start + "T12:00:00") : null;
+    const eventEnd = project.eventDates?.end ? new Date(project.eventDates.end + "T12:00:00") : null;
+    const eventDateStr = eventStart ? (eventEnd && eventEnd > eventStart ? `${eventStart.toLocaleDateString("en-US", { month: "long", day: "numeric" })} – ${eventEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : eventStart.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })) : "";
+    const engStart = project.engagementDates?.start || "";
+    const engEnd = project.engagementDates?.end || "";
+    const termStr = engStart && engEnd ? `${new Date(engStart + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} through ${new Date(engEnd + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : "";
+
+    // Try to detect contractor vs vendor from vendor type/contactType
+    const isContractor = (vendor.contactType || "").toLowerCase().includes("contractor") || (vendor.type || "").toLowerCase().includes("contractor") || (vendor.type || "").toLowerCase() === "individual";
+    const contractType = isContractor ? "contractor" : "vendor";
+
+    // Build auto-filled fields
+    const baseFields = {
+      EFFECTIVE_DAY: dayNum,
+      EFFECTIVE_MONTH: monthName,
+      EFFECTIVE_YEAR: year2,
+    };
+
+    const contractorFields = {
+      ...baseFields,
+      CONTRACTOR_NAME: vendor.name || "",
+      CONTRACTOR_ENTITY_TYPE: vendor.ein ? "a limited liability company" : "an individual",
+      CONTRACTOR_ADDRESS: vendor.address || "",
+      CONTRACTOR_EXPERTISE: vendor.deptId || vendor.type || "",
+      SOW_TERM: termStr,
+      SOW_PROJECT: project.name || "",
+      SOW_COMPENSATION: "",
+      SOW_PAYMENT_TERMS: "Net 15 — upon completion of services",
+      SOW_DELIVERABLES: "",
+      SOW_TIMELINE: eventDateStr,
+      SOW_EXECUTION_DATE: `${monthName} ${dayNum}, 20${year2}`,
+      AGREEMENT_DATE: `${monthName} ${dayNum}, 20${year2}`,
+    };
+
+    const vendorFields = {
+      ...baseFields,
+      VENDOR_NAME: vendor.name || "",
+      VENDOR_ENTITY_DESC: vendor.ein ? `a ${vendor.address?.includes("CA") ? "California" : ""} limited liability company`.trim() : "an individual",
+      VENDOR_TITLE: vendor.deptId || vendor.type || "",
+      CLIENT_NAME: project.client || "",
+      EVENT_NAME: project.name || "",
+      EVENT_DATES: eventDateStr,
+      EVENT_TIME: "",
+      VENUE_NAME: project.venue ? project.venue.split(",")[0] : project.location || "",
+      VENUE_ADDRESS: project.venue || "",
+      VENDOR_DELIVERABLES: "",
+      PAYMENT_TERMS: "Net 15 — upon completion of the Event",
+      TIMELINE: termStr || eventDateStr,
+    };
+
+    setContractModal({
+      vendor,
+      contractType,
+      fields: contractType === "contractor" ? contractorFields : vendorFields,
+      generating: false,
+      error: null,
+      invoiceLink: null,
+      success: null,
+    });
+  };
+
+  const generateContract = async () => {
+    if (!contractModal) return;
+    setContractModal(prev => ({ ...prev, generating: true, error: null }));
+    try {
+      const res = await fetch("/api/contracts/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "generate",
+          contractType: contractModal.contractType,
+          fields: contractModal.fields,
+          projectFolderId: project.driveFolderId || null,
+          vendorName: contractModal.vendor.name,
+          projectCode: project.code || "",
+          invoiceLink: contractModal.invoiceLink || null,
+        }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      // Update vendor compliance to mark contract as done
+      setVendors(prev => prev.map(v => v.id !== contractModal.vendor.id ? v : {
+        ...v,
+        compliance: { ...v.compliance, contract: { done: true, file: data.pdfName || data.docName, date: new Date().toISOString().split("T")[0], link: data.pdfUrl || data.docUrl } },
+      }));
+      logActivity("contract", `generated ${contractModal.contractType} agreement for "${contractModal.vendor.name}"${data.hasInvoiceMerged ? " (with invoice)" : ""}`, project?.name);
+      // Show success state with links
+      setContractModal(prev => ({ ...prev, generating: false, success: data }));
+    } catch (e) {
+      setContractModal(prev => ({ ...prev, generating: false, error: e.message }));
+    }
+  };
   const [w9Scanning, setW9Scanning] = useState(false);
   const [w9ParsedData, setW9ParsedData] = useState(null);
   const [vendorSearch, setVendorSearch] = useState("");
@@ -2152,6 +2252,7 @@ export default function Dashboard({ user, onLogout }) {
         if (showAddProject) { setShowAddProject(false); e.preventDefault(); return; }
         if (showAddContact) { setShowAddContact(false); e.preventDefault(); return; }
         if (showAddClient) { setShowAddClient(false); e.preventDefault(); return; }
+        if (contractModal) { setContractModal(null); e.preventDefault(); return; }
         if (showAddVendor) { setShowAddVendor(false); e.preventDefault(); return; }
         if (showPrintROS) { setShowPrintROS(false); e.preventDefault(); return; }
         if (showVersionHistory) { setShowVersionHistory(false); e.preventDefault(); return; }
@@ -2181,7 +2282,7 @@ export default function Dashboard({ user, onLogout }) {
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [showSettings, showAddProject, showAddContact, showAddClient, showAddVendor, showPrintROS, showVersionHistory, showActivityFeed, assignContactPopover, contactPopover, contextMenu, docPreview, doUndo, doRedo]);
+  }, [showSettings, showAddProject, showAddContact, showAddClient, showAddVendor, showPrintROS, showVersionHistory, showActivityFeed, assignContactPopover, contactPopover, contextMenu, docPreview, contractModal, doUndo, doRedo]);
   const todoistFetch = useCallback(async (key) => {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
@@ -7329,6 +7430,7 @@ export default function Dashboard({ user, onLogout }) {
                                 {v.address && <span onClick={(e) => { e.stopPropagation(); copyToClipboard(v.address, "Address", e); }} style={{ cursor: "pointer", borderRadius: 4, padding: "2px 6px", transition: "background 0.15s", maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgCard)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} title={v.address}>📍 {v.address} <span style={{ fontSize: 8, color: "var(--textGhost)", marginLeft: 2 }}>⧉</span></span>}
                               </div>
                               <div style={{ display: "flex", gap: 6 }}>
+                                <button onClick={() => openContractModal(v)} style={{ padding: "4px 10px", background: "#9b6dff10", border: "1px solid #9b6dff25", borderRadius: 5, color: "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📝 Contract</button>
                                 <button onClick={() => {
                                   const names = (v.contact || "").split(" ");
                                   setVendorForm({ contactType: v.contactType || "", resourceType: v.type || "", firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: v.phone || "", email: v.email || "", company: v.name || "", title: v.title || "", dept: v.deptId || DEPT_OPTIONS[0], address: v.address || "" });
@@ -9259,6 +9361,267 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* ═══ CONTRACT GENERATION MODAL ═══ */}
+      {contractModal && (() => {
+        const ct = contractModal.contractType;
+        const f = contractModal.fields;
+        const updateField = (key, val) => setContractModal(prev => ({ ...prev, fields: { ...prev.fields, [key]: val } }));
+        const switchType = (newType) => {
+          const v = contractModal.vendor;
+          // Re-initialize fields for the new type
+          const now = new Date();
+          const months = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+          const base = { EFFECTIVE_DAY: f.EFFECTIVE_DAY, EFFECTIVE_MONTH: f.EFFECTIVE_MONTH, EFFECTIVE_YEAR: f.EFFECTIVE_YEAR };
+          if (newType === "contractor") {
+            const eventStart = project.eventDates?.start ? new Date(project.eventDates.start + "T12:00:00") : null;
+            const eventEnd = project.eventDates?.end ? new Date(project.eventDates.end + "T12:00:00") : null;
+            const eventDateStr = eventStart ? (eventEnd && eventEnd > eventStart ? `${eventStart.toLocaleDateString("en-US", { month: "long", day: "numeric" })} – ${eventEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : eventStart.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })) : "";
+            const engStart = project.engagementDates?.start || "";
+            const engEnd = project.engagementDates?.end || "";
+            const termStr = engStart && engEnd ? `${new Date(engStart + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} through ${new Date(engEnd + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : "";
+            setContractModal(prev => ({ ...prev, contractType: "contractor", fields: {
+              ...base, CONTRACTOR_NAME: v.name, CONTRACTOR_ENTITY_TYPE: v.ein ? "a limited liability company" : "an individual",
+              CONTRACTOR_ADDRESS: v.address || "", CONTRACTOR_EXPERTISE: v.deptId || v.type || "",
+              SOW_TERM: termStr, SOW_PROJECT: project.name || "", SOW_COMPENSATION: "",
+              SOW_PAYMENT_TERMS: "Net 15 — upon completion of services", SOW_DELIVERABLES: "", SOW_TIMELINE: eventDateStr,
+              SOW_EXECUTION_DATE: `${base.EFFECTIVE_MONTH} ${base.EFFECTIVE_DAY}, 20${base.EFFECTIVE_YEAR}`,
+              AGREEMENT_DATE: `${base.EFFECTIVE_MONTH} ${base.EFFECTIVE_DAY}, 20${base.EFFECTIVE_YEAR}`,
+            }}));
+          } else {
+            const eventStart = project.eventDates?.start ? new Date(project.eventDates.start + "T12:00:00") : null;
+            const eventEnd = project.eventDates?.end ? new Date(project.eventDates.end + "T12:00:00") : null;
+            const eventDateStr = eventStart ? (eventEnd && eventEnd > eventStart ? `${eventStart.toLocaleDateString("en-US", { month: "long", day: "numeric" })} – ${eventEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : eventStart.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })) : "";
+            const engStart = project.engagementDates?.start || "";
+            const engEnd = project.engagementDates?.end || "";
+            const termStr = engStart && engEnd ? `${new Date(engStart + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })} through ${new Date(engEnd + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : "";
+            setContractModal(prev => ({ ...prev, contractType: "vendor", fields: {
+              ...base, VENDOR_NAME: v.name, VENDOR_ENTITY_DESC: v.ein ? "a limited liability company" : "an individual",
+              VENDOR_TITLE: v.deptId || v.type || "", CLIENT_NAME: project.client || "",
+              EVENT_NAME: project.name || "", EVENT_DATES: eventDateStr, EVENT_TIME: "",
+              VENUE_NAME: project.venue ? project.venue.split(",")[0] : project.location || "",
+              VENUE_ADDRESS: project.venue || "", VENDOR_DELIVERABLES: "",
+              PAYMENT_TERMS: "Net 15 — upon completion of the Event", TIMELINE: termStr || eventDateStr,
+            }}));
+          }
+        };
+
+        // Field definitions for each contract type
+        const contractorFieldDefs = [
+          { section: "Counterparty", fields: [
+            { key: "CONTRACTOR_NAME", label: "Contractor Name", auto: true },
+            { key: "CONTRACTOR_ENTITY_TYPE", label: "Entity Type", placeholder: "a California LLC / an individual" },
+            { key: "CONTRACTOR_ADDRESS", label: "Address", auto: !!contractModal.vendor.address },
+            { key: "CONTRACTOR_EXPERTISE", label: "Field of Expertise", auto: !!contractModal.vendor.deptId },
+          ]},
+          { section: "Statement of Work (Exhibit A)", fields: [
+            { key: "SOW_TERM", label: "Term", auto: !!(project.engagementDates?.start) },
+            { key: "SOW_PROJECT", label: "Project / Service Description", auto: true },
+            { key: "SOW_COMPENSATION", label: "Compensation / Fee", placeholder: "$X,XXX.XX", required: true },
+            { key: "SOW_PAYMENT_TERMS", label: "Payment Terms", auto: true },
+            { key: "SOW_DELIVERABLES", label: "Deliverables", placeholder: "Describe scope of work...", required: true, multiline: true },
+            { key: "SOW_TIMELINE", label: "Timeline", auto: !!(project.eventDates?.start) },
+          ]},
+        ];
+
+        const vendorFieldDefs = [
+          { section: "Counterparty", fields: [
+            { key: "VENDOR_NAME", label: "Vendor Name", auto: true },
+            { key: "VENDOR_ENTITY_DESC", label: "Entity Description", placeholder: "a California LLC" },
+            { key: "VENDOR_TITLE", label: "Vendor Role / Title", auto: !!contractModal.vendor.deptId },
+          ]},
+          { section: "Event Details (Exhibit A)", fields: [
+            { key: "CLIENT_NAME", label: "Client Name", auto: !!project.client },
+            { key: "EVENT_NAME", label: "Event Name", auto: true },
+            { key: "EVENT_DATES", label: "Event Date(s)", auto: !!(project.eventDates?.start) },
+            { key: "EVENT_TIME", label: "Event Time", placeholder: "10:00 AM – 6:00 PM" },
+            { key: "VENUE_NAME", label: "Venue", auto: !!(project.venue || project.location) },
+            { key: "VENUE_ADDRESS", label: "Venue Address", auto: !!project.venue },
+            { key: "VENDOR_DELIVERABLES", label: "Vendor Deliverables", placeholder: "Describe scope of services...", required: true, multiline: true },
+            { key: "PAYMENT_TERMS", label: "Payment Terms", auto: true },
+            { key: "TIMELINE", label: "Timeline", auto: !!(project.engagementDates?.start || project.eventDates?.start) },
+          ]},
+        ];
+
+        const fieldDefs = ct === "contractor" ? contractorFieldDefs : vendorFieldDefs;
+        const filledCount = Object.values(f).filter(v => v && v.trim()).length;
+        const totalCount = Object.keys(f).length;
+
+
+        return (
+        <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setContractModal(null); }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 680, maxWidth: "94vw", maxHeight: "90vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+            {/* Header */}
+            <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>GENERATE CONTRACT</div>
+                <div style={{ fontSize: 18, fontWeight: 700 }}>📝 {contractModal.vendor.name}</div>
+                <div style={{ fontSize: 11, color: "var(--textMuted)", marginTop: 4 }}>{project.name} · {project.client}</div>
+              </div>
+              <button onClick={() => setContractModal(null)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: "4px" }}>✕</button>
+            </div>
+
+            {/* Contract Type Toggle */}
+            <div style={{ padding: "16px 24px", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", gap: 16 }}>
+              <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5 }}>TYPE:</span>
+              <div style={{ display: "flex", gap: 0, background: "var(--bgCard)", borderRadius: 8, border: "1px solid var(--borderSub)", overflow: "hidden" }}>
+                <button onClick={() => switchType("contractor")} style={{ padding: "8px 20px", background: ct === "contractor" ? "#ff6b4a" : "transparent", border: "none", color: ct === "contractor" ? "#fff" : "var(--textFaint)", cursor: "pointer", fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>👤 Contractor</button>
+                <button onClick={() => switchType("vendor")} style={{ padding: "8px 20px", background: ct === "vendor" ? "#9b6dff" : "transparent", border: "none", color: ct === "vendor" ? "#fff" : "var(--textFaint)", cursor: "pointer", fontSize: 12, fontWeight: 700, transition: "all 0.15s" }}>🏢 Vendor</button>
+              </div>
+              <span style={{ fontSize: 10, color: "var(--textGhost)", marginLeft: "auto" }}>
+                <span style={{ color: filledCount === totalCount ? "#4ecb71" : "#dba94e", fontWeight: 700 }}>{filledCount}/{totalCount}</span> fields filled
+              </span>
+            </div>
+
+            {/* Scrollable Fields */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px 24px" }}>
+              {/* Effective Date (always shown) */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>EFFECTIVE DATE</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 9, color: "var(--textGhost)", display: "block", marginBottom: 3 }}>Day</label>
+                    <input value={f.EFFECTIVE_DAY} onChange={e => updateField("EFFECTIVE_DAY", e.target.value)} style={{ width: "100%", padding: "8px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 9, color: "var(--textGhost)", display: "block", marginBottom: 3 }}>Month</label>
+                    <input value={f.EFFECTIVE_MONTH} onChange={e => updateField("EFFECTIVE_MONTH", e.target.value)} style={{ width: "100%", padding: "8px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 9, color: "var(--textGhost)", display: "block", marginBottom: 3 }}>Year (2-digit)</label>
+                    <input value={f.EFFECTIVE_YEAR} onChange={e => updateField("EFFECTIVE_YEAR", e.target.value)} style={{ width: "100%", padding: "8px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Dynamic sections */}
+              {fieldDefs.map(section => (
+                <div key={section.section} style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>{section.section.toUpperCase()}</div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {section.fields.map(fd => (
+                      <div key={fd.key}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                          <label style={{ fontSize: 10, color: "var(--textMuted)", fontWeight: 600 }}>{fd.label}</label>
+                          {fd.auto && f[fd.key] && <span style={{ fontSize: 7, padding: "1px 5px", borderRadius: 3, background: "#4ecb7115", color: "#4ecb71", fontWeight: 700, border: "1px solid #4ecb7125" }}>AUTO-FILLED</span>}
+                          {fd.required && !f[fd.key] && <span style={{ fontSize: 7, padding: "1px 5px", borderRadius: 3, background: "#e8545415", color: "#e85454", fontWeight: 700, border: "1px solid #e8545425" }}>REQUIRED</span>}
+                        </div>
+                        {fd.multiline ? (
+                          <textarea value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} rows={3} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
+                        ) : (
+                          <input value={f[fd.key] || ""} onChange={e => updateField(fd.key, e.target.value)} placeholder={fd.placeholder || ""} style={{ width: "100%", padding: "8px 10px", background: f[fd.key] ? "var(--bgCard)" : "#e854540a", border: `1px solid ${f[fd.key] ? "var(--borderSub)" : "#e8545420"}`, borderRadius: 6, color: "var(--text)", fontSize: 12, outline: "none" }} />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* Exhibit B — Invoice picker for vendor contracts */}
+              {ct === "vendor" && (() => {
+                const inv = contractModal.vendor.compliance?.invoice;
+                const versionFiles = (inv && Array.isArray(inv.files)) ? inv.files : [];
+                const hasAny = inv?.done || versionFiles.length > 0;
+                // Build selectable list: current + all versions
+                const invoiceOptions = [];
+                if (versionFiles.length > 0) {
+                  versionFiles.forEach((vf, i) => { invoiceOptions.push({ label: vf.file || `Invoice V${vf.version || i + 1}`, link: vf.link, date: vf.date, version: vf.version || i + 1 }); });
+                } else if (inv?.done && inv?.file) {
+                  invoiceOptions.push({ label: inv.file, link: inv.link, date: inv.date, version: 1 });
+                }
+                return (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 10 }}>EXHIBIT B — INVOICE / PROPOSAL</div>
+                  {hasAny ? (
+                    <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, overflow: "hidden" }}>
+                      <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--borderSub)", fontSize: 10, color: "var(--textMuted)", fontWeight: 600 }}>
+                        Select which invoice to attach as Exhibit B:
+                      </div>
+                      {/* No invoice option */}
+                      <div onClick={() => setContractModal(prev => ({ ...prev, invoiceLink: null }))} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid var(--borderSub)", background: !contractModal.invoiceLink ? "#ff6b4a08" : "transparent", transition: "background 0.15s" }}>
+                        <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${!contractModal.invoiceLink ? "#ff6b4a" : "var(--borderActive)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {!contractModal.invoiceLink && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ff6b4a" }} />}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 12, color: "var(--textMuted)" }}>No invoice — generate contract only</div>
+                          <div style={{ fontSize: 9, color: "var(--textGhost)" }}>PDF will contain only the agreement</div>
+                        </div>
+                      </div>
+                      {/* Invoice versions */}
+                      {invoiceOptions.map((opt, idx) => (
+                        <div key={idx} onClick={() => setContractModal(prev => ({ ...prev, invoiceLink: opt.link }))} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", cursor: "pointer", borderBottom: idx < invoiceOptions.length - 1 ? "1px solid var(--borderSub)" : "none", background: contractModal.invoiceLink === opt.link ? "#4ecb7108" : "transparent", transition: "background 0.15s" }}>
+                          <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${contractModal.invoiceLink === opt.link ? "#4ecb71" : "var(--borderActive)"}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {contractModal.invoiceLink === opt.link && <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ecb71" }} />}
+                          </div>
+                          <span style={{ fontSize: 16 }}>📄</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {opt.label}
+                              <span style={{ fontSize: 8, marginLeft: 6, padding: "1px 5px", borderRadius: 3, background: "#9b6dff15", color: "#9b6dff", fontWeight: 700 }}>V{opt.version}</span>
+                            </div>
+                            <div style={{ fontSize: 9, color: "var(--textFaint)" }}>Uploaded {opt.date}</div>
+                          </div>
+                          {opt.link && <button onClick={(e) => { e.stopPropagation(); window.open(opt.link, "_blank"); }} style={{ padding: "3px 7px", background: "#3da5db10", border: "1px solid #3da5db20", borderRadius: 4, color: "#3da5db", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>Preview</button>}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ padding: "12px 14px", background: "#dba94e08", border: "1px solid #dba94e20", borderRadius: 8, fontSize: 11, color: "#dba94e" }}>
+                      ⚠️ No invoices uploaded for this vendor yet. You can generate the contract without an invoice and attach one later, or upload an invoice in the vendor's compliance docs first.
+                    </div>
+                  )}
+                </div>
+                );
+              })()}
+            </div>
+
+            {/* Footer */}
+            {contractModal.success ? (
+              <div style={{ padding: "20px 24px", borderTop: "1px solid var(--borderSub)", background: "#4ecb7108" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: 20 }}>✅</span>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: "#4ecb71" }}>Contract Generated</div>
+                    <div style={{ fontSize: 10, color: "var(--textFaint)" }}>Saved to {contractModal.success.folderPath || "Google Drive"}</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => { window.open(contractModal.success.docUrl, "_blank"); }} style={{ padding: "9px 18px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 8, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                    📝 Open Google Doc <span style={{ fontSize: 9, color: "#3da5db80" }}>(editable)</span>
+                  </button>
+                  {contractModal.success.pdfUrl && (
+                    <button onClick={() => { window.open(contractModal.success.pdfUrl, "_blank"); }} style={{ padding: "9px 18px", background: contractModal.success.hasInvoiceMerged ? "#9b6dff15" : "#ff6b4a15", border: `1px solid ${contractModal.success.hasInvoiceMerged ? "#9b6dff30" : "#ff6b4a30"}`, borderRadius: 8, color: contractModal.success.hasInvoiceMerged ? "#9b6dff" : "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+                      📄 {contractModal.success.hasInvoiceMerged ? "Open Combined PDF" : "Open PDF"} <span style={{ fontSize: 9, opacity: 0.6 }}>{contractModal.success.hasInvoiceMerged ? "(contract + invoice)" : "(contract only)"}</span>
+                    </button>
+                  )}
+                  <button onClick={() => setContractModal(null)} style={{ padding: "9px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12, marginLeft: "auto" }}>Done</button>
+                </div>
+                <div style={{ fontSize: 9, color: "var(--textGhost)", marginTop: 10 }}>
+                  💡 To send for signature: Open the Google Doc → File → eSignature → add signer's email
+                </div>
+              </div>
+            ) : (
+            <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontSize: 10, color: "var(--textGhost)" }}>
+                Saved to ADMIN/VENDORS/{contractModal.vendor.name}/Agreements/
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setContractModal(null)} style={{ padding: "9px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
+                <button onClick={generateContract} disabled={contractModal.generating} style={{ padding: "9px 24px", background: contractModal.generating ? "var(--borderActive)" : ct === "contractor" ? "#ff6b4a" : "#9b6dff", border: "none", borderRadius: 8, color: "#fff", cursor: contractModal.generating ? "wait" : "pointer", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+                  {contractModal.generating ? <><span style={{ animation: "pulse 1s ease infinite" }}>⟳</span> Generating...</> : <>📝 Generate Contract</>}
+                </button>
+              </div>
+            </div>
+            )}
+            {contractModal.error && (
+              <div style={{ padding: "10px 24px", background: "#e8545410", borderTop: "1px solid #e8545425", fontSize: 11, color: "#e85454" }}>
+                ⚠️ {contractModal.error}
+              </div>
+            )}
+          </div>
+        </div>
+        );
+      })()}
 
       {/* ═══ FILE RENAME MODAL ═══ */}
       {renameModal && (() => {
