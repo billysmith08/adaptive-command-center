@@ -6,7 +6,7 @@ const SD = { supportsAllDrives: true, includeItemsFromAllDrives: true };
 
 const TEMPLATES = {
   contractor: process.env.CONTRACT_TEMPLATE_CONTRACTOR || '1mXaoWwvp6TipZllStct4mQd1YHn7eM-Z68p2Gw5mlkE',
-  vendor: process.env.CONTRACT_TEMPLATE_VENDOR || '1wH3C1fHI5eArlTf3OEOyVgSA5A9fdMttAatv_a5viGA',
+  vendor: process.env.CONTRACT_TEMPLATE_VENDOR || '12M-PGe2-JZiIip5iMCjyJ_3RBHtLkmBTNyUvCSPsSeI',
 };
 
 function getAuth() {
@@ -87,7 +87,11 @@ export async function POST(request) {
     }
     if (requests.length > 0) {
       console.log(`[Contract] Replacing ${requests.length} placeholders...`);
-      await docs.documents.batchUpdate({ documentId: newDocId, requestBody: { requests } });
+      const result = await docs.documents.batchUpdate({ documentId: newDocId, requestBody: { requests } });
+      const replies = result.data.replies || [];
+      const totalReplaced = replies.reduce((sum, r) => sum + (r.replaceAllText?.occurrencesChanged || 0), 0);
+      console.log(`[Contract] ${totalReplaced} total replacements made across ${replies.length} operations`);
+      if (totalReplaced === 0) console.warn('[Contract] WARNING: 0 replacements — template may not contain {{PLACEHOLDER}} markers');
     }
 
     // 3. Find/create Agreement folder + move doc

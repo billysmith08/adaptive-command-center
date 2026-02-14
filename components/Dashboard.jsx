@@ -3490,6 +3490,37 @@ export default function Dashboard({ user, onLogout }) {
     return () => clearInterval(interval);
   }, [user, dataLoaded]);
 
+  // Sync vendor details → matching Global Partners contacts
+  useEffect(() => {
+    if (!vendors || vendors.length === 0) return;
+    setContacts(prev => {
+      let changed = false;
+      const updated = prev.map(c => {
+        const match = vendors.find(v => 
+          v.name && c.name && (
+            v.name.toLowerCase() === c.name.toLowerCase() ||
+            v.name.toLowerCase() === (c.company || '').toLowerCase() ||
+            (v.email && c.email && v.email.toLowerCase() === c.email.toLowerCase())
+          )
+        );
+        if (!match) return c;
+        const updates = {};
+        if (match.phone && !c.phone) updates.phone = match.phone;
+        if (match.email && !c.email) updates.email = match.email;
+        if (match.address && !c.address) updates.address = match.address;
+        if (match.contact && !c.firstName) { updates.firstName = (match.contact || '').split(' ')[0]; updates.lastName = (match.contact || '').split(' ').slice(1).join(' '); }
+        if (match.type && !c.resourceType) updates.resourceType = match.type;
+        if (match.title && !c.position) updates.position = match.title;
+        if (match.name && !c.company) updates.company = match.name;
+        if (match.deptId && !c.department) updates.department = match.deptId;
+        if (Object.keys(updates).length === 0) return c;
+        changed = true;
+        return { ...c, ...updates };
+      });
+      return changed ? updated : prev;
+    });
+  }, [vendors]);
+
   // ─── PER-SLICE SAVE ──────────────────────────────────────────────
   const sanitizeProjectsArr = (arr) => arr.map(p => ({ ...p, producers: Array.isArray(p.producers) ? p.producers : [], managers: Array.isArray(p.managers) ? p.managers : [], staff: Array.isArray(p.staff) ? p.staff : [], pocs: Array.isArray(p.pocs) ? p.pocs : [], clientContacts: Array.isArray(p.clientContacts) ? p.clientContacts : [], billingContacts: Array.isArray(p.billingContacts) ? p.billingContacts : [], services: Array.isArray(p.services) ? p.services : [], subEvents: Array.isArray(p.subEvents) ? p.subEvents : [], parentId: p.parentId || null }));
 
