@@ -278,8 +278,7 @@ const COMP_KEYS = [
   { key: "w9", label: "W9", fullLabel: "W-9 Tax Form", vendorSubfolder: "W9", globalMirror: true, drivePrefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s" },
   { key: "quote", label: "QTE", fullLabel: "Quote", vendorSubfolder: "Quotes", globalMirror: false, drivePrefix: "" },
   { key: "invoice", label: "INV", fullLabel: "Invoice", vendorSubfolder: "Invoices", globalMirror: false, drivePrefix: "" },
-  { key: "banking", label: "BANK", fullLabel: "Banking Details", vendorSubfolder: "Banking", globalMirror: false, drivePrefix: "" },
-  { key: "contract", label: "CTR", fullLabel: "Contract", vendorSubfolder: "Agreements", globalMirror: false, drivePrefix: "" },
+  { key: "contract", label: "CTR", fullLabel: "Contract", vendorSubfolder: "Agreement", globalMirror: false, drivePrefix: "" },
 ];
 
 const PROJECT_COLORS = ["#ff6b4a", "#3da5db", "#9b6dff", "#4ecb71", "#e85494", "#dba94e"];
@@ -1916,10 +1915,9 @@ export default function Dashboard({ user, onLogout }) {
           { name: "Exports", children: [] },
         ]},
         { name: "CLIENT DOCS", children: [
-          { name: "Received from Client", children: [] },
           { name: "Sent to Client", children: [] },
+          { name: "Received from Client", children: [] },
         ]},
-        { name: "SOW", children: [] },
         { name: "VENDORS", children: [] },
       ]},
       { name: "PRODUCTION", children: [] },
@@ -2974,7 +2972,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const importFromDrive = (dv) => {
     const comp = {};
-    ["coi", "w9", "quote", "banking", "contract", "invoice"].forEach(k => {
+    ["coi", "w9", "quote", "contract", "invoice"].forEach(k => {
       comp[k] = dv.drive[k]?.found ? { done: true, file: dv.drive[k].file, date: new Date().toISOString().split("T")[0], link: dv.drive[k].link || null } : { done: false, file: null, date: null, link: null };
     });
     const exists = vendors.find(v => v.name.toLowerCase() === dv.name.toLowerCase());
@@ -3088,7 +3086,7 @@ export default function Dashboard({ user, onLogout }) {
       deptId: vendorForm.dept, source: "manual",
       ein: w9ParsedData?.ein || '',
       address: finalAddress,
-      compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, quote: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, banking: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
+      compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, quote: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
     // Auto-add vendor AND contact person to global contacts
@@ -3227,7 +3225,7 @@ export default function Dashboard({ user, onLogout }) {
           }
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: (() => { const c = v.compliance && typeof v.compliance === 'object' ? v.compliance : {}; return { coi: c.coi || { done: false }, w9: c.w9 || { done: false }, quote: c.quote || { done: false }, invoice: c.invoice || { done: false }, banking: c.banking || { done: false }, contract: c.contract || { done: false } }; })() })) : []; });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: (() => { const c = v.compliance && typeof v.compliance === 'object' ? v.compliance : {}; return { coi: c.coi || { done: false }, w9: c.w9 || { done: false }, quote: c.quote || { done: false }, invoice: c.invoice || { done: false }, contract: c.contract || { done: false } }; })() })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback && typeof s.projectWorkback === 'object') {
@@ -3263,7 +3261,7 @@ export default function Dashboard({ user, onLogout }) {
           }
           if (s.projectVendors && typeof s.projectVendors === 'object') {
             const safe = {};
-            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: (() => { const c = v.compliance && typeof v.compliance === 'object' ? v.compliance : {}; return { coi: c.coi || { done: false }, w9: c.w9 || { done: false }, quote: c.quote || { done: false }, invoice: c.invoice || { done: false }, banking: c.banking || { done: false }, contract: c.contract || { done: false } }; })() })) : []; });
+            Object.keys(s.projectVendors).forEach(k => { safe[k] = Array.isArray(s.projectVendors[k]) ? s.projectVendors[k].map(v => ({ ...v, compliance: (() => { const c = v.compliance && typeof v.compliance === 'object' ? v.compliance : {}; return { coi: c.coi || { done: false }, w9: c.w9 || { done: false }, quote: c.quote || { done: false }, invoice: c.invoice || { done: false }, contract: c.contract || { done: false } }; })() })) : []; });
             setProjectVendors(safe);
           }
           if (s.projectWorkback) { const safe = {}; Object.keys(s.projectWorkback).forEach(k => { safe[k] = Array.isArray(s.projectWorkback[k]) ? s.projectWorkback[k] : []; }); setProjectWorkback(safe); }
@@ -3673,12 +3671,12 @@ export default function Dashboard({ user, onLogout }) {
           const existingIdx = updated.findIndex(v => v.name?.toLowerCase() === vendorName.toLowerCase());
           
           if (existingIdx >= 0) {
-            // Vendor already exists — merge project-specific docs (invoice, contract, banking)
+            // Vendor already exists — merge project-specific docs (invoice, contract)
             const v = updated[existingIdx];
             const comp = { ...v.compliance };
             
-            // Project-specific docs: invoice, quote, contract, banking
-            ['invoice', 'quote', 'contract', 'banking'].forEach(key => {
+            // Project-specific docs: invoice, quote, contract
+            ['invoice', 'quote', 'contract'].forEach(key => {
               if (vendorData.docs[key]?.done) {
                 comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
               }
@@ -3693,8 +3691,8 @@ export default function Dashboard({ user, onLogout }) {
             updated[existingIdx] = { ...v, compliance: comp, driveFolderId: vendorData.folderId };
           } else {
             // Vendor NOT on tab yet — auto-add from Drive
-            const comp = { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } };
-            ['invoice', 'quote', 'contract', 'banking', 'w9', 'coi'].forEach(key => {
+            const comp = { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, contract: { done: false } };
+            ['invoice', 'quote', 'contract', 'w9', 'coi'].forEach(key => {
               if (vendorData.docs[key]?.done) {
                 comp[key] = { done: true, file: vendorData.docs[key].file, link: vendorData.docs[key].link, source: 'project-drive' };
               }
@@ -4056,7 +4054,6 @@ export default function Dashboard({ user, onLogout }) {
     switch (compKey) {
       case 'coi': return `COI - ${clean}${ext}`;
       case 'w9': return `W9 - ${clean}${ext}`;
-      case 'banking': return `Banking - ${clean}${ext}`;
       case 'contract': return `Contract - ${clean}${ext}`;
       case 'invoice': return `${code}_${cleanUnder}_Invoice_V1${ext}`;
       case 'quote': return `${code}_${cleanUnder}_Quote_V1${ext}`;
@@ -5295,7 +5292,7 @@ export default function Dashboard({ user, onLogout }) {
                           const driveComp = driveComplianceMap[useVendorName] || driveComplianceMap[c.vendorName] || driveComplianceMap[c.company] || driveComplianceMap[c.name] || {};
                           const comp = { ...vendorComp };
                           // Fill in from Drive map if vendor compliance is missing
-                          ['coi', 'w9', 'quote', 'banking', 'invoice', 'contract'].forEach(key => {
+                          ['coi', 'w9', 'quote', 'invoice', 'contract'].forEach(key => {
                             if (!comp[key]?.done && driveComp[key]?.done) {
                               comp[key] = { done: true, file: driveComp[key].file, link: driveComp[key].link };
                             }
@@ -5303,7 +5300,6 @@ export default function Dashboard({ user, onLogout }) {
                           const docBtns = [
                             { key: "coi", label: "COI", color: "#4ecb71", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 COIs & Workers Comp" },
                             { key: "w9", label: "W9", color: "#3da5db", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/2026 W9s" },
-                            { key: "banking", label: "BANK", color: "#dba94e", prefix: "ADMIN/External Vendors (W9 & Work Comp)/Dec 2025 - Dec 2026/Banking" },
                           ];
                           const handleContactDocUpload = (docKey, prefix) => {
                             const input = document.createElement("input");
@@ -5321,7 +5317,7 @@ export default function Dashboard({ user, onLogout }) {
                                   email: c.email, contact: c.name, phone: c.phone, title: c.position,
                                   contactType: "", deptId: c.department, source: "contacts",
                                   ein: "", address: c.address || "",
-                                  compliance: { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } }
+                                  compliance: { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, contract: { done: false } }
                                 };
                                 setVendors(prev => [...prev, newV]);
                               }
@@ -7246,7 +7242,7 @@ export default function Dashboard({ user, onLogout }) {
                         <span style={{ fontSize: 9, fontWeight: 700, color: "#dba94e", letterSpacing: 0.5 }}>GOOGLE DRIVE — {driveResults.length} result{driveResults.length !== 1 ? "s" : ""}</span>
                       </div>
                       {driveResults.map((dv, di) => {
-                        const docKeys = ["coi", "w9", "quote", "banking", "contract", "invoice"];
+                        const docKeys = ["coi", "w9", "quote", "contract", "invoice"];
                         const found = docKeys.filter(k => dv.drive[k]?.found).length;
                         const alreadyAdded = vendors.some(v => v.name.toLowerCase() === dv.name.toLowerCase());
                         return (
@@ -7352,7 +7348,7 @@ export default function Dashboard({ user, onLogout }) {
                               <span style={{ fontSize: 15, fontWeight: 700 }}>{v.name}</span>
                               <SyncBadge source={v.source} />
                               <DeptTag dept={v.deptId} small />
-                              {done === 6 && <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 3, background: "var(--bgCard)", color: "#4ecb71", fontWeight: 700, border: "1px solid var(--borderSub)" }}>COMPLETE</span>}
+                              {done === 5 && <span style={{ fontSize: 8, padding: "1px 6px", borderRadius: 3, background: "var(--bgCard)", color: "#4ecb71", fontWeight: 700, border: "1px solid var(--borderSub)" }}>COMPLETE</span>}
                             </div>
                             <div style={{ fontSize: 11, color: "var(--textFaint)" }}>{v.type} · {v.email}</div>
                           </div>
@@ -7364,12 +7360,12 @@ export default function Dashboard({ user, onLogout }) {
                               </div>
                             ))}
                           </div>
-                          <div style={{ textAlign: "center", minWidth: 40 }}><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: done === 6 ? "#4ecb71" : done >= 4 ? "#dba94e" : "#e85454" }}>{done}/6</div></div>
+                          <div style={{ textAlign: "center", minWidth: 40 }}><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: done === 5 ? "#4ecb71" : done >= 3 ? "#dba94e" : "#e85454" }}>{done}/5</div></div>
                           <button onClick={() => setExpandedVendor(isExp ? null : v.id)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 12, padding: "4px 8px", transform: isExp ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s" }}>▶</button>
                         </div>
                         {isExp && (
                           <div style={{ padding: "0 18px 16px", borderTop: "1px solid var(--border)", animation: "fadeUp 0.2s ease" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginTop: 14 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginTop: 14 }}>
                               {COMP_KEYS.map(ck => {
                                 const info = v.compliance[ck.key] || { done: false, file: null, date: null, link: null };
                                 const dp = `${ck.drivePrefix}/${v.name.replace(/[^a-zA-Z0-9 &'-]/g, '').trim()}/`;
@@ -7503,7 +7499,7 @@ export default function Dashboard({ user, onLogout }) {
                     else if (role === "Client") updateProject("clientContacts", [...(project.clientContacts || []), entry]);
                     else if (role === "Billing") updateProject("billingContacts", [...(project.billingContacts || []), entry]);
                     else if (role === "Vendor" || role === "Contractor") {
-                      setVendors(prev => [...prev, { id: `v_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, name: entry.company || entry.name, type: role, email: entry.email, contact: entry.name, phone: entry.phone, title: "", contactType: role, deptId: "", source: "manual", address: entry.address || "", compliance: { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, banking: { done: false }, contract: { done: false } } }]);
+                      setVendors(prev => [...prev, { id: `v_${Date.now()}_${Math.random().toString(36).slice(2,5)}`, name: entry.company || entry.name, type: role, email: entry.email, contact: entry.name, phone: entry.phone, title: "", contactType: role, deptId: "", source: "manual", address: entry.address || "", compliance: { coi: { done: false }, w9: { done: false }, quote: { done: false }, invoice: { done: false }, contract: { done: false } } }]);
                     }
                     else updateProject("pocs", [...(project.pocs || []), entry]);
                     setClipboardToast({ text: `${entry.name} added as ${role}!`, x: window.innerWidth / 2, y: 60 }); setTimeout(() => setClipboardToast(null), 1800);
@@ -9603,7 +9599,7 @@ export default function Dashboard({ user, onLogout }) {
             ) : (
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontSize: 10, color: "var(--textGhost)" }}>
-                Saved to ADMIN/VENDORS/{contractModal.vendor.name}/Agreements/
+                Saved to ADMIN/VENDORS/{contractModal.vendor.name}/Agreement/
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setContractModal(null)} style={{ padding: "9px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textMuted)", cursor: "pointer", fontSize: 12 }}>Cancel</button>
@@ -9625,7 +9621,7 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* ═══ FILE RENAME MODAL ═══ */}
       {renameModal && (() => {
-        const DOC_LABELS = { coi: 'Certificate of Insurance', w9: 'W-9 Tax Form', banking: 'Banking Details', contract: 'Contract', quote: 'Quote', invoice: 'Invoice' };
+        const DOC_LABELS = { coi: 'Certificate of Insurance', w9: 'W-9 Tax Form', contract: 'Contract', quote: 'Quote', invoice: 'Invoice' };
         const isDrive = renameModal.mode === 'drive';
         const isVersioned = !isDrive && (renameModal.compKey === 'invoice' || renameModal.compKey === 'quote');
         const versionLabel = renameModal.compKey === 'quote' ? 'Quote' : 'Invoice';
@@ -9667,7 +9663,7 @@ export default function Dashboard({ user, onLogout }) {
                 <input value={renameModal.suggestedName} onChange={e => setRenameModal(prev => ({ ...prev, suggestedName: e.target.value }))} style={{ width: "100%", padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} onFocus={e => { const val = e.target.value; const dotIdx = val.lastIndexOf('.'); if (dotIdx > 0) e.target.setSelectionRange(0, dotIdx); }} autoFocus onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('rename-modal-upload-btn')?.click(); } }} />
               </div>
               <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 20 }}>
-                {isDrive ? "Rename the file before uploading to Drive" : isVersioned ? `Format: ProjectCode_Vendor_Name_${versionLabel}_V#.ext` : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'banking' ? 'Banking' : renameModal.compKey === 'quote' ? 'Quote' : 'Contract'} - Vendor Name.ext`}
+                {isDrive ? "Rename the file before uploading to Drive" : isVersioned ? `Format: ProjectCode_Vendor_Name_${versionLabel}_V#.ext` : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'quote' ? 'Quote' : 'Contract'} - Vendor Name.ext`}
               </div>
             </div>
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "flex-end", gap: 10 }}>

@@ -11,10 +11,9 @@ const DEFAULT_TEMPLATE = [
       { name: 'Exports', children: [] },
     ]},
     { name: 'CLIENT DOCS', children: [
-      { name: 'Received from Client', children: [] },
       { name: 'Sent to Client', children: [] },
+      { name: 'Received from Client', children: [] },
     ]},
-    { name: 'SOW', children: [] },
     { name: 'VENDORS', children: [] },
   ]},
   { name: 'PRODUCTION', children: [] },
@@ -22,7 +21,7 @@ const DEFAULT_TEMPLATE = [
 ];
 
 const VENDOR_SUBFOLDER_TEMPLATE = [
-  'Agreements', 'Banking', 'COI', 'Invoices', 'Quotes', 'W9'
+  'Agreement', 'COI', 'Invoices', 'Quotes', 'W9'
 ];
 
 function getDriveClient(readOnly = false) {
