@@ -1729,6 +1729,69 @@ export default function Dashboard({ user, onLogout }) {
   const [prFilters, setPrFilters] = useState({ task: "", dept: "", location: "", responsible: "", status: "", notes: "" });
   const [prSort, setPrSort] = useState({ col: null, dir: "asc" });
   const [prShowFilters, setPrShowFilters] = useState(false);
+
+  // ─── UNDO / REDO SYSTEM ─────────────────────────────────────
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const lastSnapshotRef = useRef(null);
+  const pushUndoSnapshot = () => {
+    const snap = JSON.stringify({ wb: projectWorkback[activeProjectId] || [], pr: (projectProgress[activeProjectId] || { rows: [] }).rows || [] });
+    if (snap !== lastSnapshotRef.current) {
+      undoStackRef.current.push(snap);
+      if (undoStackRef.current.length > 50) undoStackRef.current.shift();
+      redoStackRef.current = [];
+      lastSnapshotRef.current = snap;
+    }
+  };
+  const handleUndo = () => {
+    if (undoStackRef.current.length === 0) return;
+    const currentSnap = JSON.stringify({ wb: projectWorkback[activeProjectId] || [], pr: (projectProgress[activeProjectId] || { rows: [] }).rows || [] });
+    redoStackRef.current.push(currentSnap);
+    const prev = JSON.parse(undoStackRef.current.pop());
+    setProjectWorkback(p => ({ ...p, [activeProjectId]: prev.wb }));
+    setProjectProgress(p => ({ ...p, [activeProjectId]: { ...(p[activeProjectId] || { rows: [], locations: [] }), rows: prev.pr } }));
+    lastSnapshotRef.current = JSON.stringify(prev);
+  };
+  const handleRedo = () => {
+    if (redoStackRef.current.length === 0) return;
+    const currentSnap = JSON.stringify({ wb: projectWorkback[activeProjectId] || [], pr: (projectProgress[activeProjectId] || { rows: [] }).rows || [] });
+    undoStackRef.current.push(currentSnap);
+    const next = JSON.parse(redoStackRef.current.pop());
+    setProjectWorkback(p => ({ ...p, [activeProjectId]: next.wb }));
+    setProjectProgress(p => ({ ...p, [activeProjectId]: { ...(p[activeProjectId] || { rows: [], locations: [] }), rows: next.pr } }));
+    lastSnapshotRef.current = JSON.stringify(next);
+  };
+  // Global keyboard shortcuts: Cmd+Z, Cmd+Y/Cmd+Shift+Z
+  useEffect(() => {
+    const handler = (e) => {
+      const isMod = e.metaKey || e.ctrlKey;
+      if (isMod && e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if (isMod && (e.key === "y" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); handleRedo(); }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  });
+  // Table cell navigation: Enter → next row, Shift+Enter → prev row
+  const handleTableKeyNav = (e, tableId, rowIndex, colIndex) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.altKey) {
+      e.preventDefault();
+      const nextRow = document.querySelector(`[data-table="${tableId}"][data-row="${rowIndex + 1}"][data-col="${colIndex}"]`);
+      if (nextRow) nextRow.focus();
+    }
+    if (e.key === "Enter" && e.shiftKey) {
+      e.preventDefault();
+      const prevRow = document.querySelector(`[data-table="${tableId}"][data-row="${rowIndex - 1}"][data-col="${colIndex}"]`);
+      if (prevRow) prevRow.focus();
+    }
+    if (e.key === "ArrowDown" && e.target.tagName !== "SELECT") {
+      const nextRow = document.querySelector(`[data-table="${tableId}"][data-row="${rowIndex + 1}"][data-col="${colIndex}"]`);
+      if (nextRow) { e.preventDefault(); nextRow.focus(); }
+    }
+    if (e.key === "ArrowUp" && e.target.tagName !== "SELECT") {
+      const prevRow = document.querySelector(`[data-table="${tableId}"][data-row="${rowIndex - 1}"][data-col="${colIndex}"]`);
+      if (prevRow) { e.preventDefault(); prevRow.focus(); }
+    }
+  };
   // ─── PROJECT COMMENTS (COMMENT FEED) ──────────────────────────
   const [projectComments, setProjectComments] = useState({});
   const comments = projectComments[activeProjectId] || [];
@@ -3863,6 +3926,7 @@ export default function Dashboard({ user, onLogout }) {
 
   const updateGlobalContact = (contactId, field, val) => setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
   const updateWB = (id, key, val) => {
+    pushUndoSnapshot();
     setWorkback(prev => prev.map(w => w.id === id ? { ...w, [key]: val } : w));
     if (key === "status") {
       const wb = workback.find(w => w.id === id);
@@ -3876,6 +3940,7 @@ export default function Dashboard({ user, onLogout }) {
     }
   };
   const addWBRow = () => {
+    pushUndoSnapshot();
     setWorkback(prev => [...prev, { id: `wb_${Date.now()}`, task: "", date: "", depts: [], status: "Not Started", owner: "" }]);
     logActivity("workback", "added new row", project?.name);
   };
@@ -4302,7 +4367,7 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   return (
-    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: `${appSettings.branding?.bgZoom || 100}%`, backgroundPosition: appSettings.branding?.bgPosition || "center center", backgroundRepeat: "no-repeat" } : {}) }}>
+    <div style={{ height: "100vh", background: "var(--bg)", color: "var(--text)", fontFamily: "'DM Sans', sans-serif", display: "flex", flexDirection: "column", transition: "background 0.3s, color 0.3s", overflow: "hidden" }}>
       <style>{`
         :root {
           --bg: ${T.bg}; --bgSub: ${T.bgSub}; --bgCard: ${T.bgCard}; --bgInput: ${T.bgInput}; --bgHover: ${T.bgHover};
@@ -4664,7 +4729,7 @@ export default function Dashboard({ user, onLogout }) {
             )}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 40px" }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 40px", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: `${appSettings.branding?.bgZoom || 100}%`, backgroundPosition: appSettings.branding?.bgPosition || "center center", backgroundRepeat: "no-repeat", backgroundAttachment: "local" } : {}) }}>
 
             {/* ═══ ADAPTIVE AT A GLANCE (3 tabs) ═══ */}
             {activeTab === "calendar" && (
@@ -6483,7 +6548,7 @@ export default function Dashboard({ user, onLogout }) {
                       <MultiDropdown values={wb.depts} options={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort()} onChange={v => updateWB(wb.id, "depts", v)} colorMap={DEPT_COLORS} />
                       <Dropdown value={wb.owner} options={eventContactNames} onChange={v => updateWB(wb.id, "owner", v)} width="100%" allowBlank blankLabel="—" />
                       <Dropdown value={wb.status} options={WB_STATUSES} onChange={v => updateWB(wb.id, "status", v)} colors={Object.fromEntries(WB_STATUSES.map(s => [s, { bg: WB_STATUS_STYLES[s].bg, text: WB_STATUS_STYLES[s].text, dot: WB_STATUS_STYLES[s].text }]))} width="100%" />
-                      <button onClick={() => setWorkback(p => p.filter(w => w.id !== wb.id))} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
+                      <button onClick={() => { pushUndoSnapshot(); setWorkback(p => p.filter(w => w.id !== wb.id)); }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
                     </div>
                     );
                   })}
@@ -6514,10 +6579,12 @@ export default function Dashboard({ user, onLogout }) {
 
               // Helpers
               const addPRRow = () => {
+                pushUndoSnapshot();
                 const newRow = { id: `pr_${Date.now()}`, done: false, task: "", dept: "", location: "", responsible: "", status: "Not Started", notes: "" };
                 setProgress(prev => ({ ...prev, rows: [...(prev.rows || []), newRow] }));
               };
               const updatePRRow = (id, field, value) => {
+                pushUndoSnapshot();
                 setProgress(prev => ({
                   ...prev,
                   rows: (prev.rows || []).map(r => {
@@ -6539,7 +6606,7 @@ export default function Dashboard({ user, onLogout }) {
                   })
                 }));
               };
-              const deletePRRow = (id) => setProgress(prev => ({ ...prev, rows: (prev.rows || []).filter(r => r.id !== id) }));
+              const deletePRRow = (id) => { pushUndoSnapshot(); setProgress(prev => ({ ...prev, rows: (prev.rows || []).filter(r => r.id !== id) })); };
               const addPRLocation = () => {
                 const name = prompt("Enter location name:");
                 if (name && name.trim()) setProgress(prev => ({ ...prev, locations: [...(prev.locations || []), name.trim()].sort() }));
@@ -6599,6 +6666,48 @@ export default function Dashboard({ user, onLogout }) {
                   <div><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PROGRESS REPORT</div><div style={{ fontSize: 12, color: "var(--textMuted)" }}>Track tasks, ownership, and status across all workstreams</div></div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button onClick={() => setPrShowFilters(p => !p)} style={{ padding: "7px 14px", background: prShowFilters ? "#3da5db20" : "#3da5db10", border: `1px solid ${prShowFilters ? "#3da5db40" : "#3da5db25"}`, borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>⊘ Filter</button>
+                    <label style={{ padding: "7px 14px", background: "#9b6dff10", border: "1px solid #9b6dff25", borderRadius: 7, color: "#9b6dff", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 13 }}>📊</span> Import CSV
+                      <input type="file" accept=".csv,.tsv" hidden onChange={e => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = ev => {
+                          const text = ev.target.result;
+                          const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
+                          if (lines.length < 2) return;
+                          const headers = lines[0].split(",").map(h => h.trim().toLowerCase().replace(/['"]/g, ""));
+                          const colMap = {};
+                          headers.forEach((h, i) => {
+                            if (h.includes("task") || h.includes("item") || h.includes("name")) colMap.task = i;
+                            if (h.includes("dept") || h.includes("department")) colMap.dept = i;
+                            if (h.includes("location") || h.includes("loc")) colMap.location = i;
+                            if (h.includes("responsible") || h.includes("owner") || h.includes("assigned")) colMap.responsible = i;
+                            if (h.includes("status")) colMap.status = i;
+                            if (h.includes("note")) colMap.notes = i;
+                          });
+                          if (colMap.task === undefined) { colMap.task = 0; }
+                          pushUndoSnapshot();
+                          const newRows = lines.slice(1).map(line => {
+                            const cells = line.match(/(".*?"|[^",]+|(?<=,)(?=,))/g)?.map(c => c.replace(/^"|"$/g, "").trim()) || line.split(",").map(c => c.trim());
+                            return {
+                              id: `pr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                              done: false,
+                              task: cells[colMap.task] || "",
+                              dept: cells[colMap.dept] || "",
+                              location: cells[colMap.location] || "",
+                              responsible: cells[colMap.responsible] || "",
+                              status: cells[colMap.status] || "Not Started",
+                              notes: cells[colMap.notes] || "",
+                            };
+                          }).filter(r => r.task);
+                          setProgress(prev => ({ ...prev, rows: [...(prev.rows || []).filter(r => r.task), ...newRows] }));
+                          logActivity("progress", `imported ${newRows.length} tasks from CSV`, project?.name);
+                        };
+                        reader.readAsText(file);
+                        e.target.value = "";
+                      }} />
+                    </label>
                     <button onClick={addPRRow} style={{ padding: "7px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add Row</button>
                   </div>
                 </div>
@@ -9047,7 +9156,7 @@ export default function Dashboard({ user, onLogout }) {
 
             <div style={{ padding: "28px 36px 32px" }}>
               {/* Row 1: Client + Project Name */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 20, marginBottom: 20 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1.5fr", gap: 28, marginBottom: 26 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>CLIENT *</label>
                   <ClientSearchInput value={newProjectForm.client} onChange={v => updateNPF("client", v)} projects={projects} clients={clients} onAddNew={() => { setClientForm({ ...emptyClient }); setShowAddClient(true); }} />
@@ -9058,8 +9167,8 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Row 2: Location + Venue + Status + Project Type */}
-              <div style={{ display: "grid", gridTemplateColumns: "0.8fr 1.2fr 0.8fr 1fr", gap: 20, marginBottom: 20 }}>
+              {/* Row 2: Location + Venue */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: 28, marginBottom: 26 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>LOCATION <span style={{ color: "var(--textGhost)", fontWeight: 400 }}>(for code)</span></label>
                   <input value={newProjectForm.location} onChange={e => updateNPF("location", e.target.value)} placeholder="LA, MIA, Tulum..." style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
@@ -9068,6 +9177,10 @@ export default function Dashboard({ user, onLogout }) {
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>VENUE ADDRESS <span style={{ color: "var(--textGhost)", fontWeight: 400 }}>(on-site)</span></label>
                   <AddressAutocomplete value={newProjectForm.venue || ""} onChange={v => updateNPF("venue", v)} showIcon={false} placeholder="Search venue address..." inputStyle={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" }} />
                 </div>
+              </div>
+
+              {/* Row 3: Status + Project Type */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, marginBottom: 26 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>STATUS</label>
                   <select value={newProjectForm.status} onChange={e => updateNPF("status", e.target.value)} style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }}>
@@ -9083,8 +9196,8 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Row 3: Event dates */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 20, marginBottom: 20 }}>
+              {/* Row 4: Event dates */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 28, marginBottom: 26 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>EVENT START</label>
                   <input type="date" value={newProjectForm.eventDates.start} onChange={e => updateNPF("eventDates", { ...newProjectForm.eventDates, start: e.target.value })} style={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none" }} />
@@ -9103,20 +9216,20 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
               </div>
 
-              {/* Row 4: WHY */}
-              <div style={{ marginBottom: 20 }}>
+              {/* Row 5: WHY */}
+              <div style={{ marginBottom: 26 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>PROJECT BRIEF / WHY</label>
                 <textarea value={newProjectForm.why} onChange={e => updateNPF("why", e.target.value)} rows={2} placeholder="Spring product launch — hero content for social + OLV" style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 12, outline: "none", resize: "vertical", fontFamily: "'DM Sans'" }} />
               </div>
 
-              {/* Row 4b: SERVICES */}
-              <div style={{ marginBottom: 20 }}>
+              {/* Row 6: SERVICES */}
+              <div style={{ marginBottom: 26 }}>
                 <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>SERVICE NEEDS</label>
                 <MultiDropdown values={newProjectForm.services || []} options={SERVICE_OPTIONS} onChange={v => updateNPF("services", v)} />
               </div>
 
               {/* Row 5: Budget + Tour toggle */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, marginBottom: 28 }}>
                 <div>
                   <label style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, display: "block", marginBottom: 6 }}>ESTIMATED BUDGET</label>
                   <input type="number" value={newProjectForm.budget || ""} onChange={e => updateNPF("budget", Number(e.target.value))} placeholder="0" style={{ width: "100%", padding: "11px 14px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
