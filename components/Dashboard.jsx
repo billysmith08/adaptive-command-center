@@ -4931,7 +4931,7 @@ export default function Dashboard({ user, onLogout }) {
                 {glanceTab === "macro" && (
                   <div style={{ maxHeight: "calc(100vh - 320px)", overflowY: "auto", overflowX: "hidden" }}>
                     {/* Macro table */}
-                    <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)" }}>
+                    <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)", background: "var(--bgInput)" }}>
                       <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
                         <thead>
                           <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
@@ -7790,7 +7790,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ SETTINGS MODAL ═══ */}
       {showSettings && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { if (!settingsDirty) setShowSettings(false); }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 640, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 780, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
             {/* Header */}
             <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
