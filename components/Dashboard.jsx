@@ -1946,6 +1946,7 @@ export default function Dashboard({ user, onLogout }) {
   const [driveShareLoading, setDriveShareLoading] = useState(false);
   const [finFilterMonth, setFinFilterMonth] = useState("all");
   const [finFilterStatus, setFinFilterStatus] = useState("all");
+  const [finShowSubs, setFinShowSubs] = useState(false);
   const [expandedRetainers, setExpandedRetainers] = useState(new Set());
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [profileSetupForm, setProfileSetupForm] = useState({ firstName: "", lastName: "", title: "", company: "", phone: "", department: "", address: "", avatar: "" });
@@ -5612,6 +5613,13 @@ export default function Dashboard({ user, onLogout }) {
               const monthOrder = ["January","February","March","April","May","June","July","August","September","October","November","December"];
               const monthAbbr = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
               const parseNum = (v) => { if (!v && v !== 0) return 0; const n = parseFloat(String(v).replace(/[^0-9.-]/g, "")); return isNaN(n) ? 0 : n; };
+              const evalFormula = (raw) => {
+                if (!raw && raw !== 0) return 0;
+                const str = String(raw).replace(/[$,]/g, "").trim();
+                if (/^-?[\d.]+$/.test(str)) return parseFloat(str) || 0;
+                if (/^[\d.+\-*/() ]+$/.test(str)) { try { const r = new Function("return (" + str + ")")(); return typeof r === "number" && isFinite(r) ? r : 0; } catch { return 0; } }
+                return parseNum(raw);
+              };
               const fmtMoney = (v) => { const n = parseNum(v); if (n === 0) return ""; const abs = Math.abs(n); const str = "$" + abs.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); return n < 0 ? "-" + str : str; };
               const moneyColor = (v) => { const n = parseNum(v); return n < 0 ? "#e85454" : n > 0 ? "#4ecb71" : "var(--textGhost)"; };
               const statusMap = { "In-Production": "Active", "Exploration": "Prospecting", "Wrap": "Complete", "Archived": "Archived" };
@@ -5627,7 +5635,7 @@ export default function Dashboard({ user, onLogout }) {
                 return "";
               };
 
-              const allProjects = projects.filter(p => !p.parentId && p.status !== "Archived");
+              const allProjects = projects.filter(p => (finShowSubs || !p.parentId) && p.status !== "Archived");
 
               // Apply filters
               const Q1 = ["January","February","March"];
@@ -5647,11 +5655,25 @@ export default function Dashboard({ user, onLogout }) {
                 return true;
               });
 
-              const sorted = [...filtered].sort((a, b) => {
-                const ma = monthOrder.indexOf(getProjectMonth(a));
-                const mb = monthOrder.indexOf(getProjectMonth(b));
-                return (ma === -1 ? 99 : ma) - (mb === -1 ? 99 : mb);
-              });
+              const sorted = (() => {
+                const byMonth = [...filtered].sort((a, b) => {
+                  const ma = monthOrder.indexOf(getProjectMonth(a));
+                  const mb = monthOrder.indexOf(getProjectMonth(b));
+                  return (ma === -1 ? 99 : ma) - (mb === -1 ? 99 : mb);
+                });
+                if (!finShowSubs) return byMonth;
+                // Group subs under their parents
+                const parents = byMonth.filter(p => !p.parentId);
+                const subs = byMonth.filter(p => p.parentId);
+                const ordered = [];
+                parents.forEach(p => {
+                  ordered.push(p);
+                  subs.filter(s => s.parentId === p.id).forEach(s => ordered.push(s));
+                });
+                // Orphan subs (parent not in filtered set)
+                subs.filter(s => !parents.some(p => p.id === s.parentId)).forEach(s => ordered.push(s));
+                return ordered;
+              })();
 
               // Custom columns from appSettings (synced to Supabase via app_settings table)
               const savedCols = appSettings.finCustomCols || [];
@@ -5664,7 +5686,33 @@ export default function Dashboard({ user, onLogout }) {
               };
               const removeCustomCol = (key) => {
                 if (!confirm("Remove this column?")) return;
-                const updated = { ...appSettings, finCustomCols: (appSettings.finCustomCols || []).filter(c => c.key !== key) };
+                const updated = { ...appSettings, finCustomCols: (appSettings.finCustomCols || []).filter(c => c.key !== key), finColOrder: (appSettings.finColOrder || []).filter(k => k !== key) };
+                saveSettings(updated);
+              };
+
+              // Column ordering
+              const builtInCols = [
+                { key: "fin_walkout", label: "EST. WALKOUT", width: 120, builtIn: true },
+                { key: "fin_talent", label: "TALENT FEE", width: 110, builtIn: true },
+                { key: "fin_prodCoord", label: "PROD. COORD", width: 110, builtIn: true },
+                { key: "fin_showCoord", label: "SHOW COORD", width: 110, builtIn: true },
+              ];
+              const allColDefs = [...builtInCols, ...savedCols.map(c => ({ key: c.key, label: c.label.toUpperCase(), width: 120, builtIn: false }))];
+              const colOrder = appSettings.finColOrder || allColDefs.map(c => c.key);
+              // Ensure any new cols not in order get appended
+              const orderedCols = [
+                ...colOrder.filter(k => allColDefs.some(c => c.key === k)).map(k => allColDefs.find(c => c.key === k)),
+                ...allColDefs.filter(c => !colOrder.includes(c.key)),
+              ];
+              const moveCol = (key, dir) => {
+                const keys = orderedCols.map(c => c.key);
+                const idx = keys.indexOf(key);
+                if (idx < 0) return;
+                const newIdx = idx + dir;
+                if (newIdx < 0 || newIdx >= keys.length) return;
+                const copy = [...keys];
+                [copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]];
+                const updated = { ...appSettings, finColOrder: copy };
                 saveSettings(updated);
               };
 
@@ -5681,14 +5729,10 @@ export default function Dashboard({ user, onLogout }) {
                 if (p.isRetainer) {
                   const months = p.fin_retainer_months || {};
                   return Object.values(months).reduce((s, m) => {
-                    let ms = parseNum(m.fin_walkout) + parseNum(m.fin_talent) + parseNum(m.fin_prodCoord) + parseNum(m.fin_showCoord);
-                    savedCols.forEach(c => { ms += parseNum(m[c.key]); });
-                    return s + ms;
+                    return s + orderedCols.reduce((ms, c) => ms + parseNum(m[c.key]), 0);
                   }, 0);
                 }
-                let s = parseNum(p.fin_walkout) + parseNum(p.fin_talent) + parseNum(p.fin_prodCoord) + parseNum(p.fin_showCoord);
-                savedCols.forEach(c => { s += parseNum(p[c.key]); });
-                return s;
+                return orderedCols.reduce((s, c) => s + parseNum(p[c.key]), 0);
               };
               const updateRetainerMonth = (projectId, month, field, value) => {
                 setProjects(prev => prev.map(p => {
@@ -5747,6 +5791,7 @@ export default function Dashboard({ user, onLogout }) {
                         {(finFilterMonth !== "all" || finFilterStatus !== "all") && (
                           <button onClick={() => { setFinFilterMonth("all"); setFinFilterStatus("all"); }} style={{ padding: "4px 8px", background: "#e8545410", border: "1px solid #e8545420", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 9, fontWeight: 700 }}>✕ Clear</button>
                         )}
+                        <button onClick={() => setFinShowSubs(!finShowSubs)} style={{ padding: "5px 8px", background: finShowSubs ? "#9b6dff10" : "var(--bgCard)", border: `1px solid ${finShowSubs ? "#9b6dff30" : "var(--borderSub)"}`, borderRadius: 6, color: finShowSubs ? "#9b6dff" : "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }} title={finShowSubs ? "Hide sub-projects" : "Show sub-projects"}>{finShowSubs ? "▾" : "▸"} Subs</button>
                       </div>
                       <button onClick={addCustomCol} style={{ padding: "5px 10px", background: "#3da5db10", border: "1px solid #3da5db25", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>+ Column</button>
                     </div>
@@ -5768,28 +5813,28 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                     <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 80 }}>
                       <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>PROJECTS</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{sorted.length}{finFilterMonth !== "all" || finFilterStatus !== "all" ? `/${allProjects.length}` : ""}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", fontFamily: "'JetBrains Mono', monospace" }}>{sorted.length}{finShowSubs ? ` (${sorted.filter(p => p.parentId).length} subs)` : ""}{finFilterMonth !== "all" || finFilterStatus !== "all" ? `/${allProjects.length}` : ""}</div>
                     </div>
                   </div>
 
                   {/* Table */}
                   <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 300px)" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 900 + savedCols.length * 130 }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 540 + orderedCols.length * 130 }}>
                         <thead>
                           <tr>
                             <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>PROJECTS</th>
                             <th style={{ ...headerStyle, width: 90, textAlign: "center" }}>STATUS</th>
                             <th style={{ ...headerStyle, width: 60, textAlign: "center" }}>MONTH</th>
                             <th style={{ ...headerStyle, width: 180, textAlign: "left" }}>NOTES</th>
-                            <th style={{ ...headerStyle, width: 120, textAlign: "right" }}>EST. WALKOUT</th>
-                            <th style={{ ...headerStyle, width: 110, textAlign: "right" }}>TALENT FEE</th>
-                            <th style={{ ...headerStyle, width: 110, textAlign: "right" }}>PROD. COORD</th>
-                            <th style={{ ...headerStyle, width: 110, textAlign: "right" }}>SHOW COORD</th>
-                            {savedCols.map(c => (
-                              <th key={c.key} style={{ ...headerStyle, width: 120, textAlign: "right", cursor: "pointer", position: "relative" }}>
-                                <span>{c.label.toUpperCase()}</span>
-                                <span onClick={(e) => { e.stopPropagation(); removeCustomCol(c.key); }} style={{ marginLeft: 4, color: "#e85454", cursor: "pointer", opacity: 0.5, fontSize: 8 }} title="Remove column">✕</span>
+                            {orderedCols.map((c, ci) => (
+                              <th key={c.key} style={{ ...headerStyle, width: c.width, textAlign: "right", cursor: "default", position: "relative", userSelect: "none" }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
+                                  {ci > 0 && <span onClick={() => moveCol(c.key, -1)} style={{ cursor: "pointer", fontSize: 7, color: "var(--textGhost)", padding: "0 1px", opacity: 0.5, transition: "opacity 0.15s" }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.5} title="Move left">◀</span>}
+                                  <span>{c.label}</span>
+                                  {ci < orderedCols.length - 1 && <span onClick={() => moveCol(c.key, 1)} style={{ cursor: "pointer", fontSize: 7, color: "var(--textGhost)", padding: "0 1px", opacity: 0.5, transition: "opacity 0.15s" }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.5} title="Move right">▶</span>}
+                                  {!c.builtIn && <span onClick={(e) => { e.stopPropagation(); removeCustomCol(c.key); }} style={{ marginLeft: 2, color: "#e85454", cursor: "pointer", opacity: 0.5, fontSize: 8 }} title="Remove column">✕</span>}
+                                </div>
                               </th>
                             ))}
                             <th style={{ ...headerStyle, width: 120, textAlign: "right" }}>Σ SUM</th>
@@ -5802,20 +5847,23 @@ export default function Dashboard({ user, onLogout }) {
                             const month = getProjectMonth(p);
                             const monthIdx = monthOrder.indexOf(month);
                             const isExpanded = expandedRetainers.has(p.id);
+                            const isSub = !!p.parentId;
                             const rows = [];
 
                             // Main project row
                             rows.push(
-                              <tr key={p.id} style={{ background: idx % 2 === 0 ? "transparent" : "var(--bgHover)" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a08"} onMouseLeave={e => e.currentTarget.style.background = idx % 2 === 0 ? "transparent" : "var(--bgHover)"}>
+                              <tr key={p.id} style={{ background: isSub ? "#9b6dff06" : idx % 2 === 0 ? "transparent" : "var(--bgHover)" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a08"} onMouseLeave={e => e.currentTarget.style.background = isSub ? "#9b6dff06" : idx % 2 === 0 ? "transparent" : "var(--bgHover)"}>
                                 <td style={{ ...colStyle, textAlign: "left" }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: isSub ? 24 : 0 }}>
                                     {p.isRetainer && (
                                       <button onClick={() => setExpandedRetainers(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#9b6dff", padding: 0, width: 16 }}>{isExpanded ? "▼" : "▶"}</button>
                                     )}
                                     <div>
-                                      <div style={{ fontWeight: 600, color: "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} onContextMenu={(e) => { e.preventDefault(); if (confirm(`${p.isRetainer ? "Remove" : "Mark"} "${p.name}" as a retainer project?`)) toggleRetainer(p.id); }}>
+                                      <div style={{ fontWeight: 600, color: isSub ? "var(--textSub)" : "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} onContextMenu={(e) => { e.preventDefault(); if (confirm(`${p.isRetainer ? "Remove" : "Mark"} "${p.name}" as a retainer project?`)) toggleRetainer(p.id); }}>
+                                        {isSub && <span style={{ color: "#9b6dff", fontSize: 10 }}>↳</span>}
                                         {p.name}
                                         {p.isRetainer && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#9b6dff18", color: "#9b6dff", fontWeight: 700 }}>RETAINER</span>}
+                                        {isSub && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#9b6dff10", color: "#9b6dff", fontWeight: 700 }}>SUB</span>}
                                       </div>
                                       {code && <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{code}</div>}
                                     </div>
@@ -5836,30 +5884,10 @@ export default function Dashboard({ user, onLogout }) {
                                     <input value={p.fin_notes || ""} onChange={e => updateFinField(p.id, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 11, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
                                   )}
                                 </td>
-                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_walkout")) : moneyColor(p.fin_walkout) }}>
-                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_walkout")) || "—") : (
-                                    <input value={p.fin_walkout || ""} onChange={e => updateFinField(p.id, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_walkout) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_walkout", v.toFixed(2)); }} />
-                                  )}
-                                </td>
-                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_talent")) : moneyColor(p.fin_talent) }}>
-                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_talent")) || "—") : (
-                                    <input value={p.fin_talent || ""} onChange={e => updateFinField(p.id, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_talent) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_talent", v.toFixed(2)); }} />
-                                  )}
-                                </td>
-                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_prodCoord")) : moneyColor(p.fin_prodCoord) }}>
-                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_prodCoord")) || "—") : (
-                                    <input value={p.fin_prodCoord || ""} onChange={e => updateFinField(p.id, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_prodCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_prodCoord", v.toFixed(2)); }} />
-                                  )}
-                                </td>
-                                <td style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, "fin_showCoord")) : moneyColor(p.fin_showCoord) }}>
-                                  {p.isRetainer ? (fmtMoney(retainerMonthSum(p, "fin_showCoord")) || "—") : (
-                                    <input value={p.fin_showCoord || ""} onChange={e => updateFinField(p.id, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p.fin_showCoord) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, "fin_showCoord", v.toFixed(2)); }} />
-                                  )}
-                                </td>
-                                {savedCols.map(c => (
+                                {orderedCols.map(c => (
                                   <td key={c.key} style={{ ...colStyle, textAlign: "right", fontWeight: p.isRetainer ? 700 : 400, color: p.isRetainer ? moneyColor(retainerMonthSum(p, c.key)) : moneyColor(p[c.key]) }}>
                                     {p.isRetainer ? (fmtMoney(retainerMonthSum(p, c.key)) || "—") : (
-                                      <input value={p[c.key] || ""} onChange={e => updateFinField(p.id, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p[c.key]) }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateFinField(p.id, c.key, v.toFixed(2)); }} />
+                                      <input value={p[c.key] || ""} onChange={e => updateFinField(p.id, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(p[c.key]) }} placeholder="$0.00" onBlur={e => { const v = evalFormula(e.target.value); if (v) updateFinField(p.id, c.key, v.toFixed(2)); }} />
                                     )}
                                   </td>
                                 ))}
@@ -5874,7 +5902,7 @@ export default function Dashboard({ user, onLogout }) {
                               const retainerData = p.fin_retainer_months || {};
                               monthOrder.forEach((mo, mi) => {
                                 const md = retainerData[mo] || {};
-                                const monthRowSum = parseNum(md.fin_walkout) + parseNum(md.fin_talent) + parseNum(md.fin_prodCoord) + parseNum(md.fin_showCoord) + savedCols.reduce((s, c) => s + parseNum(md[c.key]), 0);
+                                const monthRowSum = orderedCols.reduce((s, c) => s + parseNum(md[c.key]), 0);
                                 rows.push(
                                   <tr key={`${p.id}_${mo}`} style={{ background: "#9b6dff06" }}>
                                     <td style={{ ...colStyle, textAlign: "left", paddingLeft: 40 }}>
@@ -5887,21 +5915,9 @@ export default function Dashboard({ user, onLogout }) {
                                     <td style={{ ...colStyle, textAlign: "left" }}>
                                       <input value={md.fin_notes || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_notes", e.target.value)} style={{ ...inputStyle, fontSize: 10, fontFamily: "'Instrument Sans', sans-serif" }} placeholder="Notes..." />
                                     </td>
-                                    <td style={{ ...colStyle, textAlign: "right" }}>
-                                      <input value={md.fin_walkout || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_walkout", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_walkout), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_walkout", v.toFixed(2)); }} />
-                                    </td>
-                                    <td style={{ ...colStyle, textAlign: "right" }}>
-                                      <input value={md.fin_talent || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_talent", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_talent), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_talent", v.toFixed(2)); }} />
-                                    </td>
-                                    <td style={{ ...colStyle, textAlign: "right" }}>
-                                      <input value={md.fin_prodCoord || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_prodCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_prodCoord), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_prodCoord", v.toFixed(2)); }} />
-                                    </td>
-                                    <td style={{ ...colStyle, textAlign: "right" }}>
-                                      <input value={md.fin_showCoord || ""} onChange={e => updateRetainerMonth(p.id, mo, "fin_showCoord", e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md.fin_showCoord), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, "fin_showCoord", v.toFixed(2)); }} />
-                                    </td>
-                                    {savedCols.map(c => (
+                                    {orderedCols.map(c => (
                                       <td key={c.key} style={{ ...colStyle, textAlign: "right" }}>
-                                        <input value={md[c.key] || ""} onChange={e => updateRetainerMonth(p.id, mo, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md[c.key]), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = parseNum(e.target.value); if (v) updateRetainerMonth(p.id, mo, c.key, v.toFixed(2)); }} />
+                                        <input value={md[c.key] || ""} onChange={e => updateRetainerMonth(p.id, mo, c.key, e.target.value)} style={{ ...inputStyle, textAlign: "right", color: moneyColor(md[c.key]), fontSize: 11 }} placeholder="$0.00" onBlur={e => { const v = evalFormula(e.target.value); if (v) updateRetainerMonth(p.id, mo, c.key, v.toFixed(2)); }} />
                                       </td>
                                     ))}
                                     <td style={{ ...colStyle, textAlign: "right", fontWeight: 600, color: moneyColor(monthRowSum), fontSize: 11 }}>
@@ -5920,11 +5936,7 @@ export default function Dashboard({ user, onLogout }) {
                             <td style={colStyle} />
                             <td style={colStyle} />
                             <td style={colStyle} />
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalWalkout) }}>{fmtMoney(totalWalkout)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalTalent) }}>{fmtMoney(totalTalent)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalProdCoord) }}>{fmtMoney(totalProdCoord)}</td>
-                            <td style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(totalShowCoord) }}>{fmtMoney(totalShowCoord)}</td>
-                            {savedCols.map(c => {
+                            {orderedCols.map(c => {
                               const colTotal = sumField(c.key);
                               return <td key={c.key} style={{ ...colStyle, textAlign: "right", fontWeight: 700, color: moneyColor(colTotal) }}>{fmtMoney(colTotal)}</td>;
                             })}
@@ -5934,7 +5946,7 @@ export default function Dashboard({ user, onLogout }) {
                       </table>
                     </div>
                   </div>
-                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Data saves live to Supabase · Month auto-derived from event date · Click project name to jump to overview · Right-click project name to toggle retainer</div>
+                  <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Supports formulas (e.g. 5990/2) · Use ◀ ▶ arrows on column headers to reorder · Right-click project name to toggle retainer · Click "Subs" to show sub-projects</div>
                 </div>
               );
             })()}
