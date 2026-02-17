@@ -1948,6 +1948,11 @@ export default function Dashboard({ user, onLogout }) {
   const [finFilterStatus, setFinFilterStatus] = useState("all");
   const [finShowSubs, setFinShowSubs] = useState(false);
   const [expandedRetainers, setExpandedRetainers] = useState(new Set());
+  const [macroFilterStatus, setMacroFilterStatus] = useState("all");
+  const [macroFilterType, setMacroFilterType] = useState("all");
+  const [macroFilterDateFrom, setMacroFilterDateFrom] = useState("");
+  const [macroFilterDateTo, setMacroFilterDateTo] = useState("");
+  const [macroExpandedParents, setMacroExpandedParents] = useState(new Set());
   const [showProfileSetup, setShowProfileSetup] = useState(false);
   const [profileSetupForm, setProfileSetupForm] = useState({ firstName: "", lastName: "", title: "", company: "", phone: "", department: "", address: "", avatar: "" });
   const [presenceUsers, setPresenceUsers] = useState([]);
@@ -3460,6 +3465,44 @@ export default function Dashboard({ user, onLogout }) {
     });
   }, [dataLoaded]);
 
+  // ─── ONE-TIME CLEANUP: dedup vendors per project ──
+  useEffect(() => {
+    if (!dataLoaded) return;
+    setProjectVendors(prevAll => {
+      let anyChanged = false;
+      const updated = { ...prevAll };
+      for (const projId of Object.keys(updated)) {
+        const vList = updated[projId] || [];
+        if (vList.length < 2) continue;
+        const seen = new Map();
+        const deduped = [];
+        vList.forEach(v => {
+          const key = (v.name || "").toLowerCase().trim();
+          if (!key) { deduped.push(v); return; }
+          if (seen.has(key)) {
+            const existing = seen.get(key);
+            const comp = { ...existing.compliance };
+            ['coi', 'w9', 'quote', 'invoice', 'contract'].forEach(k => {
+              if (v.compliance?.[k]?.done && !comp[k]?.done) comp[k] = v.compliance[k];
+            });
+            const idx = deduped.indexOf(existing);
+            if (idx !== -1) deduped[idx] = { ...existing, compliance: comp, driveFolderId: existing.driveFolderId || v.driveFolderId };
+            seen.set(key, deduped[idx]);
+            anyChanged = true;
+          } else {
+            seen.set(key, v);
+            deduped.push(v);
+          }
+        });
+        if (deduped.length !== vList.length) {
+          console.log(`Vendor dedup [${projId}]: ${vList.length} → ${deduped.length}`);
+          updated[projId] = deduped;
+        }
+      }
+      return anyChanged ? updated : prevAll;
+    });
+  }, [dataLoaded]);
+
   // ─── SYNC CLIENT CONTACTS → GLOBAL PARTNERS (once per session) ──
   const clientSyncDone = useRef(false);
   useEffect(() => {
@@ -3739,7 +3782,16 @@ export default function Dashboard({ user, onLogout }) {
       
       setProjectVendors(prevAll => {
         const prev = prevAll[proj.id] || [];
-        let updated = [...prev];
+        // Dedup existing list first (in case of prior race conditions)
+        const deduped = [];
+        const seenNames = new Set();
+        for (const v of prev) {
+          const key = (v.name || "").toLowerCase().trim();
+          if (key && seenNames.has(key)) continue;
+          seenNames.add(key);
+          deduped.push(v);
+        }
+        let updated = [...deduped];
         
         for (const [vendorName, vendorData] of Object.entries(projectDriveVendors)) {
           const existingIdx = updated.findIndex(v => v.name?.toLowerCase() === vendorName.toLowerCase());
@@ -4125,12 +4177,13 @@ export default function Dashboard({ user, onLogout }) {
     const clean = (vendorName || 'Unknown').replace(/[^a-zA-Z0-9 &'()-]/g, '').trim();
     const cleanUnder = clean.replace(/\s+/g, '_');
     const code = projectCode || 'PROJ';
+    const baseName = originalName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9 _()-]/g, '').trim();
     switch (compKey) {
-      case 'coi': return `COI - ${clean}${ext}`;
-      case 'w9': return `W9 - ${clean}${ext}`;
-      case 'contract': return `Contract - ${clean}${ext}`;
-      case 'invoice': return `${code}_${cleanUnder}_Invoice_V1${ext}`;
-      case 'quote': return `${code}_${cleanUnder}_Quote_V1${ext}`;
+      case 'coi': return `${code}_${cleanUnder}_COI_V1_(${baseName})${ext}`;
+      case 'w9': return `${code}_${cleanUnder}_W9_V1_(${baseName})${ext}`;
+      case 'contract': return `${code}_${cleanUnder}_Contract_V1_(${baseName})${ext}`;
+      case 'invoice': return `${code}_${cleanUnder}_Invoice_V1_(${baseName})${ext}`;
+      case 'quote': return `${code}_${cleanUnder}_Quote_V1_(${baseName})${ext}`;
       default: return originalName;
     }
   };
@@ -4835,8 +4888,11 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     </div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: active ? "var(--text)" : "var(--textSub)", marginBottom: 3, display: "flex", alignItems: "center", gap: 4 }}>
-                      {hasSubProjects && <span onClick={(e) => { e.stopPropagation(); setCollapsedParents(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; }); }} style={{ fontSize: 8, color: "var(--textFaint)", cursor: "pointer", padding: "2px 3px", borderRadius: 3, flexShrink: 0 }} title={collapsedParents.has(p.id) ? "Expand sub-projects" : "Collapse sub-projects"}>{collapsedParents.has(p.id) ? "▸" : "▾"}</span>}
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      {hasSubProjects && <span onClick={(e) => { e.stopPropagation(); setCollapsedParents(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; }); }} style={{ fontSize: 14, color: collapsedParents.has(p.id) ? "var(--textFaint)" : "#ff6b4a", cursor: "pointer", padding: "2px 4px", borderRadius: 4, flexShrink: 0, background: collapsedParents.has(p.id) ? "transparent" : "#ff6b4a08", transition: "all 0.15s" }} title={collapsedParents.has(p.id) ? "Expand sub-projects" : "Collapse sub-projects"}>{collapsedParents.has(p.id) ? "▸" : "▾"}</span>}
+                      <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
+                        {isSubProject && (() => { const parent = projects.find(pp => pp.id === p.parentId); return parent ? <div style={{ fontSize: 8, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.3, marginBottom: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{parent.name} ›</div> : null; })()}
+                        <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.name}</span>
+                      </div>
                     </div>
                     <div style={{ fontSize: 8, color: p.code ? "var(--textGhost)" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.3, marginBottom: 3, opacity: p.code ? 1 : 0.5 }}>{p.code || generateProjectCode(p)}</div>
                     {((p.engagementDates && p.engagementDates.start) || (p.eventDates && p.eventDates.start)) && <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 4 }}>
@@ -4929,24 +4985,76 @@ export default function Dashboard({ user, onLogout }) {
                 )}
 
                 {/* ── Macro View ── */}
-                {glanceTab === "macro" && (
+                {glanceTab === "macro" && (() => {
+                  // Build filtered + grouped project list
+                  const allStatuses = [...new Set(projects.map(p => p.status).filter(Boolean))].sort();
+                  const allTypes = [...new Set(projects.map(p => p.projectType).filter(Boolean))].sort();
+                  const filtered = projects.filter(p => {
+                    if (p.status === "Archived") return false;
+                    if (macroFilterStatus !== "all" && p.status !== macroFilterStatus) return false;
+                    if (macroFilterType !== "all" && p.projectType !== macroFilterType) return false;
+                    if (macroFilterDateFrom) {
+                      const d = p.eventDates?.start || p.engagementDates?.start;
+                      if (!d || d < macroFilterDateFrom) return false;
+                    }
+                    if (macroFilterDateTo) {
+                      const d = p.eventDates?.start || p.engagementDates?.start;
+                      if (!d || d > macroFilterDateTo) return false;
+                    }
+                    return true;
+                  });
+                  // Group: parents first sorted by date, subs under their parent
+                  const parents = filtered.filter(p => !p.parentId).sort((a, b) => {
+                    const da = a.eventDates?.start || a.engagementDates?.start || "9999";
+                    const db = b.eventDates?.start || b.engagementDates?.start || "9999";
+                    return da.localeCompare(db);
+                  });
+                  const subs = filtered.filter(p => p.parentId);
+                  const macroRows = [];
+                  parents.forEach(p => {
+                    const childSubs = subs.filter(s => s.parentId === p.id).sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
+                    macroRows.push({ ...p, _isMacroParent: childSubs.length > 0, _macroSubCount: childSubs.length });
+                    if (macroExpandedParents.has(p.id)) childSubs.forEach(s => macroRows.push({ ...s, _isMacroSub: true }));
+                  });
+                  // Orphan subs whose parent was filtered out
+                  subs.filter(s => !parents.some(p => p.id === s.parentId)).forEach(s => macroRows.push({ ...s, _isMacroSub: true }));
+                  const anyFilters = macroFilterStatus !== "all" || macroFilterType !== "all" || macroFilterDateFrom || macroFilterDateTo;
+
+                  return (
                   <div style={{ maxHeight: "calc(100vh - 320px)", overflowY: "auto", overflowX: "hidden" }}>
+                    {/* Filters bar */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+                      <select value={macroFilterStatus} onChange={e => setMacroFilterStatus(e.target.value)} style={{ padding: "6px 10px", background: macroFilterStatus !== "all" ? "#ff6b4a10" : "var(--bgInput)", border: `1px solid ${macroFilterStatus !== "all" ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 6, color: macroFilterStatus !== "all" ? "#ff6b4a" : "var(--textSub)", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                        <option value="all">All Statuses</option>
+                        {allStatuses.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <select value={macroFilterType} onChange={e => setMacroFilterType(e.target.value)} style={{ padding: "6px 10px", background: macroFilterType !== "all" ? "#3da5db10" : "var(--bgInput)", border: `1px solid ${macroFilterType !== "all" ? "#3da5db30" : "var(--borderSub)"}`, borderRadius: 6, color: macroFilterType !== "all" ? "#3da5db" : "var(--textSub)", fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                        <option value="all">All Types</option>
+                        {allTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600 }}>FROM</span>
+                        <input type="date" value={macroFilterDateFrom} onChange={e => setMacroFilterDateFrom(e.target.value)} style={{ padding: "5px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textSub)", fontSize: 10, colorScheme: "var(--filterScheme)" }} />
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600 }}>TO</span>
+                        <input type="date" value={macroFilterDateTo} onChange={e => setMacroFilterDateTo(e.target.value)} style={{ padding: "5px 8px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textSub)", fontSize: 10, colorScheme: "var(--filterScheme)" }} />
+                      </div>
+                      {anyFilters && <button onClick={() => { setMacroFilterStatus("all"); setMacroFilterType("all"); setMacroFilterDateFrom(""); setMacroFilterDateTo(""); }} style={{ padding: "5px 10px", background: "#e8545410", border: "1px solid #e8545430", borderRadius: 6, color: "#e85454", cursor: "pointer", fontSize: 9, fontWeight: 600 }}>✕ Clear</button>}
+                      <span style={{ fontSize: 10, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{macroRows.length} projects</span>
+                    </div>
                     {/* Macro table */}
                     <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid var(--borderSub)", background: "var(--bgInput)" }}>
-                      <table style={{ width: "100%", minWidth: 1600, borderCollapse: "collapse", fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
+                      <table style={{ width: "100%", minWidth: 1600, borderCollapse: "separate", borderSpacing: 0, fontSize: 11, fontFamily: "'DM Sans', sans-serif" }}>
                         <thead>
                           <tr style={{ borderBottom: "2px solid var(--borderSub)", background: "var(--bgSub)" }}>
                             {["Project", "Status", "Date(s)", "Client", "Project Type", "Location", "Producer(s)", "Manager(s)", "Services Needed", "Brief", "Project Code"].map(h => (
-                              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", background: "var(--bgSub)" }}>{h.toUpperCase()}</th>
+                              <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 9, fontWeight: 700, color: "var(--textFaint)", letterSpacing: 0.8, whiteSpace: "nowrap", background: "var(--bgSub)", borderBottom: "2px solid var(--borderSub)" }}>{h.toUpperCase()}</th>
                             ))}
                           </tr>
                         </thead>
                         <tbody>
-                          {[...projects].sort((a, b) => {
-                            const da = a.eventDates?.start || a.engagementDates?.start || "9999";
-                            const db = b.eventDates?.start || b.engagementDates?.start || "9999";
-                            return da.localeCompare(db);
-                          }).map(p => {
+                          {macroRows.map(p => {
                             const sc = STATUS_COLORS[p.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
                             const ptc = PT_COLORS[p.projectType] || "var(--textMuted)";
                             const dateStr = (() => {
@@ -4955,9 +5063,25 @@ export default function Dashboard({ user, onLogout }) {
                               const fmt2 = d => { const dt = new Date(d + "T12:00:00"); return `${dt.toLocaleDateString("en-US", { month: "short" })} ${dt.getDate()} '${dt.getFullYear().toString().slice(2)}`; };
                               return e && e !== s ? `${fmt2(s)} - ${fmt2(e)}` : fmt2(s);
                             })();
+                            const parentName = p._isMacroSub ? projects.find(pp => pp.id === p.parentId)?.name : null;
+                            const isParentWithSubs = p._isMacroParent;
+                            const isExpanded = macroExpandedParents.has(p.id);
                             return (
-                              <tr key={p.id} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ borderBottom: "1px solid var(--calLine)", cursor: "pointer", transition: "background 0.1s" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</td>
+                              <tr key={p.id} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} style={{ borderBottom: "1px solid var(--calLine)", cursor: "pointer", transition: "background 0.1s", background: p._isMacroSub ? "#9b6dff06" : "transparent" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = p._isMacroSub ? "#9b6dff06" : "transparent"}>
+                                <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: p._isMacroSub ? 24 : 0 }}>
+                                    {isParentWithSubs && (
+                                      <span onClick={(e) => { e.stopPropagation(); setMacroExpandedParents(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; }); }} style={{ fontSize: 14, cursor: "pointer", color: isExpanded ? "#ff6b4a" : "var(--textFaint)", transition: "transform 0.15s", display: "inline-block", transform: isExpanded ? "rotate(90deg)" : "rotate(0)", width: 18, textAlign: "center" }}>▶</span>
+                                    )}
+                                    {p._isMacroSub && <span style={{ color: "#9b6dff", fontSize: 10 }}>↳</span>}
+                                    <span>
+                                      {parentName && <span style={{ color: "var(--textFaint)", fontWeight: 400, fontSize: 10 }}>{parentName} › </span>}
+                                      {p.name}
+                                    </span>
+                                    {isParentWithSubs && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#dba94e15", color: "#dba94e", fontWeight: 700 }}>{p._macroSubCount} subs</span>}
+                                    {p._isMacroSub && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#9b6dff10", color: "#9b6dff", fontWeight: 700 }}>SUB</span>}
+                                  </div>
+                                </td>
                                 <td style={{ padding: "10px 12px" }}>
                                   <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: sc.bg, color: sc.text, whiteSpace: "nowrap" }}>{p.status}</span>
                                 </td>
@@ -4978,7 +5102,7 @@ export default function Dashboard({ user, onLogout }) {
                                   </div>
                                 </td>
                                 <td style={{ padding: "10px 12px", color: "var(--textFaint)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.why || "–"}</td>
-                                <td onClick={() => { const newCode = prompt("Edit project code:", p.code || ""); if (newCode !== null) updateProject2(p.id, "code", newCode.toUpperCase()); }} style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }} title="Click to edit">{p.code || "–"}</td>
+                                <td onClick={(e) => { e.stopPropagation(); const newCode = prompt("Edit project code:", p.code || ""); if (newCode !== null) updateProject2(p.id, "code", newCode.toUpperCase()); }} style={{ padding: "10px 12px", fontFamily: "'JetBrains Mono', monospace", fontSize: 9, color: "var(--textGhost)", whiteSpace: "nowrap", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }} title="Click to edit">{p.code || "–"}</td>
                               </tr>
                             );
                           })}
@@ -4986,7 +5110,8 @@ export default function Dashboard({ user, onLogout }) {
                       </table>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* ── Master Work Back ── */}
                 {glanceTab === "masterWB" && (() => {
@@ -5859,10 +5984,11 @@ export default function Dashboard({ user, onLogout }) {
                                       <button onClick={() => setExpandedRetainers(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#9b6dff", padding: 0, width: 16 }}>{isExpanded ? "▼" : "▶"}</button>
                                     )}
                                     <div>
-                                      <div style={{ fontWeight: 600, color: isSub ? "var(--textSub)" : "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }} onContextMenu={(e) => { e.preventDefault(); if (confirm(`${p.isRetainer ? "Remove" : "Mark"} "${p.name}" as a retainer project?`)) toggleRetainer(p.id); }}>
+                                      <div style={{ fontWeight: 600, color: isSub ? "var(--textSub)" : "var(--text)", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }} onClick={() => { setActiveProjectId(p.id); setActiveTab("overview"); }}>
                                         {isSub && <span style={{ color: "#9b6dff", fontSize: 10 }}>↳</span>}
                                         {p.name}
-                                        {p.isRetainer && <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 3, background: "#9b6dff18", color: "#9b6dff", fontWeight: 700 }}>RETAINER</span>}
+                                        {p.isRetainer && <span onClick={(e) => { e.stopPropagation(); const clearData = confirm(`Remove retainer mode from "${p.name}"?\n\nClick OK to remove retainer mode.\n(Monthly data will be preserved — you can re-enable retainer later to see it again.)`); if (clearData) { toggleRetainer(p.id); } }} style={{ fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "#9b6dff18", color: "#9b6dff", fontWeight: 700, cursor: "pointer", border: "1px solid #9b6dff25", display: "inline-flex", alignItems: "center", gap: 3 }} title="Click to remove retainer mode">RETAINER <span style={{ fontSize: 11, lineHeight: 1 }}>✕</span></span>}
+                                        {!p.isRetainer && !isSub && <span onClick={(e) => { e.stopPropagation(); if (confirm(`Mark "${p.name}" as a retainer project? This enables monthly breakdown tracking.`)) toggleRetainer(p.id); }} style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "var(--bgInput)", color: "var(--textGhost)", fontWeight: 600, cursor: "pointer", opacity: 0, transition: "opacity 0.15s" }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0} title="Mark as retainer">+ RTN</span>}
                                         {isSub && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#9b6dff10", color: "#9b6dff", fontWeight: 700 }}>SUB</span>}
                                       </div>
                                       {code && <div style={{ fontSize: 9, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginTop: 1 }}>{code}</div>}
@@ -5900,6 +6026,7 @@ export default function Dashboard({ user, onLogout }) {
                             // Retainer monthly sub-rows
                             if (p.isRetainer && isExpanded) {
                               const retainerData = p.fin_retainer_months || {};
+                              const hasMonthlyData = Object.values(retainerData).some(md => Object.values(md).some(v => v && v !== "0" && v !== "0.00" && v !== ""));
                               monthOrder.forEach((mo, mi) => {
                                 const md = retainerData[mo] || {};
                                 const monthRowSum = orderedCols.reduce((s, c) => s + parseNum(md[c.key]), 0);
@@ -5926,6 +6053,16 @@ export default function Dashboard({ user, onLogout }) {
                                   </tr>
                                 );
                               });
+                              // Clear monthly data button
+                              if (hasMonthlyData) {
+                                rows.push(
+                                  <tr key={`${p.id}_clear`} style={{ background: "#9b6dff04" }}>
+                                    <td colSpan={4 + orderedCols.length + 1} style={{ ...colStyle, paddingLeft: 40 }}>
+                                      <button onClick={(e) => { e.stopPropagation(); if (confirm(`Clear ALL monthly data for "${p.name}"? This cannot be undone.`)) { setProjects(prev => prev.map(pp => pp.id === p.id ? { ...pp, fin_retainer_months: {} } : pp)); } }} style={{ padding: "3px 10px", background: "#e8545408", border: "1px solid #e8545420", borderRadius: 4, color: "#e85454", cursor: "pointer", fontSize: 8, fontWeight: 600 }}>🗑 Clear All Monthly Data</button>
+                                    </td>
+                                  </tr>
+                                );
+                              }
                             }
 
                             return rows;
@@ -6240,40 +6377,86 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
 
                 {/* ── TOUR / SERIES SCHEDULE ── */}
-                {project.isTour && project.subEvents && (
+                {/* ═══ TOUR SCHEDULE (parent projects with subs OR isTour) ═══ */}
+                {!project.parentId && (() => {
+                  const subs = projects.filter(sp => sp.parentId === project.id && !sp.archived).sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
+                  const hasSubProjects = subs.length > 0;
+
+                  // Combine tour dates (subEvents) + sub-projects into unified schedule
+                  const allDates = [];
+                  // Tour sub-events (manual dates)
+                  if (project.subEvents) {
+                    [...project.subEvents].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")).forEach(se => {
+                      allDates.push({ type: "tourDate", ...se });
+                    });
+                  }
+
+                  const confirmed = (project.subEvents || []).filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
+                  const complete = (project.subEvents || []).filter(s => s.status === "Complete").length;
+                  const holds = (project.subEvents || []).filter(s => s.status === "Hold").length;
+                  const advancing = (project.subEvents || []).filter(s => s.status === "Advancing").length;
+                  const totalDates = (project.subEvents || []).length + subs.length;
+
+                  return (
                   <div style={{ marginTop: 22 }}>
                     <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>TOUR SCHEDULE</div>
-                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{project.subEvents.length} DATES</span>
-                          {(() => {
-                            const confirmed = project.subEvents.filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
-                            const complete = project.subEvents.filter(s => s.status === "Complete").length;
-                            const holds = project.subEvents.filter(s => s.status === "Hold").length;
-                            const advancing = project.subEvents.filter(s => s.status === "Advancing").length;
-                            return (
-                              <div style={{ display: "flex", gap: 8, fontSize: 9, color: "var(--textFaint)" }}>
-                                <span><span style={{ color: "#4ecb71" }}>●</span> {confirmed} confirmed</span>
-                                <span><span style={{ color: "#3da5db" }}>●</span> {advancing} advancing</span>
-                                <span><span style={{ color: "#9b6dff" }}>●</span> {holds} holds</span>
-                                <span><span style={{ color: "#c46832" }}>●</span> {complete} complete</span>
-                              </div>
-                            );
-                          })()}
+                          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{totalDates} DATES</span>
+                          {project.isTour && totalDates > 0 && (
+                            <div style={{ display: "flex", gap: 8, fontSize: 9, color: "var(--textFaint)" }}>
+                              <span><span style={{ color: "#4ecb71" }}>●</span> {confirmed} confirmed</span>
+                              <span><span style={{ color: "#3da5db" }}>●</span> {advancing} advancing</span>
+                              <span><span style={{ color: "#9b6dff" }}>●</span> {holds} holds</span>
+                              <span><span style={{ color: "#c46832" }}>●</span> {complete} complete</span>
+                            </div>
+                          )}
                         </div>
-                        <button onClick={() => {
-                          const newSE = { id: `se_${Date.now()}`, date: "", city: "", venue: "", status: "Hold", notes: "" };
-                          updateProject("subEvents", [...project.subEvents, newSE]);
-                        }} style={{ padding: "6px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Date</button>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button onClick={() => {
+                            const newSE = { id: `se_${Date.now()}`, date: "", city: "", venue: "", status: "Hold", notes: "" };
+                            updateProject("subEvents", [...(project.subEvents || []), newSE]);
+                            if (!project.isTour) updateProject("isTour", true);
+                          }} style={{ padding: "6px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Date</button>
+                          <button onClick={() => {
+                            const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                            const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, isTour: false, subEvents: undefined };
+                            setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview");
+                          }} style={{ padding: "6px 14px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 7, color: "#dba94e", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Sub-Project</button>
+                        </div>
                       </div>
 
                       <div style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "8px 12px", borderBottom: "1px solid var(--borderSub)", fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
-                        <span>DATE</span><span>CITY</span><span>VENUE</span><span>STATUS</span><span>NOTES</span><span></span>
+                        <span>DATE</span><span>CITY</span><span>VENUE / PROJECT</span><span>STATUS</span><span>NOTES</span><span></span>
                       </div>
 
                       <div style={{ maxHeight: 520, overflowY: "auto" }}>
-                        {[...project.subEvents].sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1).map((se) => {
+                        {/* Sub-projects as schedule rows */}
+                        {subs.map(sp => {
+                          const ssc = STATUS_COLORS[sp.status] || { bg: "var(--bgCard)", text: "var(--textMuted)", dot: "var(--textFaint)" };
+                          const spDate = sp.eventDates?.start;
+                          const todayISO = new Date().toISOString().split("T")[0];
+                          const isPast = spDate && spDate < todayISO;
+                          const weekOut = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+                          const isUpcoming = spDate && !isPast && spDate <= weekOut;
+                          return (
+                            <div key={sp.id} onClick={() => { setActiveProjectId(sp.id); setActiveTab("overview"); }} style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "7px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isUpcoming ? "#dba94e08" : "#9b6dff06", cursor: "pointer", opacity: isPast ? 0.65 : 1 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = isUpcoming ? "#dba94e08" : "#9b6dff06"}>
+                              <span style={{ fontSize: 10, color: isUpcoming ? "#dba94e" : "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{spDate ? new Date(spDate + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
+                              <span style={{ fontSize: 11, color: "var(--textSub)" }}>{sp.location || "—"}</span>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 7, padding: "1px 5px", borderRadius: 3, background: "#9b6dff10", color: "#9b6dff", fontWeight: 700 }}>SUB</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{sp.name}</span>
+                              </div>
+                              <span style={{ fontSize: 9, fontWeight: 700, padding: "3px 8px", borderRadius: 4, background: ssc.bg, color: ssc.text, display: "inline-block", textAlign: "center" }}>{sp.status}</span>
+                              <span style={{ fontSize: 10, color: "var(--textMuted)" }}>{sp.notes || "—"}</span>
+                              <span style={{ fontSize: 10, color: "#3da5db", cursor: "pointer" }}>→</span>
+                            </div>
+                          );
+                        })}
+
+                        {/* Tour dates (subEvents) */}
+                        {[...(project.subEvents || [])].sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1).map((se) => {
                           const sec = SUB_EVENT_STATUS_COLORS[se.status] || SUB_EVENT_STATUS_COLORS["Hold"];
                           const todayISO = new Date().toISOString().split("T")[0];
                           const isPast = se.date && se.date < todayISO;
@@ -6304,13 +6487,17 @@ export default function Dashboard({ user, onLogout }) {
                             </div>
                           );
                         })}
+                        {totalDates === 0 && (
+                          <div style={{ padding: "20px 12px", textAlign: "center", color: "var(--textGhost)", fontSize: 11 }}>No dates or sub-projects yet</div>
+                        )}
                       </div>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
-                {/* ═══ SATURATION BUDGET EMBED ═══ */}
-                <div style={{ marginTop: 22 }}>
+                {/* ═══ SATURATION BUDGET EMBED (parent projects only) ═══ */}
+                {!project.parentId && (
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>SATURATION BUDGET</span>
@@ -6356,6 +6543,7 @@ export default function Dashboard({ user, onLogout }) {
                     </div>
                   )}
                 </div>
+                )}
               </div>
             )}
 
@@ -7209,8 +7397,7 @@ export default function Dashboard({ user, onLogout }) {
                         </button>
                       </div>
                     ) : (
-                      <div style={{ border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
-                        {/* Table header */}
+                      <div style={{ border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden", background: "var(--bgInput)" }}>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 100px 140px 60px", padding: "8px 14px", background: "var(--bgSub)", borderBottom: "1px solid var(--borderSub)" }}>
                           <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5 }}>NAME</span>
                           <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5 }}>SIZE</span>
@@ -7416,7 +7603,7 @@ export default function Dashboard({ user, onLogout }) {
                       <div style={{ fontSize: 11, color: "var(--textGhost)" }}>Search Google Drive above or click "+ Add Vendor" to get started</div>
                     </div>
                   )}
-                  {[...vendors].sort((a, b) => (a.name || "").localeCompare(b.name || "")).map((v, vi) => {
+                  {[...vendors].sort((a, b) => (a.name || "").localeCompare(b.name || "")).filter((v, i, arr) => arr.findIndex(x => x.name?.toLowerCase().trim() === v.name?.toLowerCase().trim()) === i).map((v, vi) => {
                     const done = COMP_KEYS.filter(ck => v.compliance[ck.key]?.done).length;
                     const isExp = expandedVendor === v.id;
                     const isSelected = selectedVendorIds.has(v.id);
@@ -7446,7 +7633,7 @@ export default function Dashboard({ user, onLogout }) {
                             ))}
                           </div>
                           <div style={{ textAlign: "center", minWidth: 40 }}><div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: done === 5 ? "#4ecb71" : done >= 3 ? "#dba94e" : "#e85454" }}>{done}/5</div></div>
-                          <button onClick={() => setExpandedVendor(isExp ? null : v.id)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 12, padding: "4px 8px", transform: isExp ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.15s" }}>▶</button>
+                          <button onClick={() => setExpandedVendor(isExp ? null : v.id)} style={{ background: isExp ? "#ff6b4a10" : "var(--bgInput)", border: `1px solid ${isExp ? "#ff6b4a30" : "var(--borderSub)"}`, color: isExp ? "#ff6b4a" : "var(--textFaint)", cursor: "pointer", fontSize: 18, padding: "6px 10px", borderRadius: 6, transform: isExp ? "rotate(90deg)" : "rotate(0)", transition: "all 0.15s", lineHeight: 1 }} title={isExp ? "Collapse" : "Expand details"}>▶</button>
                         </div>
                         {isExp && (
                           <div style={{ padding: "0 18px 16px", borderTop: "1px solid var(--border)", animation: "fadeUp 0.2s ease" }}>
