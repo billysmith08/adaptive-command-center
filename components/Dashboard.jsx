@@ -5692,7 +5692,7 @@ export default function Dashboard({ user, onLogout }) {
 
               // Column ordering
               const builtInCols = [
-                { key: "fin_walkout", label: "EST. WALKOUT", width: 120, builtIn: true },
+                { key: "fin_walkout", label: "PROD FEE", width: 120, builtIn: true },
                 { key: "fin_talent", label: "TALENT FEE", width: 110, builtIn: true },
                 { key: "fin_prodCoord", label: "PROD. COORD", width: 110, builtIn: true },
                 { key: "fin_showCoord", label: "SHOW COORD", width: 110, builtIn: true },
@@ -5752,7 +5752,7 @@ export default function Dashboard({ user, onLogout }) {
               const totalSum = sorted.reduce((s, p) => s + rowSum(p), 0);
 
               const colStyle = { padding: "8px 10px", fontSize: 12, borderBottom: "1px solid var(--borderSub)", fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" };
-              const headerStyle = { ...colStyle, fontSize: 9, fontWeight: 700, letterSpacing: 0.8, color: "var(--textFaint)", background: "var(--bgHover)", position: "sticky", top: 0, zIndex: 2, fontFamily: "'Instrument Sans', sans-serif" };
+              const headerStyle = { ...colStyle, fontSize: 9, fontWeight: 700, letterSpacing: 0.8, color: "var(--textFaint)", background: "var(--bgHover)", position: "sticky", top: 0, zIndex: 5, fontFamily: "'Instrument Sans', sans-serif" };
               const inputStyle = { width: "100%", background: "transparent", border: "none", color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none", padding: 0 };
               const updateFinField = (projectId, field, value) => {
                 setProjects(prev => prev.map(p => p.id === projectId ? { ...p, [field]: value } : p));
@@ -5800,7 +5800,7 @@ export default function Dashboard({ user, onLogout }) {
                   {/* Summary Cards */}
                   <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
                     <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 110 }}>
-                      <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL WALKOUT</div>
+                      <div style={{ fontSize: 8, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TOTAL PROD FEE</div>
                       <div style={{ fontSize: 16, fontWeight: 700, color: moneyColor(totalWalkout), fontFamily: "'JetBrains Mono', monospace" }}>{fmtMoney(totalWalkout) || "$0.00"}</div>
                     </div>
                     <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "8px 14px", minWidth: 110 }}>
@@ -5820,7 +5820,7 @@ export default function Dashboard({ user, onLogout }) {
                   {/* Table */}
                   <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, overflow: "hidden" }}>
                     <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 300px)" }}>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 540 + orderedCols.length * 130 }}>
+                      <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 540 + orderedCols.length * 130 }}>
                         <thead>
                           <tr>
                             <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>PROJECTS</th>
@@ -5828,7 +5828,7 @@ export default function Dashboard({ user, onLogout }) {
                             <th style={{ ...headerStyle, width: 60, textAlign: "center" }}>MONTH</th>
                             <th style={{ ...headerStyle, width: 180, textAlign: "left" }}>NOTES</th>
                             {orderedCols.map((c, ci) => (
-                              <th key={c.key} style={{ ...headerStyle, width: c.width, textAlign: "right", cursor: "default", position: "relative", userSelect: "none" }}>
+                              <th key={c.key} style={{ ...headerStyle, width: c.width, textAlign: "right", cursor: "default", userSelect: "none" }}>
                                 <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 2 }}>
                                   {ci > 0 && <span onClick={() => moveCol(c.key, -1)} style={{ cursor: "pointer", fontSize: 7, color: "var(--textGhost)", padding: "0 1px", opacity: 0.5, transition: "opacity 0.15s" }} onMouseEnter={e => e.currentTarget.style.opacity = 1} onMouseLeave={e => e.currentTarget.style.opacity = 0.5} title="Move left">◀</span>}
                                   <span>{c.label}</span>
