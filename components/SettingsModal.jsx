@@ -1,8 +1,8 @@
 "use client";
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import ReactDOM from "react-dom";
+import React from "react";
 
-export default function SettingsModal({ ctx }) {
+
+export default function SettingsModal({ ctx = {} }) {
   // Destructure everything from ctx
   const {
     user, supabase, onLogout, isAdmin, theme,
@@ -42,6 +42,8 @@ export default function SettingsModal({ ctx }) {
   } = ctx;
 
   return (
+  <>
+  {showSettings && (
   <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { if (!settingsDirty) setShowSettings(false); }}>
     <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 780, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
       {/* Header */}
@@ -1225,7 +1227,7 @@ export default function SettingsModal({ ctx }) {
       </div>
     </div>
   </div>
-)}
+  )}
 
 {/* ═══ RIGHT-CLICK CONTEXT MENU ═══ */}
 {contextMenu && (
@@ -2458,5 +2460,6 @@ export default function SettingsModal({ ctx }) {
       </div>
     </div>
   </div>
+  </>
   );
 }

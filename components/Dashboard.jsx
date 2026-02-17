@@ -4560,8 +4560,7 @@ export default function Dashboard({ user, onLogout }) {
         );
       })()}
 
-      {/* ═══ SETTINGS MODAL ═══ */}
-      {showSettings && (
+      {/* ═══ SETTINGS / OVERLAYS ═══ */}
         <SettingsModal ctx={{
           user, supabase, onLogout, isAdmin, theme,
           showSettings, setShowSettings, settingsTab, setSettingsTab, settingsDirty, setSettingsDirty,
@@ -4595,7 +4594,6 @@ export default function Dashboard({ user, onLogout }) {
           DEPT_OPTIONS, SERVICE_OPTIONS, PROJECT_TYPES, STATUSES,
           COMP_KEYS, COUNTRY_CODES,
         }} />
-      )}
 
       {/* ═══ FLOATING COMMENT PANEL (SLIDE-OUT DRAWER) ═══ */}
       {activeProjectId && (
