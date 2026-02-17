@@ -6497,7 +6497,7 @@ export default function Dashboard({ user, onLogout }) {
                 })()}
 
                 {/* ═══ SATURATION BUDGET EMBED (parent projects only) ═══ */}
-                {!project.parentId && (
+                {!project.parentId && (<>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>SATURATION BUDGET</span>
@@ -6542,8 +6542,7 @@ export default function Dashboard({ user, onLogout }) {
                       }} style={{ padding: "8px 20px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>🔗 Link Saturation Project</button>
                     </div>
                   )}
-                </div>
-                )}
+                </>)}
               </div>
             )}
 
