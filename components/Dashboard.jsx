@@ -3096,6 +3096,12 @@ export default function Dashboard({ user, onLogout }) {
         pendingUsers: [...(appSettings.pendingUsers || []), { email: user.email, requestedAt: new Date().toISOString() }]
       };
       saveSettings(updated);
+      // Notify admin of new access request
+      fetch('/api/notify/access-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email, name: user.user_metadata?.full_name || user.user_metadata?.name || '' }),
+      }).catch(() => {});
     }
   }, [dataLoaded, user, isUserAuthorized]);
 
