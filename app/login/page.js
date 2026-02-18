@@ -48,7 +48,7 @@ export default function LoginPage() {
     e.preventDefault();
     setLoading(true);
     setError('');
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/dashboard` });
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` });
     if (error) { setError(error.message); } else { setResetSent(true); }
     setLoading(false);
   };
