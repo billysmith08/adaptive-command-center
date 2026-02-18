@@ -2499,6 +2499,22 @@ export default function Dashboard({ user, onLogout }) {
     return () => { cancelled = true; };
   }, [dataLoaded]);
 
+  // On data load, auto-ensure Drive folders for ALL projects that have client+code but no folder yet
+  useEffect(() => {
+    if (!dataLoaded) return;
+    let cancelled = false;
+    const needsDrive = projects.filter(p => p.client && p.code && !p.driveFolderId && !p.archived);
+    if (needsDrive.length === 0) return;
+    (async () => {
+      for (let i = 0; i < needsDrive.length; i++) {
+        if (cancelled) break;
+        await ensureProjectDrive(needsDrive[i]);
+        if (i < needsDrive.length - 1) await new Promise(r => setTimeout(r, 800));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [dataLoaded]);
+
   // ─── HOT UPDATE PROTECTION ──────────────────────────────────────
   // Checks Supabase for version mismatch every 30s. When an admin deploys,
   // they bump the version in Settings → all clients see a banner.
@@ -2553,9 +2569,12 @@ export default function Dashboard({ user, onLogout }) {
     if (key === "status" && val === "Complete") {
       logActivity("archived", "auto-archived (status → Complete)", project?.name);
     }
-    // Auto-ensure Drive folder when client is assigned/changed
+    // Auto-ensure Drive folder when client or code is assigned/changed
     if (key === "client" && val && project?.code && !project?.driveFolderId) {
       setTimeout(() => ensureProjectDrive({ ...project, client: val }), 500);
+    }
+    if (key === "code" && val && project?.client && !project?.driveFolderId) {
+      setTimeout(() => ensureProjectDrive({ ...project, code: val }), 500);
     }
   };
   const updateProject2 = (projId, key, val) => {
@@ -6186,7 +6205,7 @@ export default function Dashboard({ user, onLogout }) {
               </div>
 
               {/* Billing Info */}
-              <div style={{ marginBottom: 18, padding: "16px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
+              <div style={{ marginBottom: 18, padding: "16px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10, boxSizing: "border-box", overflow: "hidden" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: vendorForm.billingSame ? 0 : 14 }}>
                   <label style={{ fontSize: 12, fontWeight: 700, color: "var(--textSub)", letterSpacing: 0.3 }}>Billing Information</label>
                   <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "var(--textMuted)" }}>
@@ -6196,23 +6215,23 @@ export default function Dashboard({ user, onLogout }) {
                 </div>
                 {!vendorForm.billingSame && (<>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Name</label>
-                      <input value={vendorForm.billingName} onChange={e => updateVF("billingName", e.target.value)} placeholder="Billing contact name" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none" }} />
+                      <input value={vendorForm.billingName} onChange={e => updateVF("billingName", e.target.value)} placeholder="Billing contact name" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none", boxSizing: "border-box" }} />
                     </div>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Email</label>
-                      <input value={vendorForm.billingEmail} onChange={e => updateVF("billingEmail", e.target.value)} placeholder="billing@company.com" type="email" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none" }} />
+                      <input value={vendorForm.billingEmail} onChange={e => updateVF("billingEmail", e.target.value)} placeholder="billing@company.com" type="email" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none", boxSizing: "border-box" }} />
                     </div>
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Phone</label>
-                      <PhoneWithCode value={vendorForm.billingPhone} onChange={v => updateVF("billingPhone", v)} inputStyle={{ width: '100%', padding: '9px 12px', background: 'var(--bgInput)', border: '1px solid var(--borderSub)', borderRadius: 8, color: 'var(--text)', fontSize: 12, fontFamily: "'DM Sans'", outline: 'none' }} />
+                      <PhoneWithCode value={vendorForm.billingPhone} onChange={v => updateVF("billingPhone", v)} inputStyle={{ width: '100%', padding: '9px 12px', background: 'var(--bgInput)', border: '1px solid var(--borderSub)', borderRadius: 8, color: 'var(--text)', fontSize: 12, fontFamily: "'DM Sans'", outline: 'none', boxSizing: 'border-box' }} />
                     </div>
-                    <div>
+                    <div style={{ minWidth: 0 }}>
                       <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Address</label>
-                      <AddressAutocomplete value={vendorForm.billingAddress} onChange={v => updateVF("billingAddress", v)} showIcon={false} placeholder="Billing address" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none" }} />
+                      <AddressAutocomplete value={vendorForm.billingAddress} onChange={v => updateVF("billingAddress", v)} showIcon={false} placeholder="Billing address" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none", boxSizing: "border-box" }} />
                     </div>
                   </div>
                 </>)}
