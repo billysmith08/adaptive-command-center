@@ -2379,16 +2379,24 @@ export default function Dashboard({ user, onLogout }) {
   };
 
   const updateProject = (key, val) => {
-    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, [key]: val } : p));
+    // Auto-archive when status changes to "Complete"
+    const updates = key === "status" && val === "Complete" ? { [key]: val, archived: true } : { [key]: val };
+    setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, ...updates } : p));
     if (["status", "location", "client", "name"].includes(key)) {
       logActivity("updated", `${key} → "${val}"`, project?.name);
+    }
+    if (key === "status" && val === "Complete") {
+      logActivity("archived", "auto-archived (status → Complete)", project?.name);
     }
     // Auto-ensure Drive folder when client is assigned/changed
     if (key === "client" && val && project?.code && !project?.driveFolderId) {
       setTimeout(() => ensureProjectDrive({ ...project, client: val }), 500);
     }
   };
-  const updateProject2 = (projId, key, val) => setProjects(prev => prev.map(p => p.id === projId ? { ...p, [key]: val } : p));
+  const updateProject2 = (projId, key, val) => {
+    const updates = key === "status" && val === "Complete" ? { [key]: val, archived: true } : { [key]: val };
+    setProjects(prev => prev.map(p => p.id === projId ? { ...p, ...updates } : p));
+  };
 
   // ─── DRIVE PROJECT FOLDER ────────────────────────────────────────
   const ensureProjectDrive = async (proj) => {

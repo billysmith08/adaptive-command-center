@@ -219,9 +219,9 @@ function DriveTab({
                           <span style={{ fontSize: 9, fontWeight: 700, color: "var(--textGhost)", letterSpacing: 0.5, textAlign: "right" }}>OPEN</span>
                         </div>
                         {projDriveFiles.map(item => (
-                          <div key={item.id} onClick={() => { if (item.isFolder) driveBrowse(item.id, item.name); }} style={{ display: "grid", gridTemplateColumns: "1fr 100px 140px 60px", padding: "10px 14px", borderBottom: "1px solid var(--borderSub)", cursor: item.isFolder ? "pointer" : "default", transition: "background 0.15s" }}
-                            onMouseEnter={e => e.currentTarget.style.background = "var(--bgInput)"}
-                            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          <div key={item.id} onClick={() => { if (item.isFolder) driveBrowse(item.id, item.name); }} style={{ display: "grid", gridTemplateColumns: "1fr 100px 140px 60px", padding: "10px 14px", borderBottom: "1px solid var(--borderSub)", cursor: item.isFolder ? "pointer" : "default", transition: "background 0.15s", background: "var(--bgCard)" }}
+                            onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"}
+                            onMouseLeave={e => e.currentTarget.style.background = "var(--bgCard)"}
                           >
                             <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                               <span style={{ fontSize: 16, flexShrink: 0 }}>{driveGetIcon(item)}</span>

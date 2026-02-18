@@ -223,25 +223,30 @@ function OverviewTab({
                 </div>
 
                 {/* ── TOUR / SERIES SCHEDULE ── */}
-                {/* ═══ TOUR SCHEDULE (parent projects with subs OR isTour) ═══ */}
-                {!project.parentId && (() => {
-                  const subs = projects.filter(sp => sp.parentId === project.id && !sp.archived).sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
+                {/* ═══ TOUR SCHEDULE (parent projects with subs OR isTour, also visible from sub-projects) ═══ */}
+                {(() => {
+                  // When viewing a sub-project, show the parent's tour schedule
+                  const scheduleOwner = project.parentId ? projects.find(p => p.id === project.parentId) || project : project;
+                  const subs = projects.filter(sp => sp.parentId === scheduleOwner.id && !sp.archived).sort((a, b) => (a.eventDates?.start || "9999").localeCompare(b.eventDates?.start || "9999"));
                   const hasSubProjects = subs.length > 0;
+
+                  // Only show if parent project (or sub viewing parent) has subs or tour dates
+                  if (!hasSubProjects && !(scheduleOwner.subEvents?.length > 0) && !scheduleOwner.isTour) return null;
 
                   // Combine tour dates (subEvents) + sub-projects into unified schedule
                   const allDates = [];
                   // Tour sub-events (manual dates)
-                  if (project.subEvents) {
-                    [...project.subEvents].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")).forEach(se => {
+                  if (scheduleOwner.subEvents) {
+                    [...scheduleOwner.subEvents].sort((a, b) => (a.date || "9999").localeCompare(b.date || "9999")).forEach(se => {
                       allDates.push({ type: "tourDate", ...se });
                     });
                   }
 
-                  const confirmed = (project.subEvents || []).filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
-                  const complete = (project.subEvents || []).filter(s => s.status === "Complete").length;
-                  const holds = (project.subEvents || []).filter(s => s.status === "Hold").length;
-                  const advancing = (project.subEvents || []).filter(s => s.status === "Advancing").length;
-                  const totalDates = (project.subEvents || []).length + subs.length;
+                  const confirmed = (scheduleOwner.subEvents || []).filter(s => s.status === "Confirmed" || s.status === "On Sale").length;
+                  const complete = (scheduleOwner.subEvents || []).filter(s => s.status === "Complete").length;
+                  const holds = (scheduleOwner.subEvents || []).filter(s => s.status === "Hold").length;
+                  const advancing = (scheduleOwner.subEvents || []).filter(s => s.status === "Advancing").length;
+                  const totalDates = (scheduleOwner.subEvents || []).length + subs.length;
 
                   return (
                   <div style={{ marginTop: 22 }}>
@@ -250,7 +255,7 @@ function OverviewTab({
                         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
                           <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>TOUR SCHEDULE</div>
                           <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 10, background: "#ff6b4a15", color: "#ff6b4a", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{totalDates} DATES</span>
-                          {project.isTour && totalDates > 0 && (
+                          {scheduleOwner.isTour && totalDates > 0 && (
                             <div style={{ display: "flex", gap: 8, fontSize: 9, color: "var(--textFaint)" }}>
                               <span><span style={{ color: "#4ecb71" }}>●</span> {confirmed} confirmed</span>
                               <span><span style={{ color: "#3da5db" }}>●</span> {advancing} advancing</span>
@@ -262,12 +267,11 @@ function OverviewTab({
                         <div style={{ display: "flex", gap: 6 }}>
                           <button onClick={() => {
                             const newSE = { id: `se_${Date.now()}`, date: "", city: "", venue: "", status: "Hold", notes: "" };
-                            updateProject("subEvents", [...(project.subEvents || []), newSE]);
-                            if (!project.isTour) updateProject("isTour", true);
+                            setProjects(prev => prev.map(p => p.id === scheduleOwner.id ? { ...p, subEvents: [...(p.subEvents || []), newSE], isTour: true } : p));
                           }} style={{ padding: "6px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Date</button>
                           <button onClick={() => {
                             const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-                            const sub = { id: newId, parentId: project.id, name: "New Sub-Project", client: project.client || "", projectType: project.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: project.brief || { what: "", where: "", why: "" }, why: project.why || "", services: [...(project.services || [])], producers: [...(project.producers || [])], managers: [...(project.managers || [])], staff: [], pocs: [], clientContacts: [...(project.clientContacts || [])], billingContacts: [...(project.billingContacts || [])], notes: "", archived: false, isTour: false, subEvents: undefined };
+                            const sub = { id: newId, parentId: scheduleOwner.id, name: "New Sub-Project", client: scheduleOwner.client || "", projectType: scheduleOwner.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: scheduleOwner.brief || { what: "", where: "", why: "" }, why: scheduleOwner.why || "", services: [...(scheduleOwner.services || [])], producers: [...(scheduleOwner.producers || [])], managers: [...(scheduleOwner.managers || [])], staff: [], pocs: [], clientContacts: [...(scheduleOwner.clientContacts || [])], billingContacts: [...(scheduleOwner.billingContacts || [])], notes: "", archived: false, isTour: false, subEvents: undefined };
                             setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview");
                           }} style={{ padding: "6px 14px", background: "#dba94e15", border: "1px solid #dba94e30", borderRadius: 7, color: "#dba94e", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>+ Add Sub-Project</button>
                         </div>
@@ -286,8 +290,9 @@ function OverviewTab({
                           const isPast = spDate && spDate < todayISO;
                           const weekOut = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
                           const isUpcoming = spDate && !isPast && spDate <= weekOut;
+                          const isCurrent = sp.id === project.id;
                           return (
-                            <div key={sp.id} onClick={() => { setActiveProjectId(sp.id); setActiveTab("overview"); }} style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "7px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isUpcoming ? "#dba94e08" : "#9b6dff06", cursor: "pointer", opacity: isPast ? 0.65 : 1 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = isUpcoming ? "#dba94e08" : "#9b6dff06"}>
+                            <div key={sp.id} onClick={() => { setActiveProjectId(sp.id); setActiveTab("overview"); }} style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "7px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isCurrent ? "#ff6b4a10" : isUpcoming ? "#dba94e08" : "#9b6dff06", cursor: "pointer", opacity: isPast && !isCurrent ? 0.65 : 1, borderLeft: isCurrent ? "3px solid #ff6b4a" : "3px solid transparent" }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = isCurrent ? "#ff6b4a10" : isUpcoming ? "#dba94e08" : "#9b6dff06"}>
                               <span style={{ fontSize: 10, color: isUpcoming ? "#dba94e" : "var(--textSub)", fontFamily: "'JetBrains Mono', monospace" }}>{spDate ? new Date(spDate + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
                               <span style={{ fontSize: 11, color: "var(--textSub)" }}>{sp.location || "—"}</span>
                               <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -302,33 +307,34 @@ function OverviewTab({
                         })}
 
                         {/* Tour dates (subEvents) */}
-                        {[...(project.subEvents || [])].sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1).map((se) => {
+                        {[...(scheduleOwner.subEvents || [])].sort((a, b) => (a.date || "9999") < (b.date || "9999") ? -1 : 1).map((se) => {
                           const sec = SUB_EVENT_STATUS_COLORS[se.status] || SUB_EVENT_STATUS_COLORS["Hold"];
                           const todayISO = new Date().toISOString().split("T")[0];
                           const isPast = se.date && se.date < todayISO;
                           const weekOut = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
                           const isUpcoming = se.date && !isPast && se.date <= weekOut;
+                          const updateOwnerSubEvents = (newSubEvents) => setProjects(prev => prev.map(p => p.id === scheduleOwner.id ? { ...p, subEvents: newSubEvents } : p));
                           return (
                             <div key={se.id} style={{ display: "grid", gridTemplateColumns: "90px 1.2fr 1.8fr 110px 1fr 30px", padding: "7px 12px", borderBottom: "1px solid var(--calLine)", alignItems: "center", background: isUpcoming ? "#ff6b4a08" : isPast ? "var(--bgInput)" : "transparent", opacity: se.status === "Cancelled" ? 0.4 : isPast && se.status !== "Complete" ? 0.65 : 1 }}>
                               <input type="date" value={se.date || ""} onChange={e => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, date: e.target.value } : s));
+                                updateOwnerSubEvents(scheduleOwner.subEvents.map(s => s.id === se.id ? { ...s, date: e.target.value } : s));
                               }} style={{ padding: "4px 6px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 5, color: isUpcoming ? "#ff6b4a" : "var(--textSub)", fontSize: 11, fontFamily: "'JetBrains Mono', monospace", outline: "none", colorScheme: "var(--filterScheme)" }} />
                               <EditableText value={se.city} onChange={v => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, city: v } : s));
+                                updateOwnerSubEvents(scheduleOwner.subEvents.map(s => s.id === se.id ? { ...s, city: v } : s));
                               }} fontSize={11} color="var(--textSub)" placeholder="City, ST" />
                               <EditableText value={se.venue} onChange={v => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, venue: v } : s));
+                                updateOwnerSubEvents(scheduleOwner.subEvents.map(s => s.id === se.id ? { ...s, venue: v } : s));
                               }} fontSize={12} color="var(--text)" fontWeight={600} placeholder="Venue name" />
                               <select value={se.status} onChange={e => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, status: e.target.value } : s));
+                                updateOwnerSubEvents(scheduleOwner.subEvents.map(s => s.id === se.id ? { ...s, status: e.target.value } : s));
                               }} style={{ padding: "4px 6px", background: sec.bg, border: `1px solid ${sec.dot}30`, borderRadius: 5, color: sec.text, fontSize: 10, fontWeight: 600, outline: "none", cursor: "pointer", width: "100%" }}>
                                 {SUB_EVENT_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                               </select>
                               <EditableText value={se.notes} onChange={v => {
-                                updateProject("subEvents", project.subEvents.map(s => s.id === se.id ? { ...s, notes: v } : s));
+                                updateOwnerSubEvents(scheduleOwner.subEvents.map(s => s.id === se.id ? { ...s, notes: v } : s));
                               }} fontSize={10} color="var(--textMuted)" placeholder="Notes..." />
                               <button onClick={() => {
-                                updateProject("subEvents", project.subEvents.filter(s => s.id !== se.id));
+                                updateOwnerSubEvents(scheduleOwner.subEvents.filter(s => s.id !== se.id));
                               }} style={{ background: "none", border: "none", color: "var(--textGhost)", cursor: "pointer", fontSize: 14 }}>×</button>
                             </div>
                           );
@@ -342,53 +348,6 @@ function OverviewTab({
                   );
                 })()}
 
-                {/* ═══ SATURATION BUDGET EMBED (parent projects only) ═══ */}
-                {!project.parentId && (<>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>SATURATION BUDGET</span>
-                      {project.saturationUrl && <a href={project.saturationUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 9, color: "#ff6b4a", textDecoration: "none", fontWeight: 600 }}>Open in Saturation ↗</a>}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      {!project.saturationUrl && <span style={{ fontSize: 9, color: "var(--textGhost)" }}>Paste your Saturation project URL to embed the budget</span>}
-                      <button onClick={() => {
-                        const current = project.saturationUrl || "";
-                        const url = prompt("Saturation project URL:\n\nExample: https://app.saturation.io/weareadptv/26-04100413-guessjeans-coach26-indio/budget", current || `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
-                        if (url !== null) updateProject("saturationUrl", url.trim());
-                      }} style={{ padding: "4px 10px", background: project.saturationUrl ? "var(--bgCard)" : "#ff6b4a15", border: `1px solid ${project.saturationUrl ? "var(--borderSub)" : "#ff6b4a30"}`, borderRadius: 6, color: project.saturationUrl ? "var(--textMuted)" : "#ff6b4a", cursor: "pointer", fontSize: 9, fontWeight: 700 }}>
-                        {project.saturationUrl ? "✏ Edit URL" : "🔗 Link Saturation"}
-                      </button>
-                    </div>
-                  </div>
-                  {project.saturationUrl ? (() => {
-                    const embedUrl = project.saturationUrl.includes("/budget") ? project.saturationUrl : project.saturationUrl.replace(/\/$/, "") + "/budget";
-                    return (
-                      <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", background: "linear-gradient(135deg, #1a1128 0%, #0d0d0d 100%)", border: "1px solid #3a2a5c40", borderRadius: 12, textDecoration: "none", cursor: "pointer", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#7c5cfc60"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,92,252,0.15)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#3a2a5c40"; e.currentTarget.style.boxShadow = "none"; }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                          <div style={{ width: 40, height: 40, borderRadius: 10, background: "linear-gradient(135deg, #7c5cfc 0%, #a855f7 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>📊</div>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 700, color: "#e8e0f0", marginBottom: 2 }}>View Budget in Saturation</div>
-                            <div style={{ fontSize: 10, color: "#9b8ab8" }}>Live budget, actuals, and cost tracking</div>
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <img src="https://app.saturation.io/favicon.ico" style={{ width: 14, height: 14, borderRadius: 3, opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
-                          <span style={{ fontSize: 11, color: "#7c5cfc", fontWeight: 700 }}>Open →</span>
-                        </div>
-                      </a>
-                    );
-                  })() : (
-                    <div style={{ background: "var(--bgInput)", border: "2px dashed var(--borderSub)", borderRadius: 12, padding: "40px 20px", textAlign: "center" }}>
-                      <div style={{ fontSize: 28, marginBottom: 8 }}>📊</div>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: "var(--textMuted)", marginBottom: 4 }}>No Saturation project linked</div>
-                      <div style={{ fontSize: 11, color: "var(--textGhost)", marginBottom: 16 }}>Link this project to Saturation to see the live budget here.</div>
-                      <button onClick={() => {
-                        const url = prompt("Paste the Saturation project URL:\n\nExample: https://app.saturation.io/weareadptv/26-04100413-guessjeans-coach26-indio/budget", `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
-                        if (url && url.trim()) updateProject("saturationUrl", url.trim());
-                      }} style={{ padding: "8px 20px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>🔗 Link Saturation Project</button>
-                    </div>
-                  )}
-                </>)}
               </div>
   );
 }
