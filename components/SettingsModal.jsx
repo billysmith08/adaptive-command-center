@@ -218,7 +218,16 @@ const SettingsModal = React.memo(function SettingsModal({
                                       <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "3px 4px", fontSize: 10, color: "var(--textSub)", cursor: "pointer", borderRadius: 3 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                                         <input type="checkbox" checked={checked} onChange={() => {
                                           const current = perms.projectAccess || [];
-                                          const updated = checked ? current.filter(id => id !== p.id) : [...current, p.id];
+                                          let updated;
+                                          if (checked) {
+                                            // Unchecking: remove this project and its sub-projects
+                                            const childIds = projects.filter(c => c.parentId === p.id && !c.archived).map(c => c.id);
+                                            updated = current.filter(id => id !== p.id && !childIds.includes(id));
+                                          } else {
+                                            // Checking: add this project and, if it's a parent, its sub-projects
+                                            const childIds = projects.filter(c => c.parentId === p.id && !c.archived).map(c => c.id);
+                                            updated = [...new Set([...current, p.id, ...childIds])];
+                                          }
                                           setAppSettings(prev => ({ ...prev, userPermissions: { ...prev.userPermissions, [email]: { ...perms, projectAccess: updated } } }));
                                           setSettingsDirty(true);
                                         }} style={{ accentColor: "#dba94e" }} />

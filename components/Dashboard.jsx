@@ -471,7 +471,11 @@ export default function Dashboard({ user, onLogout }) {
       if (!(proj.allowedUsers || []).includes(checkEmail)) return false;
     }
     if (currentUserPerms.projectAccess === "all") return true;
-    return (currentUserPerms.projectAccess || []).includes(projectId);
+    const access = currentUserPerms.projectAccess || [];
+    if (access.includes(projectId)) return true;
+    // If this is a sub-project, grant access if user has access to the parent
+    if (proj && proj.parentId && access.includes(proj.parentId)) return true;
+    return false;
   };
   const canSeeSection = (sectionKey) => {
     if (!previewingAs && (currentUserPerms.role === "owner" || currentUserPerms.role === "admin")) return true;
@@ -3343,7 +3347,7 @@ export default function Dashboard({ user, onLogout }) {
               🏢 Clients {clients.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{clients.length}</span>}
             </button>
           )}
-          {isAdmin && (
+          {(isOwner || currentUserPerms.role === "admin") && (
             <button onClick={() => setActiveTab("finance")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "finance" ? "#4ecb71" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
               💰 Finance
             </button>
@@ -4086,7 +4090,7 @@ export default function Dashboard({ user, onLogout }) {
             )}
 
             {/* ═══ FINANCE (ADMIN-ONLY) ═══ */}
-            {activeTab === "finance" && isAdmin && (
+            {activeTab === "finance" && (isOwner || currentUserPerms.role === "admin") && (
               <FinanceTab
                 projects={projects}
                 setProjects={setProjects}
