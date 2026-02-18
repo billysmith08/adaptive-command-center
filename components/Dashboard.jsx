@@ -1985,7 +1985,7 @@ export default function Dashboard({ user, onLogout }) {
     })();
   }, [user]);
 
-  // One-time dedup: remove duplicate contacts by name (keep the one with most data)
+  // Continuous dedup: remove duplicate contacts by name whenever they appear
   useEffect(() => {
     if (!dataLoaded || contacts.length === 0) return;
     const seen = new Map();
@@ -1994,11 +1994,9 @@ export default function Dashboard({ user, onLogout }) {
       if (!key) return;
       const existing = seen.get(key);
       if (!existing) { seen.set(key, c); return; }
-      // Keep whichever has more fields filled
       const score = (x) => [x.email, x.phone, x.address, x.company, x.position, x.notes].filter(Boolean).length;
       if (score(c) > score(existing)) seen.set(key, c);
     });
-    // Also keep contacts with unique/empty names as-is
     const kept = new Set([...seen.values()].map(c => c.id));
     const deduped = contacts.filter(c => {
       const key = (c.name || '').toLowerCase().trim();
@@ -2009,7 +2007,7 @@ export default function Dashboard({ user, onLogout }) {
       console.log(`Dedup: removed ${contacts.length - deduped.length} duplicate contacts`);
       setContacts(deduped);
     }
-  }, [dataLoaded]);
+  }, [dataLoaded, contacts.length]);
 
   // Drive compliance sync — checks actual Drive folders and updates vendor compliance
   const syncDriveCompliance = async () => {
