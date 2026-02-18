@@ -1985,6 +1985,32 @@ export default function Dashboard({ user, onLogout }) {
     })();
   }, [user]);
 
+  // One-time dedup: remove duplicate contacts by name (keep the one with most data)
+  useEffect(() => {
+    if (!dataLoaded || contacts.length === 0) return;
+    const seen = new Map();
+    contacts.forEach(c => {
+      const key = (c.name || '').toLowerCase().trim();
+      if (!key) return;
+      const existing = seen.get(key);
+      if (!existing) { seen.set(key, c); return; }
+      // Keep whichever has more fields filled
+      const score = (x) => [x.email, x.phone, x.address, x.company, x.position, x.notes].filter(Boolean).length;
+      if (score(c) > score(existing)) seen.set(key, c);
+    });
+    // Also keep contacts with unique/empty names as-is
+    const kept = new Set([...seen.values()].map(c => c.id));
+    const deduped = contacts.filter(c => {
+      const key = (c.name || '').toLowerCase().trim();
+      if (!key) return true;
+      return kept.has(c.id);
+    });
+    if (deduped.length < contacts.length) {
+      console.log(`Dedup: removed ${contacts.length - deduped.length} duplicate contacts`);
+      setContacts(deduped);
+    }
+  }, [dataLoaded]);
+
   // Drive compliance sync — checks actual Drive folders and updates vendor compliance
   const syncDriveCompliance = async () => {
     try {
@@ -2453,9 +2479,11 @@ export default function Dashboard({ user, onLogout }) {
       // Sync discovered vendors to Global Partners (contacts) if not already there
       setContacts(prev => {
         let updated = [...prev];
+        const existingNames = new Set(updated.map(c => (c.name || '').toLowerCase()));
         for (const [vendorName] of Object.entries(projectDriveVendors)) {
-          const exists = updated.some(c => c.name?.toLowerCase() === vendorName.toLowerCase());
-          if (!exists) {
+          const key = vendorName.toLowerCase();
+          if (!existingNames.has(key)) {
+            existingNames.add(key);
             updated.push({
               id: `ct_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
               name: vendorName,
@@ -2491,7 +2519,7 @@ export default function Dashboard({ user, onLogout }) {
     (async () => {
       for (let i = 0; i < driveProjects.length; i++) {
         if (cancelled) break;
-        syncProjectVendors(driveProjects[i]);
+        await syncProjectVendors(driveProjects[i]);
         // Stagger: 500ms between each scan to avoid hammering
         if (i < driveProjects.length - 1) await new Promise(r => setTimeout(r, 500));
       }
