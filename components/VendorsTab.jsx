@@ -22,6 +22,7 @@ const VendorsTab = React.memo(function VendorsTab({
   projectVendors,
   projects,
   project,
+  contacts,
   emptyVendorForm,
   setVendorSearch,
   setDriveResults,
@@ -112,6 +113,57 @@ const VendorsTab = React.memo(function VendorsTab({
                     {vendorSearching && <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#dba94e", animation: "glow 1s ease infinite" }}>Searching Drive...</span>}
                     {vendorSearch && !vendorSearching && <button onClick={() => { setVendorSearch(""); setDriveResults(null); }} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}>✕</button>}
                   </div>
+
+                  {/* Global Partners matches */}
+                  {vendorSearch.trim().length >= 2 && (() => {
+                    const q = vendorSearch.trim().toLowerCase();
+                    const matches = (contacts || []).filter(c => {
+                      const searchFields = [c.name, c.company, c.email, c.phone, c.position].filter(Boolean).join(" ").toLowerCase();
+                      return searchFields.includes(q);
+                    }).slice(0, 8);
+                    if (matches.length === 0) return null;
+                    return (
+                      <div style={{ background: "var(--bgInput)", border: "1px solid #9b6dff25", borderTop: "none", borderRadius: driveResults && driveResults.length > 0 ? 0 : "0 0 10px 10px", maxHeight: 240, overflowY: "auto", animation: "fadeUp 0.15s ease" }}>
+                        <div style={{ padding: "6px 12px", borderBottom: "1px solid var(--borderSub)" }}>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "#9b6dff", letterSpacing: 0.5 }}>GLOBAL PARTNERS — {matches.length} match{matches.length !== 1 ? "es" : ""}</span>
+                        </div>
+                        {matches.map((c, ci) => {
+                          const alreadyAdded = vendors.some(v => v.name.toLowerCase() === (c.company || c.name).toLowerCase() || v.email?.toLowerCase() === c.email?.toLowerCase());
+                          return (
+                            <div key={`ct_${ci}`} onClick={() => {
+                              if (alreadyAdded) return;
+                              const name = c.company || c.name;
+                              const contactName = c.name;
+                              setVendors(prev => [...prev, {
+                                id: `v_${Date.now()}`, name, type: c.resourceType || "Other",
+                                email: c.email || "", contact: contactName,
+                                phone: c.phone || "", title: c.position || "", contactType: c.contactType || "Vendor",
+                                deptId: c.department || "", source: "contacts",
+                                address: c.address || "",
+                                compliance: { coi: { done: false, file: null, date: null }, w9: { done: false, file: null, date: null }, quote: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
+                              }]);
+                              setVendorSearch("");
+                            }} style={{ padding: "10px 12px", borderBottom: ci < matches.length - 1 ? "1px solid var(--borderSub)" : "none", display: "flex", alignItems: "center", gap: 12, cursor: alreadyAdded ? "default" : "pointer", transition: "background 0.15s" }} onMouseEnter={e => { if (!alreadyAdded) e.currentTarget.style.background = "var(--bgHover)"; }} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                              <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#9b6dff15", border: "1px solid #9b6dff30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#9b6dff", flexShrink: 0 }}>
+                                {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 700, color: "var(--text)" }}>{c.name}</span>
+                                  {c.company && c.company !== c.name && <span style={{ fontSize: 9, color: "var(--textFaint)" }}>· {c.company}</span>}
+                                  {alreadyAdded && <span style={{ fontSize: 7, padding: "1px 5px", borderRadius: 3, background: "#4ecb7115", color: "#4ecb71", fontWeight: 700 }}>ADDED</span>}
+                                </div>
+                                <div style={{ fontSize: 10, color: "var(--textMuted)" }}>
+                                  {[c.position, c.email, c.phone].filter(Boolean).join(" · ")}
+                                </div>
+                              </div>
+                              {!alreadyAdded && <span style={{ padding: "5px 12px", background: "#9b6dff15", border: "1px solid #9b6dff25", borderRadius: 6, color: "#9b6dff", fontSize: 10, fontWeight: 600, whiteSpace: "nowrap" }}>+ Add</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
 
                   {/* Live results dropdown */}
                   {driveResults && driveResults.length > 0 && (
@@ -307,7 +359,7 @@ const VendorsTab = React.memo(function VendorsTab({
                                 <button onClick={() => openContractModal(v)} style={{ padding: "4px 10px", background: v.contractDraft ? "#3da5db10" : "#9b6dff10", border: `1px solid ${v.contractDraft ? "#3da5db25" : "#9b6dff25"}`, borderRadius: 5, color: v.contractDraft ? "#3da5db" : "#9b6dff", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>{v.contractDraft ? "📝 Resume Draft" : "📝 Contract"}</button>
                                 <button onClick={() => {
                                   const names = (v.contact || "").split(" ");
-                                  setVendorForm({ contactType: v.contactType || "", resourceType: v.type || "", firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: v.phone || "", email: v.email || "", company: v.name || "", title: v.title || "", dept: v.deptId || DEPT_OPTIONS[0], address: v.address || "" });
+                                  setVendorForm({ contactType: v.contactType || "", resourceType: v.type || "", firstName: names[0] || "", lastName: names.slice(1).join(" ") || "", phone: v.phone || "", email: v.email || "", company: v.name || "", title: v.title || "", dept: v.deptId || DEPT_OPTIONS[0], address: v.address || "", billingName: v.billingName || "", billingAddress: v.billingAddress || "", billingEmail: v.billingEmail || "", billingPhone: v.billingPhone || "", billingSame: false });
                                   setEditingVendorId(v.id);
                                   setShowAddVendor(true);
                                 }} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 5, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✏ Edit</button>

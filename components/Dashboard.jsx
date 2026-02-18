@@ -1654,7 +1654,7 @@ export default function Dashboard({ user, onLogout }) {
     setTimeout(syncDriveCompliance, 2000);
   };
   const CONTACT_TYPES = ["Agency", "Freelancer", "Subcontractor", "Supplier", "Vendor", "Venue"];
-  const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0], address: "" };
+  const emptyVendorForm = { contactType: "", resourceType: "", firstName: "", lastName: "", phone: "", email: "", company: "", title: "", dept: DEPT_OPTIONS[0], address: "", billingName: "", billingAddress: "", billingEmail: "", billingPhone: "", billingSame: false };
 
   // Phone formatting: +1 (XXX) XXX-XXXX
   const formatPhone = (val) => {
@@ -1680,6 +1680,11 @@ export default function Dashboard({ user, onLogout }) {
     const w9Address = w9ParsedData ? [w9ParsedData.address, w9ParsedData.city, w9ParsedData.state, w9ParsedData.zip].filter(Boolean).join(', ') : '';
     const finalAddress = vendorForm.address || w9Address;
 
+    const billingName = vendorForm.billingSame ? contactName : vendorForm.billingName;
+    const billingEmail = vendorForm.billingSame ? vendorForm.email : vendorForm.billingEmail;
+    const billingPhone = vendorForm.billingSame ? vendorForm.phone : vendorForm.billingPhone;
+    const billingAddress = vendorForm.billingSame ? finalAddress : vendorForm.billingAddress;
+
     if (editingVendorId) {
       // EDIT existing vendor
       const oldVendor = vendors.find(v => v.id === editingVendorId);
@@ -1688,6 +1693,7 @@ export default function Dashboard({ user, onLogout }) {
         email: vendorForm.email, contact: contactName,
         phone: vendorForm.phone, title: vendorForm.title, contactType: vendorForm.contactType,
         deptId: vendorForm.dept, address: finalAddress,
+        billingName, billingEmail, billingPhone, billingAddress,
       }));
       // Sync changes to matching Global Partners
       if (oldVendor) {
@@ -1731,6 +1737,7 @@ export default function Dashboard({ user, onLogout }) {
       deptId: vendorForm.dept, source: "manual",
       ein: w9ParsedData?.ein || '',
       address: finalAddress,
+      billingName, billingEmail, billingPhone, billingAddress,
       compliance: { coi: { done: false, file: null, date: null }, w9: w9Done, quote: { done: false, file: null, date: null }, invoice: { done: false, file: null, date: null }, contract: { done: false, file: null, date: null } }
     };
     setVendors(prev => [...prev, newV]);
@@ -2779,16 +2786,16 @@ export default function Dashboard({ user, onLogout }) {
   // ─── File rename suggestion logic ───
   const suggestFileName = (compKey, vendorName, originalName, projectCode) => {
     const ext = originalName.includes('.') ? '.' + originalName.split('.').pop() : '.pdf';
-    const clean = (vendorName || 'Unknown').replace(/[^a-zA-Z0-9 &'()-]/g, '').trim();
+    const clean = (vendorName || 'Unknown').replace(/[^a-zA-Z0-9 &'()-]/g, '').replace(/\s+/g, ' ').trim();
     const cleanUnder = clean.replace(/\s+/g, '_');
     const code = projectCode || 'PROJ';
     const baseName = originalName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9 _()-]/g, '').trim();
     switch (compKey) {
-      case 'coi': return `${code}_${cleanUnder}_COI_V1_(${baseName})${ext}`;
-      case 'w9': return `${code}_${cleanUnder}_W9_V1_(${baseName})${ext}`;
-      case 'contract': return `${code}_${cleanUnder}_Contract_V1_(${baseName})${ext}`;
-      case 'invoice': return `${code}_${cleanUnder}_Invoice_V1_(${baseName})${ext}`;
-      case 'quote': return `${code}_${cleanUnder}_Quote_V1_(${baseName})${ext}`;
+      case 'coi': return `COI-${clean}${ext}`;
+      case 'w9': return `W9-${clean}${ext}`;
+      case 'contract': return `Contract-${clean}${ext}`;
+      case 'invoice': return `${code}-${clean}-Invoice_v1_(${baseName})${ext}`;
+      case 'quote': return `${code}-${clean}-Quote_v1_(${baseName})${ext}`;
       default: return originalName;
     }
   };
@@ -2804,8 +2811,9 @@ export default function Dashboard({ user, onLogout }) {
     const existingComp = vendor?.compliance?.[compKey];
     const existingFiles = Array.isArray(existingComp?.files) ? existingComp.files : [];
     const nextVersion = (compKey === 'invoice' || compKey === 'quote') ? (existingComp?.done ? existingFiles.length + 1 : 1) : 1;
-    const suggested = suggestFileName(compKey, vName, file.name, project?.code || '').replace(/_V1/, `_V${nextVersion}`);
-    setRenameModal({ file, vendorId, compKey, drivePath, basePath, vendorName: vName, suggestedName: suggested, originalName: file.name, ext, version: String(nextVersion) });
+    const suggested = suggestFileName(compKey, vName, file.name, project?.code || '').replace(/_v1_/, `_v${nextVersion}_`);
+    const baseName = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9 _()-]/g, '').trim();
+    setRenameModal({ file, vendorId, compKey, drivePath, basePath, vendorName: vName, suggestedName: suggested, originalName: file.name, ext, version: String(nextVersion), baseName });
   };
 
   // Step 2: Execute upload with (optionally renamed) file
@@ -4532,6 +4540,7 @@ export default function Dashboard({ user, onLogout }) {
                 projectVendors={projectVendors}
                 projects={projects}
                 project={project}
+                contacts={contacts}
                 emptyVendorForm={emptyVendorForm}
                 setVendorSearch={setVendorSearch}
                 setDriveResults={setDriveResults}
@@ -5887,13 +5896,13 @@ export default function Dashboard({ user, onLogout }) {
               {isVersioned && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>PROJECT CODE</div>
-                  <input value={renameModal.projectCode || project?.code || ''} onChange={e => setRenameModal(prev => ({ ...prev, projectCode: e.target.value, suggestedName: `${e.target.value}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').replace(/\s+/g, '_').trim()}_${versionLabel}_V${prev.version || '1'}${prev.ext}` }))} style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} placeholder="e.g. 26-GT-BLOOM" />
+                  <input value={renameModal.projectCode || project?.code || ''} onChange={e => setRenameModal(prev => ({ ...prev, projectCode: e.target.value, suggestedName: `${e.target.value}-${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').trim()}-${versionLabel}_v${prev.version || '1'}_(${prev.baseName || 'file'})${prev.ext}` }))} style={{ width: "100%", padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} placeholder="e.g. 26-GT-BLOOM" />
                 </div>
               )}
               {isVersioned && (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 6 }}>VERSION</div>
-                  <input type="number" min="1" value={renameModal.version || '1'} onChange={e => { const v = e.target.value; setRenameModal(prev => ({ ...prev, version: v, suggestedName: `${prev.projectCode || project?.code || 'PROJ'}_${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').replace(/\s+/g, '_').trim()}_${versionLabel}_V${v}${prev.ext}` })); }} style={{ width: 80, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
+                  <input type="number" min="1" value={renameModal.version || '1'} onChange={e => { const v = e.target.value; setRenameModal(prev => ({ ...prev, version: v, suggestedName: `${prev.projectCode || project?.code || 'PROJ'}-${prev.vendorName.replace(/[^a-zA-Z0-9 &'()-]/g, '').trim()}-${versionLabel}_v${v}_(${prev.baseName || 'file'})${prev.ext}` })); }} style={{ width: 80, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--text)", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", outline: "none" }} />
                 </div>
               )}
               <div style={{ marginBottom: 8 }}>
@@ -5901,7 +5910,7 @@ export default function Dashboard({ user, onLogout }) {
                 <input value={renameModal.suggestedName} onChange={e => setRenameModal(prev => ({ ...prev, suggestedName: e.target.value }))} style={{ width: "100%", padding: "10px 14px", background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontWeight: 600, outline: "none" }} onFocus={e => { const val = e.target.value; const dotIdx = val.lastIndexOf('.'); if (dotIdx > 0) e.target.setSelectionRange(0, dotIdx); }} autoFocus onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('rename-modal-upload-btn')?.click(); } }} />
               </div>
               <div style={{ fontSize: 9, color: "var(--textGhost)", marginBottom: 20 }}>
-                {isDrive ? "Rename the file before uploading to Drive" : isVersioned ? `Format: ProjectCode_Vendor_Name_${versionLabel}_V#.ext` : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'quote' ? 'Quote' : 'Contract'} - Vendor Name.ext`}
+                {isDrive ? "Rename the file before uploading to Drive" : isVersioned ? `Format: ProjectCode-Vendor Name-${versionLabel}_v#_(OriginalFileName).ext` : `Format: ${renameModal.compKey === 'coi' ? 'COI' : renameModal.compKey === 'w9' ? 'W9' : renameModal.compKey === 'quote' ? 'Quote' : 'Contract'}-Vendor Name.ext`}
               </div>
             </div>
             <div style={{ padding: "16px 24px", borderTop: "1px solid var(--borderSub)", display: "flex", justifyContent: "flex-end", gap: 10 }}>
@@ -6174,6 +6183,39 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ marginBottom: 18 }}>
                 <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", display: "block", marginBottom: 6 }}>Address</label>
                 <AddressAutocomplete value={vendorForm.address} onChange={v => updateVF("address", v)} showIcon={false} placeholder="123 Main St, City, State ZIP" inputStyle={{ width: "100%", padding: "10px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, fontFamily: "'DM Sans'", outline: "none" }} />
+              </div>
+
+              {/* Billing Info */}
+              <div style={{ marginBottom: 18, padding: "16px 18px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: vendorForm.billingSame ? 0 : 14 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--textSub)", letterSpacing: 0.3 }}>Billing Information</label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 11, color: "var(--textMuted)" }}>
+                    <input type="checkbox" checked={vendorForm.billingSame} onChange={e => updateVF("billingSame", e.target.checked)} style={{ accentColor: "#ff6b4a" }} />
+                    Same as contact info
+                  </label>
+                </div>
+                {!vendorForm.billingSame && (<>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Name</label>
+                      <input value={vendorForm.billingName} onChange={e => updateVF("billingName", e.target.value)} placeholder="Billing contact name" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none" }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Email</label>
+                      <input value={vendorForm.billingEmail} onChange={e => updateVF("billingEmail", e.target.value)} placeholder="billing@company.com" type="email" style={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none" }} />
+                    </div>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Phone</label>
+                      <PhoneWithCode value={vendorForm.billingPhone} onChange={v => updateVF("billingPhone", v)} inputStyle={{ width: '100%', padding: '9px 12px', background: 'var(--bgInput)', border: '1px solid var(--borderSub)', borderRadius: 8, color: 'var(--text)', fontSize: 12, fontFamily: "'DM Sans'", outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textFaint)", display: "block", marginBottom: 4 }}>Billing Address</label>
+                      <AddressAutocomplete value={vendorForm.billingAddress} onChange={v => updateVF("billingAddress", v)} showIcon={false} placeholder="Billing address" inputStyle={{ width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 12, fontFamily: "'DM Sans'", outline: "none" }} />
+                    </div>
+                  </div>
+                </>)}
               </div>
 
               {/* Row 6: Department */}

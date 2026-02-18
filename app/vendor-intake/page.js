@@ -36,6 +36,7 @@ function VendorIntakeForm() {
     companyName: '', contactFirst: '', contactLast: '', title: '',
     email: '', countryCode: '+1', phone: '', address: '',
     resourceType: '', website: '', ein: '', notes: '',
+    billingName: '', billingEmail: '', billingCountryCode: '+1', billingPhone: '', billingAddress: '', billingSame: false,
   });
   const [w9File, setW9File] = useState(null);
   const [coiFile, setCoiFile] = useState(null);
@@ -164,6 +165,44 @@ function VendorIntakeForm() {
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>EIN / TAX ID</label>
             <input value={form.ein} onChange={e => update('ein', e.target.value)} placeholder="XX-XXXXXXX" style={inputStyle} />
+          </div>
+
+          {/* Billing Info */}
+          <div style={{ marginBottom: 20, padding: '20px', background: '#faf6f1', border: '1px solid #e0d5c7', borderRadius: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: form.billingSame ? 0 : 16 }}>
+              <label style={{ ...labelStyle, marginBottom: 0, fontSize: 12, fontWeight: 700, color: '#6b5e52' }}>BILLING INFORMATION</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12, color: '#8a7e72' }}>
+                <input type="checkbox" checked={form.billingSame} onChange={e => update('billingSame', e.target.checked)} style={{ accentColor: '#ff6b4a' }} />
+                Same as contact info
+              </label>
+            </div>
+            {!form.billingSame && (<>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>BILLING NAME</label>
+                  <input value={form.billingName} onChange={e => update('billingName', e.target.value)} placeholder="Billing contact name" style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>BILLING EMAIL</label>
+                  <input type="email" value={form.billingEmail} onChange={e => update('billingEmail', e.target.value)} placeholder="billing@company.com" style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <div>
+                  <label style={labelStyle}>BILLING PHONE</label>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <select value={form.billingCountryCode} onChange={e => update('billingCountryCode', e.target.value)} style={{ ...inputStyle, width: 90, padding: '11px 4px 11px 8px', fontSize: 12, flexShrink: 0 }}>
+                      {COUNTRY_CODES.map(c => <option key={c.code} value={c.code}>{c.flag} {c.code}</option>)}
+                    </select>
+                    <input value={form.billingPhone} onChange={e => update('billingPhone', e.target.value)} placeholder="(555) 000-0000" style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>BILLING ADDRESS</label>
+                  <input value={form.billingAddress} onChange={e => update('billingAddress', e.target.value)} placeholder="Billing address" style={inputStyle} />
+                </div>
+              </div>
+            </>)}
           </div>
 
           {/* File uploads */}
