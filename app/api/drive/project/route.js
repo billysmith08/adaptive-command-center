@@ -75,9 +75,11 @@ async function ensureFolder(drive, driveId, parentId, name) {
 }
 
 // Recursively create folder template (only in newly created project folders)
+// Skip "Vendor Name" placeholder — it's a template example, not a real folder
 async function createTemplateRecursive(drive, parentId, template) {
   const results = [];
   for (const item of template) {
+    if (item.name.toLowerCase() === 'vendor name') continue;
     const folder = await createFolderInParent(drive, parentId, item.name);
     results.push({ name: item.name, id: folder.id, created: true });
     if (item.children && item.children.length > 0) {
@@ -620,6 +622,7 @@ async function handleAuditFolders(body) {
     const report = [];
 
     for (const item of template) {
+      if (item.name.toLowerCase() === 'vendor name') continue;
       const match = existingMap.get(item.name.toUpperCase());
       if (match) {
         const childReport = (item.children && item.children.length > 0)
