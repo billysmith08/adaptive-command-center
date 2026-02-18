@@ -3378,17 +3378,10 @@ export default function Dashboard({ user, onLogout }) {
           )}
           {/* Settings gear (admin only) */}
           {(canSeeSection("settings") || previewingAs) && isAdmin && (
-            <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title="Settings">
-              <span style={{ fontSize: 12 }}>⚙️</span>
-              <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>SETTINGS</span>
+            <button onClick={() => setShowSettings(true)} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "5px 8px", cursor: "pointer", display: "flex", alignItems: "center", transition: "all 0.3s" }} title="Settings">
+              <span style={{ fontSize: 14 }}>⚙️</span>
             </button>
           )}
-          {/* Text Size Quick Control */}
-          <div style={{ display: "flex", alignItems: "center", gap: 3, border: "1px solid var(--borderSub)", borderRadius: 20, padding: "3px 6px" }} title={`Text size: ${textSize}%`}>
-            <button onClick={() => setTextSize(s => Math.max(75, s - 5))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "var(--textMuted)", padding: "2px 4px", fontWeight: 700, lineHeight: 1 }}>A−</button>
-            <span style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, minWidth: 28, textAlign: "center", fontFamily: "'JetBrains Mono', monospace" }}>{textSize}%</span>
-            <button onClick={() => setTextSize(s => Math.min(130, s + 5))} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "var(--textMuted)", padding: "2px 4px", fontWeight: 700, lineHeight: 1 }}>A+</button>
-          </div>
           {/* Activity Feed Bell */}
           <div style={{ position: "relative" }}>
             <button onClick={() => { setShowActivityFeed(!showActivityFeed); if (!showActivityFeed) setLastSeenActivity(Date.now()); }} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "5px 9px", cursor: "pointer", position: "relative", display: "flex", alignItems: "center", gap: 4 }} title="Activity Feed">
@@ -3441,28 +3434,29 @@ export default function Dashboard({ user, onLogout }) {
               </div>
             )}
           </div>
-          {/* Dark/Light toggle */}
-          <button onClick={toggleDarkMode} style={{ background: darkMode ? "var(--bgCard)" : "#d8d0b8", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "4px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, transition: "all 0.3s" }} title={darkMode ? "Switch to light mode" : "Switch to dark mode"}>
-            <span style={{ fontSize: 12 }}>{darkMode ? "🌙" : "☀️"}</span>
-            <span style={{ fontSize: 9, fontWeight: 600, color: "var(--textMuted)", letterSpacing: 0.5 }}>{darkMode ? "DARK" : "LIGHT"}</span>
+          {/* Dark/Light toggle — icon only */}
+          <button onClick={toggleDarkMode} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 20, padding: "5px 8px", cursor: "pointer", display: "flex", alignItems: "center", transition: "all 0.3s" }} title={darkMode ? "Switch to light mode" : "Switch to dark mode"}>
+            <span style={{ fontSize: 14 }}>{darkMode ? "🌙" : "☀️"}</span>
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }} title={`Click to force save\nLast synced: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : "never"}`} onClick={() => { const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog }; Object.entries(slices).forEach(([key, data]) => saveSlice(key, data)); }}><div style={{ width: 6, height: 6, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} /><span style={{ fontSize: 10, color: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", fontWeight: saveStatus === "saving" ? 700 : 400 }}>{saveStatus === "saving" ? "SAVING…" : saveStatus === "error" ? "⚠ SAVE ERROR — CLICK TO RETRY" : "✓ LIVE"}</span></div>
-          <span style={{ fontSize: 12, color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace" }}>{time.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span>
+          {/* Save status dot */}
+          <div style={{ cursor: "pointer" }} title={`${saveStatus === "saving" ? "Saving..." : saveStatus === "error" ? "Save error — click to retry" : "Synced"}\nLast: ${lastSyncTime ? new Date(lastSyncTime).toLocaleTimeString() : "never"}`} onClick={() => { const slices = { projects, contacts, clients, projectVendors, projectWorkback, projectProgress, projectComments, projectROS, rosDayDates, activityLog }; Object.entries(slices).forEach(([key, data]) => saveSlice(key, data)); }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: saveStatus === "saving" ? "#f5a623" : saveStatus === "error" ? "#ff4444" : "#4ecb71", animation: saveStatus === "saving" ? "pulse 0.8s ease infinite" : "glow 2s infinite", transition: "background 0.3s" }} />
+          </div>
+          {/* User avatar */}
           {user && (() => {
             const myP = (appSettings.userProfiles || {})[user.email] || {};
             const ini = ((myP.firstName || user.name?.split(" ")[0] || "")[0] || "") + ((myP.lastName || user.name?.split(" ").slice(1).join(" ") || "")[0] || user.email[0] || "");
             return (
               <div onClick={() => { setSettingsTab("profile"); setShowSettings(true); }} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", padding: "2px 8px 2px 2px", borderRadius: 20, border: "1px solid transparent", transition: "all 0.2s" }} onMouseEnter={e => e.currentTarget.style.borderColor = "var(--borderSub)"} onMouseLeave={e => e.currentTarget.style.borderColor = "transparent"} title="Edit profile">
                 {myP.avatar ? (
-                  <img src={myP.avatar} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} />
+                  <img src={myP.avatar} alt="" style={{ width: 24, height: 24, borderRadius: "50%", objectFit: "cover" }} />
                 ) : (
-                  <div style={{ width: 22, height: 22, borderRadius: "50%", background: "#ff6b4a20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 700, color: "#ff6b4a" }}>{ini.toUpperCase()}</div>
+                  <div style={{ width: 24, height: 24, borderRadius: "50%", background: "#ff6b4a20", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#ff6b4a" }}>{ini.toUpperCase()}</div>
                 )}
-                <span style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace" }}>{myP.firstName ? `${myP.firstName} ${myP.lastName || ""}`.trim() : user.email}</span>
               </div>
             );
           })()}
-          {onLogout && <button onClick={onLogout} style={{ background: "none", border: "1px solid var(--borderSub)", borderRadius: 5, padding: "3px 8px", cursor: "pointer", fontSize: 9, color: "var(--textMuted)", fontWeight: 600, letterSpacing: 0.3 }}>LOGOUT</button>}
+          {onLogout && <button onClick={onLogout} style={{ background: "none", border: "none", cursor: "pointer", padding: "4px", fontSize: 14, color: "var(--textGhost)", transition: "color 0.2s", lineHeight: 1 }} onMouseEnter={e => e.currentTarget.style.color = "#ff4444"} onMouseLeave={e => e.currentTarget.style.color = "var(--textGhost)"} title="Sign out">⏻</button>}
         </div>
       </div>
 
