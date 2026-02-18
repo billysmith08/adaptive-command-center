@@ -90,6 +90,14 @@ const MasterCalendar = React.memo(function MasterCalendar({ projects, projectWor
         });
       }
     });
+    rows.sort((a, b) => a.pri - b.pri);
+    // Map each projId to its first row index (engagement bar)
+    const projRowMap = {};
+    rows.forEach((row, i) => {
+      if (projRowMap[row.projId] === undefined) projRowMap[row.projId] = i;
+    });
+    // Workback overlays — positioned on same row as parent project
+    const overlays = [];
     projects.forEach((proj, pi) => {
       if (proj.archived) return;
       const projColor = PROJECT_COLORS[pi % PROJECT_COLORS.length];
@@ -97,11 +105,12 @@ const MasterCalendar = React.memo(function MasterCalendar({ projects, projectWor
       items.forEach(wb => {
         const idx = dayStrs.indexOf(wb.date);
         if (idx === -1) return;
-        const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
-        rows.push({ type: "wb", label: wb.isEvent ? `★ ${wb.task}` : wb.task, sub: wb.owner, color: wb.isEvent ? "#ff6b4a" : projColor, bg: wb.isEvent ? "#ff6b4a22" : projColor + "18", startCol: idx, span: 1, projId: proj.id, pri: wb.isEvent ? 2 : 3 });
+        const parentRow = projRowMap[proj.id];
+        if (parentRow === undefined) return;
+        overlays.push({ type: "wb", label: wb.isEvent ? `★ ${wb.task}` : wb.task, sub: wb.owner, color: wb.isEvent ? "#ff6b4a" : projColor, bg: wb.isEvent ? "#ff6b4a22" : projColor + "35", startCol: idx, span: 1, projId: proj.id, rowIdx: parentRow });
       });
     });
-    return rows.sort((a, b) => a.pri - b.pri);
+    return { rows, overlays };
   }, [projects, projectWorkback]);
 
   // ── Month/Quarter grid builder ──
@@ -263,7 +272,7 @@ const MasterCalendar = React.memo(function MasterCalendar({ projects, projectWor
         const gr = getGanttRange();
         const dayStrs = gr.days.map(fmt);
         const colCount = gr.days.length;
-        const rows = buildGanttRows(dayStrs);
+        const { rows, overlays } = buildGanttRows(dayStrs);
         return (
           <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 12, overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${colCount}, 1fr)`, borderBottom: "1px solid var(--borderSub)" }}>
@@ -294,7 +303,19 @@ const MasterCalendar = React.memo(function MasterCalendar({ projects, projectWor
                   <div key={ri} onClick={() => onSelectProject(row.projId)}
                     style={{ position: "absolute", top: ri * 30 + 6, left, width, height: 26, background: bg, borderLeft: `3px solid ${bc}`, borderRadius: "0 4px 4px 0", display: "flex", alignItems: "center", paddingLeft: 6, cursor: "pointer", overflow: "hidden" }}
                     title={`${row.label} — ${row.sub}`}>
-                    <span style={{ fontSize: row.type === "wb" ? 9 : 10, fontWeight: isEvt ? 700 : 500, color: tc, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: isEvt ? 700 : 500, color: tc, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{row.label}</span>
+                  </div>
+                );
+              })}
+              {/* Workback overlays — sit on same row as their parent project */}
+              {overlays.map((ov, oi) => {
+                const left = `calc(${(ov.startCol / colCount) * 100}% + 2px)`;
+                const width = `calc(${(ov.span / colCount) * 100}% - 4px)`;
+                return (
+                  <div key={`wb_${oi}`} onClick={() => onSelectProject(ov.projId)}
+                    style={{ position: "absolute", top: ov.rowIdx * 30 + 6, left, width, height: 26, background: ov.bg, borderLeft: `3px solid ${ov.color}`, borderRadius: "0 4px 4px 0", display: "flex", alignItems: "center", paddingLeft: 5, cursor: "pointer", overflow: "hidden", zIndex: 3 }}
+                    title={`${ov.label} — ${ov.sub}`}>
+                    <span style={{ fontSize: 9, fontWeight: 600, color: ov.color, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ov.label}</span>
                   </div>
                 );
               })}
