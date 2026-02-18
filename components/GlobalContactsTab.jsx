@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-function GlobalContactsTab({
+const GlobalContactsTab = React.memo(function GlobalContactsTab({
   // State
   contactSearch,
   setContactSearch,
@@ -289,6 +289,6 @@ function GlobalContactsTab({
                 )}
               </div>
   );
-}
+});
 
 export default GlobalContactsTab;

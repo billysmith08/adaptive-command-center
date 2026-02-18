@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-function FinanceTab({
+const FinanceTab = React.memo(function FinanceTab({
   projects,
   setProjects,
   finFilterStatus,
@@ -368,6 +368,6 @@ function FinanceTab({
       <div style={{ fontSize: 10, color: "var(--textGhost)", marginTop: 10, textAlign: "right" }}>Admin-only · Supports formulas (e.g. 5990/2) · Use ◀ ▶ arrows on column headers to reorder · Right-click project name to toggle retainer · Click "Subs" to show sub-projects</div>
     </div>
   );
-}
+});
 
 export default FinanceTab;

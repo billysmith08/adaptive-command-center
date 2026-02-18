@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-function ClientsTab({
+const ClientsTab = React.memo(function ClientsTab({
   clientSearch,
   setClientSearch,
   clientFilterAttr,
@@ -206,6 +206,6 @@ function ClientsTab({
                 )}
               </div>
   );
-}
+});
 
 export default ClientsTab;

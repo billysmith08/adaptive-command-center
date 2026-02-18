@@ -5,7 +5,7 @@ import React from "react";
 // TodoistGlobal — Todoist overview (no project selected)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function TodoistGlobal({
+const TodoistGlobal = React.memo(function TodoistGlobal({
   todoistKey, setTodoistKey,
   todoistFetch,
   todoistNewTask, setTodoistNewTask,
@@ -126,13 +126,13 @@ function TodoistGlobal({
                 )}
               </div>
   );
-}
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TodoistPerProject — Todoist scoped to a specific project
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function TodoistPerProject({
+const TodoistPerProject = React.memo(function TodoistPerProject({
   project,
   generateProjectCode,
   todoistKey,
@@ -425,6 +425,6 @@ function TodoistPerProject({
                   )}
                 </div>
   );
-}
+});
 
 export { TodoistGlobal, TodoistPerProject };

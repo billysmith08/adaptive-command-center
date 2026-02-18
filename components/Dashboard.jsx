@@ -4,7 +4,7 @@ import ReactDOM from "react-dom";
 import { createClient } from "@/lib/supabase-browser";
 
 // ── APP VERSION ── bump this on every deploy
-const APP_VERSION = "v94q";
+const APP_VERSION = "v94s";
 
 import {
   STATUSES, STATUS_COLORS, DEPT_OPTIONS, SERVICE_OPTIONS, PROJECT_TYPES, PT_COLORS, DEPT_COLORS,
@@ -28,6 +28,11 @@ import GlobalContactsTab from "./GlobalContactsTab";
 import ClientsTab from "./ClientsTab";
 import DriveTab from "./DriveTab";
 import { OverviewTab, BudgetTab } from "./OverviewTab";
+import CommandPalette from "./CommandPalette";
+import KeyboardShortcuts from "./KeyboardShortcuts";
+import HomeDashboard from "./HomeDashboard";
+import NotificationInbox from "./NotificationInbox";
+import { exportWorkbackPdf, exportProgressPdf, exportROSPdf, exportContactsPdf } from "./PdfExport";
 
 // ─── MAIN DASHBOARD ──────────────────────────────────────────────────────────
 
@@ -302,6 +307,7 @@ export default function Dashboard({ user, onLogout }) {
   const deleteComment = (id) => setProjectComments(prev => ({ ...prev, [activeProjectId]: (prev[activeProjectId] || []).filter(c => c.id !== id) }));
   const [commentInput, setCommentInput] = useState("");
   const [notesCollapsed, setNotesCollapsed] = useState(false);
+  const [timelineCollapsed, setTimelineCollapsed] = useState(true);
   const [showCommentPanel, setShowCommentPanel] = useState(false);
   // ─── PER-PROJECT RUN OF SHOW ───────────────────────────────────
   const [projectROS, setProjectROS] = useState({});
@@ -324,16 +330,25 @@ export default function Dashboard({ user, onLogout }) {
   
   
   const [search, setSearch] = useState("");
+  const [cmdKOpen, setCmdKOpen] = useState(false);
+  const [cmdKQuery, setCmdKQuery] = useState("");
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([]);
   const [sidebarStatusFilter, setSidebarStatusFilter] = useState("");
   const [sidebarDateFilter, setSidebarDateFilter] = useState(""); // "upcoming", "past", "this-month", "this-quarter", ""
   const [collapsedParents, setCollapsedParents] = useState(new Set());
   const [sidebarW, setSidebarW] = useState(280);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkSelected, setBulkSelected] = useState(new Set());
   const [swipeState, setSwipeState] = useState({}); // { projectId: { startX, offsetX } }
   const swipeDraggedRef = useRef(false); // true if a drag just completed, prevents click
   const [archiveConfirm, setArchiveConfirm] = useState(null); // { projectId, action: "archive"|"delete" }
   const [contextMenu, setContextMenu] = useState(null); // { x, y, projectId, projectName, archived }
+  const [accessModal, setAccessModal] = useState(null); // { projectId, projectName }
+  const [accessEmail, setAccessEmail] = useState(""); // email input for access modal
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState("users");
   const [appSettings, setAppSettings] = useState({
@@ -448,6 +463,13 @@ export default function Dashboard({ user, onLogout }) {
   const canSeeProject = (projectId) => {
     if (!previewingAs && (currentUserPerms.role === "owner" || currentUserPerms.role === "admin")) return true;
     if (previewingAs && (getUserPerms(previewingAs).role === "owner" || getUserPerms(previewingAs).role === "admin")) return true;
+    // Project-level visibility check
+    const proj = projects.find(p => p.id === projectId);
+    if (proj && proj.visibility === "private") {
+      const checkEmail = previewingAs || user?.email;
+      if (!checkEmail) return false;
+      if (!(proj.allowedUsers || []).includes(checkEmail)) return false;
+    }
     if (currentUserPerms.projectAccess === "all") return true;
     return (currentUserPerms.projectAccess || []).includes(projectId);
   };
@@ -696,6 +718,125 @@ export default function Dashboard({ user, onLogout }) {
   useEffect(() => { if (saveSkipRef.current) return; try { localStorage.setItem(LS_KEYS.textSize, JSON.stringify(textSize)); } catch {} }, [textSize]);
   useEffect(() => { saveSkipRef.current = false; }, []);
 
+  // ─── REMINDER CHECK EFFECT ────────────────────────────────────────
+  // Periodically checks for overdue/upcoming workback tasks and approaching event/engagement dates.
+  // Adds reminder notifications (deduped by stable ID) to the notifications state.
+  useEffect(() => {
+    if (!dataLoaded) return;
+    const checkReminders = () => {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const twoDaysMs = 2 * 24 * 60 * 60 * 1000;
+      const threeDaysMs = 3 * 24 * 60 * 60 * 1000;
+      const newReminders = [];
+
+      // 1) Workback tasks: overdue and upcoming within 2 days
+      Object.entries(projectWorkback).forEach(([pid, items]) => {
+        if (!Array.isArray(items)) return;
+        const proj = projects.find(p => p.id === pid);
+        const pName = proj?.name || "Unknown";
+        items.forEach((wb, idx) => {
+          if (!wb.task || !wb.date || wb.status === "Done" || wb.status === "N/A") return;
+          const dueDate = new Date(wb.date + "T23:59:59");
+          if (isNaN(dueDate.getTime())) return;
+          if (dueDate < today) {
+            // Overdue
+            newReminders.push({
+              id: `rem_overdue_${pid}_${idx}`,
+              type: "overdue",
+              title: `Overdue: ${wb.task}`,
+              detail: `Due ${wb.date} — ${pName}`,
+              projectId: pid,
+              projectName: pName,
+              timestamp: now.toISOString(),
+              read: false,
+              user: "System",
+            });
+          } else if (dueDate.getTime() - today.getTime() <= twoDaysMs) {
+            // Due within 2 days
+            const daysLeft = Math.ceil((dueDate.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+            newReminders.push({
+              id: `rem_upcoming_${pid}_${idx}`,
+              type: "reminder",
+              title: `Upcoming: ${wb.task}`,
+              detail: `Due in ${daysLeft} day${daysLeft !== 1 ? "s" : ""} (${wb.date}) — ${pName}`,
+              projectId: pid,
+              projectName: pName,
+              timestamp: now.toISOString(),
+              read: false,
+              user: "System",
+            });
+          }
+        });
+      });
+
+      // 2) Upcoming event dates (within 3 days)
+      projects.forEach(proj => {
+        const evStart = proj.eventDates?.start;
+        if (evStart) {
+          const evDate = new Date(evStart + "T00:00:00");
+          if (!isNaN(evDate.getTime()) && evDate >= today) {
+            const diffMs = evDate.getTime() - today.getTime();
+            if (diffMs <= threeDaysMs) {
+              const daysLeft = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+              newReminders.push({
+                id: `rem_event_${proj.id}`,
+                type: "reminder",
+                title: `Event in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}: ${proj.name}`,
+                detail: `Event starts ${evStart}`,
+                projectId: proj.id,
+                projectName: proj.name,
+                timestamp: now.toISOString(),
+                read: false,
+                user: "System",
+              });
+            }
+          }
+        }
+        // 3) Upcoming engagement dates (within 3 days)
+        const engStart = proj.engagementDates?.start;
+        if (engStart) {
+          const engDate = new Date(engStart + "T00:00:00");
+          if (!isNaN(engDate.getTime()) && engDate >= today) {
+            const diffMs = engDate.getTime() - today.getTime();
+            if (diffMs <= threeDaysMs) {
+              const daysLeft = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
+              newReminders.push({
+                id: `rem_engage_${proj.id}`,
+                type: "reminder",
+                title: `Engagement in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}: ${proj.name}`,
+                detail: `Engagement starts ${engStart}`,
+                projectId: proj.id,
+                projectName: proj.name,
+                timestamp: now.toISOString(),
+                read: false,
+                user: "System",
+              });
+            }
+          }
+        }
+      });
+
+      // Dedup: only add reminders whose ID doesn't already exist in notifications
+      setNotifications(prev => {
+        const existingIds = new Set(prev.map(n => n.id));
+        const toAdd = newReminders.filter(r => !existingIds.has(r.id));
+        // Also update timestamps on existing reminders that are still active
+        const activeIds = new Set(newReminders.map(r => r.id));
+        // Remove stale reminders (e.g. task was completed since last check)
+        const cleaned = prev.filter(n => !n.id.startsWith("rem_") || activeIds.has(n.id));
+        if (toAdd.length === 0 && cleaned.length === prev.length) return prev; // no change
+        return [...cleaned, ...toAdd];
+      });
+    };
+
+    checkReminders(); // run on mount / dependency change
+    const interval = setInterval(checkReminders, 60000); // every 60 seconds
+    return () => clearInterval(interval);
+  }, [projectWorkback, projects, dataLoaded]);
+  // Note: notifications intentionally omitted from deps to avoid infinite loops;
+  // the setNotifications callback form reads prev state safely.
+
   // Undo/Redo history
   const undoStack = useRef([]);
   const redoStack = useRef([]);
@@ -732,6 +873,8 @@ export default function Dashboard({ user, onLogout }) {
     const handler = (e) => {
       // ESC closes modals (priority order)
       if (e.key === "Escape") {
+        if (cmdKOpen) { setCmdKOpen(false); setCmdKQuery(""); e.preventDefault(); return; }
+        if (showShortcuts) { setShowShortcuts(false); e.preventDefault(); return; }
         if (showSettings) { setShowSettings(false); e.preventDefault(); return; }
         if (docPreview) { setDocPreview(null); e.preventDefault(); return; }
         if (showAddProject) { setShowAddProject(false); e.preventDefault(); return; }
@@ -745,6 +888,13 @@ export default function Dashboard({ user, onLogout }) {
         if (assignContactPopover) { setAssignContactPopover(null); e.preventDefault(); return; }
         if (contactPopover) { setContactPopover(null); e.preventDefault(); return; }
         if (contextMenu) { setContextMenu(null); e.preventDefault(); return; }
+      }
+      // Cmd+K / Ctrl+K = Command Palette
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCmdKOpen(o => !o);
+        if (!cmdKOpen) setCmdKQuery("");
+        return;
       }
       // Cmd+S / Ctrl+S = Force save to Supabase
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -764,10 +914,18 @@ export default function Dashboard({ user, onLogout }) {
         doRedo();
         return;
       }
+      // ? = Keyboard shortcuts (only when not typing in an input)
+      if (e.key === "?" && !e.metaKey && !e.ctrlKey) {
+        const tag = (e.target.tagName || "").toLowerCase();
+        if (tag === "input" || tag === "textarea" || tag === "select" || e.target.isContentEditable) return;
+        e.preventDefault();
+        setShowShortcuts(s => !s);
+        return;
+      }
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [showSettings, showAddProject, showAddContact, showAddClient, showAddVendor, showPrintROS, showVersionHistory, showActivityFeed, assignContactPopover, contactPopover, contextMenu, docPreview, contractModal, doUndo, doRedo]);
+  }, [cmdKOpen, showShortcuts, showSettings, showAddProject, showAddContact, showAddClient, showAddVendor, showPrintROS, showVersionHistory, showActivityFeed, assignContactPopover, contactPopover, contextMenu, docPreview, contractModal, doUndo, doRedo]);
   const todoistFetch = useCallback(async (key) => {
     const k = key || todoistKey; if (!k) return;
     setTodoistLoading(true);
@@ -2835,7 +2993,7 @@ export default function Dashboard({ user, onLogout }) {
   const compTotal = vendors.length * 5;
   const compDone = vendors.reduce((s, v) => s + COMP_KEYS.filter(ck => v.compliance?.[ck.key]?.done).length, 0);
   const days = [...new Set(ros.map(r => r.day))].sort((a, b) => a - b);
-  const filteredProjects = (() => {
+  const filteredProjects = React.useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
     const thisMonthStart = today.slice(0, 7) + "-01";
     const thisMonthEnd = new Date(new Date(thisMonthStart).setMonth(new Date(thisMonthStart).getMonth() + 1) - 1).toISOString().slice(0, 10);
@@ -2879,8 +3037,8 @@ export default function Dashboard({ user, onLogout }) {
     // Add orphan children (parent not visible / deleted)
     children.filter(c => !parents.some(p => p.id === c.parentId)).forEach(c => ordered.push(c));
     return ordered;
-  })();
-  const archivedCount = projects.filter(p => p.archived).length;
+  }, [projects, search, showArchived, sidebarStatusFilter, sidebarDateFilter, collapsedParents]);
+  const archivedCount = React.useMemo(() => projects.filter(p => p.archived).length, [projects]);
 
   const allTabs = [
     { id: "overview", label: "Overview", icon: "◉" },
@@ -3110,6 +3268,9 @@ export default function Dashboard({ user, onLogout }) {
           <div style={{ width: 1, height: 20, background: "var(--border)" }} />
           <span style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>COMMAND CENTER</span>
           <div style={{ width: 1, height: 16, background: "var(--border)" }} />
+          <button onClick={() => setActiveTab("home")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "home" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+            🏠 Home
+          </button>
           <button onClick={() => setActiveTab("calendar")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "calendar" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
             📅 Adaptive at a Glance
           </button>
@@ -3262,6 +3423,7 @@ export default function Dashboard({ user, onLogout }) {
           <div style={{ padding: "14px 12px 10px", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
               <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'" }} />
+              <button onClick={() => { setBulkMode(prev => { if (prev) setBulkSelected(new Set()); return !prev; }); }} style={{ padding: "4px 8px", background: bulkMode ? "#ff6b4a15" : "var(--bgCard)", border: bulkMode ? "1px solid #ff6b4a40" : "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: bulkMode ? "#ff6b4a" : "var(--textFaint)", fontSize: 12, display: "flex", alignItems: "center", fontFamily: "'DM Sans', sans-serif" }} title={bulkMode ? "Exit bulk mode" : "Bulk select projects"}>{bulkMode ? "✓" : "☐"}</button>
               <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>
             </div>
             <select value={sidebarStatusFilter} onChange={e => setSidebarStatusFilter(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: sidebarStatusFilter ? "#ff6b4a10" : "var(--bgCard)", border: `1px solid ${sidebarStatusFilter ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, color: sidebarStatusFilter ? "#ff6b4a" : "var(--textFaint)", fontSize: 10, fontWeight: 600, outline: "none", marginBottom: 4, cursor: "pointer" }}>
@@ -3323,10 +3485,11 @@ export default function Dashboard({ user, onLogout }) {
                       const sw = swipeState[p.id];
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
-                      if (activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" || activeTab === "finance" ) setActiveTab("overview");
+                      if (activeTab === "home" || activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" || activeTab === "finance" ) setActiveTab("overview");
                     }}
-                    style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
+                    style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: bulkMode && bulkSelected.has(p.id) ? "#ff6b4a08" : p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: bulkMode && bulkSelected.has(p.id) ? "1px solid #ff6b4a30" : active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
+                    {bulkMode && <div onClick={(e) => { e.stopPropagation(); setBulkSelected(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; }); }} style={{ width: 16, height: 16, borderRadius: 4, border: bulkSelected.has(p.id) ? "2px solid #ff6b4a" : "2px solid var(--border)", background: bulkSelected.has(p.id) ? "#ff6b4a" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, marginBottom: 6, transition: "all 0.15s" }}>{bulkSelected.has(p.id) && <span style={{ color: "#fff", fontSize: 10, lineHeight: 1, fontWeight: 700 }}>✓</span>}</div>}
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
                       <span style={{ fontSize: 10, fontWeight: 600, color: "var(--textFaint)", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>{isSubProject && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: "#dba94e15", color: "#dba94e", border: "1px solid #dba94e25", fontWeight: 700 }}>SUB</span>}{p.client}{p.projectType && <span style={{ fontSize: 7, padding: "1px 4px", borderRadius: 3, background: ptc + "15", color: ptc, border: `1px solid ${ptc}25`, fontWeight: 700, letterSpacing: 0.5 }}>{p.projectType.toUpperCase()}</span>}</span>
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -3353,6 +3516,19 @@ export default function Dashboard({ user, onLogout }) {
               );
             })}
           </div>
+          {bulkMode && bulkSelected.size > 0 && (
+            <div style={{ position: "sticky", bottom: 0, background: "var(--bgCard)", borderTop: "1px solid var(--border)", padding: "10px 14px", flexShrink: 0, fontFamily: "'DM Sans', sans-serif", zIndex: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#ff6b4a", whiteSpace: "nowrap" }}>{bulkSelected.size} selected</span>
+                <button onClick={() => { setProjects(prev => prev.map(x => bulkSelected.has(x.id) ? { ...x, archived: true } : x)); setBulkSelected(new Set()); setBulkMode(false); }} style={{ padding: "4px 10px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 5, color: "#ff6b4a", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap" }}>Archive</button>
+                <select defaultValue="" onChange={(e) => { if (!e.target.value) return; const newStatus = e.target.value; setProjects(prev => prev.map(x => bulkSelected.has(x.id) ? { ...x, status: newStatus, ...(newStatus === "Complete" ? { archived: true } : {}) } : x)); setBulkSelected(new Set()); setBulkMode(false); e.target.value = ""; }} style={{ padding: "4px 8px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 5, color: "#ff6b4a", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", outline: "none" }}>
+                  <option value="" disabled>Status ▾</option>
+                  {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <button onClick={() => { setBulkSelected(new Set()); setBulkMode(false); }} style={{ padding: "4px 10px", background: "var(--bgSub)", border: "1px solid var(--border)", borderRadius: 5, color: "var(--textMuted)", fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap", marginLeft: "auto" }}>Cancel</button>
+              </div>
+            </div>
+          )}
           <div style={{ padding: 12, borderTop: "1px solid var(--border)", flexShrink: 0 }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
               <div style={{ background: "var(--bgCard)", borderRadius: 7, padding: "8px 10px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>COMPLIANCE</div><div style={{ fontSize: 18, fontWeight: 700, color: compTotal > 0 && compDone / compTotal > 0.8 ? "#4ecb71" : "#dba94e", fontFamily: "'JetBrains Mono', monospace" }}>{compTotal > 0 ? Math.round(compDone / compTotal * 100) : 0}%</div></div>
@@ -3372,7 +3548,7 @@ export default function Dashboard({ user, onLogout }) {
         {/* MAIN */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "16px 28px 0" }}>
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
+            {activeTab !== "home" && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -3390,7 +3566,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
               </div>
             )}
-            {activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
+            {activeTab !== "home" && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
               {tabs.map(t => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
@@ -3405,6 +3581,20 @@ export default function Dashboard({ user, onLogout }) {
           </div>
 
           <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 40px", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: `${appSettings.branding?.bgZoom || 100}%`, backgroundPosition: appSettings.branding?.bgPosition || "center center", backgroundRepeat: "no-repeat", backgroundAttachment: "local" } : {}) }}>
+
+            {/* ═══ HOME DASHBOARD ═══ */}
+            {activeTab === "home" && (
+              <HomeDashboard
+                user={user}
+                projects={projects}
+                projectWorkback={projectWorkback}
+                activityLog={activityLog}
+                contacts={contacts}
+                clients={clients}
+                onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }}
+                setActiveTab={setActiveTab}
+              />
+            )}
 
             {/* ═══ ADAPTIVE AT A GLANCE (3 tabs) ═══ */}
             {activeTab === "calendar" && (
@@ -3428,7 +3618,7 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* ── Cal View ── */}
                 {glanceTab === "cal" && (
-                  <MasterCalendar projects={projects} workback={workback} onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }} />
+                  <MasterCalendar projects={projects} projectWorkback={projectWorkback} onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }} />
                 )}
 
                 {/* ── Macro View ── */}
@@ -3890,6 +4080,9 @@ export default function Dashboard({ user, onLogout }) {
                 peopleOptions={peopleOptions}
                 notesCollapsed={notesCollapsed}
                 pctSpent={pctSpent}
+                activityLog={activityLog}
+                timelineCollapsed={timelineCollapsed}
+                setTimelineCollapsed={setTimelineCollapsed}
                 setActiveProjectId={setActiveProjectId}
                 setActiveTab={setActiveTab}
                 setProjects={setProjects}
@@ -3951,7 +4144,10 @@ export default function Dashboard({ user, onLogout }) {
               <div style={{ animation: "fadeUp 0.3s ease" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <div><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PRE-PRODUCTION WORK BACK</div><div style={{ fontSize: 13, color: "var(--textMuted)" }}>Engagement: <span style={{ color: "var(--text)" }}>{fmtShort(project.engagementDates.start)}</span> → Event: <span style={{ color: "#ff6b4a" }}>{fmtShort(project.eventDates.start)}</span> → End: <span style={{ color: "var(--text)" }}>{fmtShort(project.engagementDates.end)}</span></div></div>
-                  <button onClick={addWBRow} style={{ padding: "7px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add Row</button>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => exportWorkbackPdf(project, workback)} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📄 Export PDF</button>
+                    <button onClick={addWBRow} style={{ padding: "7px 14px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>+ Add Row</button>
+                  </div>
                 </div>
                 <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
                   <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 280px)", minHeight: 300 }}>
@@ -4105,6 +4301,7 @@ export default function Dashboard({ user, onLogout }) {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>PROGRESS REPORT</div><div style={{ fontSize: 12, color: "var(--textMuted)" }}>Track tasks, ownership, and status across all workstreams</div></div>
                   <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => exportProgressPdf(project, projectProgress[activeProjectId]?.rows || [])} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📄 Export PDF</button>
                     <button onClick={() => setPrShowFilters(p => !p)} style={{ padding: "7px 14px", background: prShowFilters ? "#3da5db20" : "#3da5db10", border: `1px solid ${prShowFilters ? "#3da5db40" : "#3da5db25"}`, borderRadius: 7, color: "#3da5db", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>⊘ Filter</button>
                     <label style={{ padding: "7px 14px", background: "#9b6dff10", border: "1px solid #9b6dff25", borderRadius: 7, color: "#9b6dff", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
                       <span style={{ fontSize: 13 }}>📊</span> Import CSV
@@ -4238,8 +4435,9 @@ export default function Dashboard({ user, onLogout }) {
                   <button onClick={() => { const nextDay = days.length > 0 ? Math.max(...days) + 1 : 1; addROSRow(nextDay); }} style={{ padding: "7px 16px", background: "#ff6b4a15", border: "1px solid #ff6b4a30", borderRadius: 7, color: "#ff6b4a", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 13 }}>+</span> Add Day
                   </button>
+                  <button onClick={() => exportROSPdf(project, projectROS[activeProjectId] || [], rosDayDates[activeProjectId])} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📄 Export PDF</button>
                   <button onClick={() => setShowPrintROS(true)} style={{ padding: "7px 16px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={{ fontSize: 14 }}>📄</span> Export PDF
+                    <span style={{ fontSize: 14 }}>📄</span> Print Preview
                   </button>
                 </div>
                 {days.map(day => {
@@ -4452,6 +4650,7 @@ export default function Dashboard({ user, onLogout }) {
                         <div style={{ fontSize: 14, fontWeight: 600 }}>{allProjectPeople.length} People on This Project</div>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <button onClick={() => exportContactsPdf(project, allProjectPeople)} style={{ padding: "4px 10px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 9, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>📄 Export PDF</button>
                         <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts, roles, depts..." style={{ padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 220 }} />
                         <AddToProjectDropdown contacts={contacts} allProjectPeople={allProjectPeople} onAdd={(c, role, dept) => addPersonToProject(c, role, dept)} deptOptions={[...new Set([...DEPT_OPTIONS, ...(appSettings.departments || [])])].filter(Boolean).sort()} projectRoles={appSettings.projectRoles} onCreateContact={(c) => {
                           setContacts(prev => {
@@ -4471,7 +4670,7 @@ export default function Dashboard({ user, onLogout }) {
                       </div>
                     ) : (
                       <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "36px 2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "36px 2.2fr 1fr 0.8fr 1.2fr 1.8fr 80px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}>
                           <span>#</span><span>NAME</span><span>ROLE</span><span>DEPARTMENT</span><span>PHONE</span><span>EMAIL</span><span>ACTIONS</span>
                         </div>
                         {filtered.map((person, i) => {
@@ -4484,7 +4683,7 @@ export default function Dashboard({ user, onLogout }) {
                           const isVendor = person.source === "vendors";
                           const realIdx = allProjectPeople.indexOf(person);
                           return (
-                            <div key={`ep-${i}`} style={{ display: "grid", gridTemplateColumns: "36px 2.2fr 1fr 0.8fr 1.2fr 1.8fr auto", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
+                            <div key={`ep-${i}`} style={{ display: "grid", gridTemplateColumns: "36px 2.2fr 1fr 0.8fr 1.2fr 1.8fr 80px", padding: "10px 16px", borderBottom: "1px solid var(--calLine)", alignItems: "center", fontSize: 12 }}>
                               {/* # + ARROWS */}
                               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
                                 {!contactSearch && <button onClick={() => moveContact(realIdx, -1)} disabled={realIdx === 0} style={{ background: "none", border: "none", cursor: realIdx === 0 ? "default" : "pointer", color: realIdx === 0 ? "var(--borderSub)" : "var(--textFaint)", fontSize: 8, padding: 0, lineHeight: 1 }}>▲</button>}
@@ -4525,7 +4724,7 @@ export default function Dashboard({ user, onLogout }) {
                               {/* EMAIL */}
                               <span onClick={(e) => { const em = person.email || (c && c.email); if (em) copyToClipboard(em, "Email", e); }} style={{ color: "var(--textMuted)", fontSize: 11, cursor: (person.email || (c && c.email)) ? "pointer" : "default", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} onMouseEnter={e => { if (person.email || (c && c.email)) e.currentTarget.style.color = "var(--text)"; }} onMouseLeave={e => e.currentTarget.style.color = "var(--textMuted)"}>{person.email || (c && c.email) || "—"} {(person.email || (c && c.email)) && <span style={{ fontSize: 7, color: "var(--textGhost)" }}>⧉</span>}</span>
                               {/* ACTIONS */}
-                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <div style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "flex-end" }}>
                                 {!inGlobal && person.name && (
                                   <button onClick={() => {
                                     const names = person.name.split(" ");
@@ -4628,6 +4827,32 @@ export default function Dashboard({ user, onLogout }) {
         );
       })()}
 
+      {/* ═══ COMMAND PALETTE (Cmd+K) ═══ */}
+      <CommandPalette
+        open={cmdKOpen}
+        onClose={() => { setCmdKOpen(false); setCmdKQuery(""); }}
+        query={cmdKQuery}
+        setQuery={setCmdKQuery}
+        projects={projects}
+        contacts={contacts}
+        clients={clients}
+        projectVendors={projectVendors}
+        setActiveProjectId={setActiveProjectId}
+        setActiveTab={setActiveTab}
+      />
+
+      {/* ═══ NOTIFICATION INBOX ═══ */}
+      <NotificationInbox
+        open={showNotifications}
+        onClose={() => setShowNotifications(false)}
+        notifications={notifications}
+        setNotifications={setNotifications}
+        onNavigate={({ projectId, tab }) => { if (projectId) setActiveProjectId(projectId); setActiveTab(tab || "overview"); setShowNotifications(false); }}
+      />
+
+      {/* ═══ KEYBOARD SHORTCUTS (?) ═══ */}
+      <KeyboardShortcuts open={showShortcuts} onClose={() => setShowShortcuts(false)} />
+
       {/* ═══ SETTINGS MODAL ═══ */}
       {showSettings && (
         <SettingsModal
@@ -4670,10 +4895,11 @@ export default function Dashboard({ user, onLogout }) {
         <div style={{ position: "fixed", inset: 0, zIndex: 190 }} onClick={() => setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); setContextMenu(null); }}>
           <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
             <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
-            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = { id: newId, name: src.name + " (Copy)", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: src.location || "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: { what: "", where: "", why: "" }, producers: [], managers: [], staff: [], clientContacts: [], pocContacts: [], billingContacts: [], notes: "", archived: false }; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate Project</button>
+            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = "proj_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = JSON.parse(JSON.stringify(src)); dup.id = newId; dup.name = src.name + " (Copy)"; dup.archived = false; dup.status = "Pre-Production"; dup.driveFolderId = ""; dup.driveFiles = []; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate</button>
             <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, isTour: src.isTour || false, subEvents: src.isTour ? [] : undefined }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
+            {isAdmin && (<button onClick={() => { setAccessModal({ projectId: contextMenu.projectId, projectName: contextMenu.projectName }); setAccessEmail(""); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#5b9ff5", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid var(--borderSub)", marginTop: 2, paddingTop: 10 }} onMouseEnter={e => e.currentTarget.style.background = "#5b9ff512"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🔒 Manage Access</button>)}
           </div>
         </div>
       )}
@@ -4721,6 +4947,93 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* ═══ MANAGE ACCESS MODAL ═══ */}
+      {accessModal && (() => {
+        const targetProject = projects.find(p => p.id === accessModal.projectId);
+        if (!targetProject) return null;
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setAccessModal(null); setAccessEmail(""); }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 14, padding: "28px 32px", width: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.5)", maxHeight: "80vh", overflowY: "auto" }}>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 4, fontFamily: "'Instrument Sans'" }}>🔒 Manage Access</div>
+              <div style={{ fontSize: 13, color: "var(--textMuted)", marginBottom: 20 }}>{accessModal.projectName}</div>
+
+              <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", marginBottom: 6, display: "block" }}>Visibility</label>
+              <select
+                value={targetProject.visibility || "all"}
+                onChange={e => {
+                  const val = e.target.value;
+                  setProjects(prev => prev.map(p => p.id === accessModal.projectId ? { ...p, visibility: val, allowedUsers: val === "private" ? (p.allowedUsers || []) : (p.allowedUsers || []) } : p));
+                }}
+                style={{ width: "100%", padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, marginBottom: 16, outline: "none", cursor: "pointer" }}
+              >
+                <option value="all">Everyone can access</option>
+                <option value="private">Only specific people</option>
+              </select>
+
+              {targetProject.visibility === "private" && (
+                <>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: "var(--textSub)", marginBottom: 6, display: "block" }}>Allowed Users</label>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+                    <input
+                      type="email"
+                      placeholder="user@example.com"
+                      value={accessEmail}
+                      onChange={e => setAccessEmail(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === "Enter" && accessEmail.trim() && accessEmail.includes("@")) {
+                          const email = accessEmail.trim().toLowerCase();
+                          if (!(targetProject.allowedUsers || []).includes(email)) {
+                            setProjects(prev => prev.map(p => p.id === accessModal.projectId ? { ...p, allowedUsers: [...(p.allowedUsers || []), email] } : p));
+                          }
+                          setAccessEmail("");
+                        }
+                      }}
+                      style={{ flex: 1, padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, outline: "none" }}
+                    />
+                    <button
+                      onClick={() => {
+                        if (accessEmail.trim() && accessEmail.includes("@")) {
+                          const email = accessEmail.trim().toLowerCase();
+                          if (!(targetProject.allowedUsers || []).includes(email)) {
+                            setProjects(prev => prev.map(p => p.id === accessModal.projectId ? { ...p, allowedUsers: [...(p.allowedUsers || []), email] } : p));
+                          }
+                          setAccessEmail("");
+                        }
+                      }}
+                      style={{ padding: "8px 16px", background: "#5b9ff5", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}
+                    >Add</button>
+                  </div>
+
+                  <div style={{ fontSize: 11, color: "var(--textFaint)", marginBottom: 8, fontStyle: "italic" }}>Admins always have access regardless of this list.</div>
+
+                  {(targetProject.allowedUsers || []).length === 0 && (
+                    <div style={{ fontSize: 12, color: "var(--textGhost)", textAlign: "center", padding: "12px 0" }}>No users added yet. Only admins can see this project.</div>
+                  )}
+
+                  {(targetProject.allowedUsers || []).map((email, idx) => (
+                    <div key={email} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", background: idx % 2 === 0 ? "var(--bgInput)" : "transparent", borderRadius: 6, marginBottom: 2 }}>
+                      <span style={{ fontSize: 13, color: "var(--text)" }}>{email}</span>
+                      <button
+                        onClick={() => {
+                          setProjects(prev => prev.map(p => p.id === accessModal.projectId ? { ...p, allowedUsers: (p.allowedUsers || []).filter(e => e !== email) } : p));
+                        }}
+                        style={{ background: "transparent", border: "none", color: "#e85454", cursor: "pointer", fontSize: 14, fontWeight: 700, padding: "2px 6px", borderRadius: 4, lineHeight: 1 }}
+                        onMouseEnter={e => e.currentTarget.style.background = "#e8545418"}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                      >&times;</button>
+                    </div>
+                  ))}
+                </>
+              )}
+
+              <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+                <button onClick={() => { setAccessModal(null); setAccessEmail(""); }} style={{ flex: 1, padding: "10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textSub)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══ CLIPBOARD TOAST ═══ */}
       {clipboardToast && (
@@ -5902,7 +6215,7 @@ export default function Dashboard({ user, onLogout }) {
       {activeProjectId && (
         <>
           {/* Toggle button */}
-          {!showCommentPanel && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
+          {!showCommentPanel && activeTab !== "home" && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
             <button onClick={() => setShowCommentPanel(true)} style={{ position: "fixed", right: 24, bottom: 24, zIndex: 200, background: "#ff6b4a", border: "none", borderRadius: "50%", width: 56, height: 56, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, boxShadow: "0 4px 20px rgba(255,107,74,0.4)", transition: "all 0.2s" }} onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.1)"; e.currentTarget.style.boxShadow = "0 6px 28px rgba(255,107,74,0.5)"; }} onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(255,107,74,0.4)"; }}>
               <span style={{ fontSize: 24, lineHeight: 1 }}>💬</span>
               {(projectComments[activeProjectId] || []).length > 0 && (

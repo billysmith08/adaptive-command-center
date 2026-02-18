@@ -1,11 +1,11 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   PROJECT_COLORS, SUB_EVENT_STATUS_COLORS,
   WB_STATUS_STYLES,
 } from "./shared/UIComponents";
 
-function MasterCalendar({ projects, workback, onSelectProject }) {
+const MasterCalendar = React.memo(function MasterCalendar({ projects, projectWorkback = {}, onSelectProject }) {
   const [calView, setCalView] = useState("week");
   const [navOffset, setNavOffset] = useState(0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -16,42 +16,57 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
   const viewLabels = { day: "Day", week: "Week", month: "Month", quarter: "3 Month" };
   const DOW = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
-  // ── Build event spans ──
-  const spans = [];
-  projects.forEach((proj, pi) => {
-    if (proj.archived) return;
-    const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
-    if (proj.engagementDates?.start && proj.engagementDates?.end)
-      spans.push({ id: `eng_${proj.id}`, label: proj.name, color, start: proj.engagementDates.start, end: proj.engagementDates.end, projId: proj.id, type: "project" });
-    if (!proj.isTour && proj.eventDates?.start && proj.eventDates?.end)
-      spans.push({ id: `evt_${proj.id}`, label: `★ EVENT: ${proj.name}`, color, start: proj.eventDates.start, end: proj.eventDates.end, projId: proj.id, type: "event" });
-  });
-
-  // Sub-events indexed by date for calendar markers
-  const subEventsByDate = {};
-  projects.forEach((proj, pi) => {
-    if (proj.archived || !proj.subEvents) return;
-    const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
-    proj.subEvents.forEach(se => {
-      (subEventsByDate[se.date] = subEventsByDate[se.date] || []).push({ ...se, projId: proj.id, projName: proj.name, color });
+  // ── Build event spans (memoized — only recalcs when projects change) ──
+  const spans = useMemo(() => {
+    const result = [];
+    projects.forEach((proj, pi) => {
+      if (proj.archived) return;
+      const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
+      if (proj.engagementDates?.start && proj.engagementDates?.end)
+        result.push({ id: `eng_${proj.id}`, label: proj.name, color, start: proj.engagementDates.start, end: proj.engagementDates.end, projId: proj.id, type: "project" });
+      if (!proj.isTour && proj.eventDates?.start && proj.eventDates?.end)
+        result.push({ id: `evt_${proj.id}`, label: `★ EVENT: ${proj.name}`, color, start: proj.eventDates.start, end: proj.eventDates.end, projId: proj.id, type: "event" });
     });
-  });
+    return result;
+  }, [projects]);
 
-  // Workback items indexed by date
-  const wbByDate = {};
-  workback.forEach(wb => {
-    const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
-    const item = { label: wb.isEvent ? `★ ${wb.task}` : wb.task, color: wb.isEvent ? "#ff6b4a" : st.text, date: wb.date, projId: "p1", isEvent: wb.isEvent };
-    (wbByDate[wb.date] = wbByDate[wb.date] || []).push(item);
-  });
+  // Sub-events indexed by date for calendar markers (memoized)
+  const subEventsByDate = useMemo(() => {
+    const map = {};
+    projects.forEach((proj, pi) => {
+      if (proj.archived || !proj.subEvents) return;
+      const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
+      proj.subEvents.forEach(se => {
+        (map[se.date] = map[se.date] || []).push({ ...se, projId: proj.id, projName: proj.name, color });
+      });
+    });
+    return map;
+  }, [projects]);
+
+  // Workback items indexed by date — ALL projects (memoized)
+  const wbByDate = useMemo(() => {
+    const map = {};
+    projects.forEach((proj, pi) => {
+      if (proj.archived) return;
+      const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
+      const items = projectWorkback[proj.id] || [];
+      items.forEach(wb => {
+        const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
+        const item = { label: wb.isEvent ? `★ ${wb.task}` : wb.task, color: wb.isEvent ? "#ff6b4a" : color, date: wb.date, projId: proj.id, projName: proj.name, isEvent: wb.isEvent, status: wb.status };
+        (map[wb.date] = map[wb.date] || []).push(item);
+      });
+    });
+    return map;
+  }, [projects, projectWorkback]);
 
   // ── Gantt helpers (day/week views) ──
-  const getGanttRange = () => {
+  const getGanttRange = useCallback(() => {
     if (calView === "day") { const d = addDays(today, navOffset); return { days: [d] }; }
     const d = new Date(today); d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + navOffset * 7);
     return { days: Array.from({ length: 7 }, (_, i) => addDays(d, i)) };
-  };
-  const buildGanttRows = (dayStrs) => {
+  }, [calView, navOffset]);
+
+  const buildGanttRows = useCallback((dayStrs) => {
     const rows = [];
     projects.forEach((proj, pi) => {
       const color = PROJECT_COLORS[pi % PROJECT_COLORS.length];
@@ -75,17 +90,22 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
         });
       }
     });
-    workback.forEach(wb => {
-      const idx = dayStrs.indexOf(wb.date);
-      if (idx === -1) return;
-      const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
-      rows.push({ type: "wb", label: wb.isEvent ? `★ ${wb.task}` : wb.task, sub: wb.owner, color: wb.isEvent ? "#ff6b4a" : st.text, bg: wb.isEvent ? "#ff6b4a22" : st.bg, startCol: idx, span: 1, projId: "p1", pri: wb.isEvent ? 2 : 3 });
+    projects.forEach((proj, pi) => {
+      if (proj.archived) return;
+      const projColor = PROJECT_COLORS[pi % PROJECT_COLORS.length];
+      const items = projectWorkback[proj.id] || [];
+      items.forEach(wb => {
+        const idx = dayStrs.indexOf(wb.date);
+        if (idx === -1) return;
+        const st = WB_STATUS_STYLES[wb.status] || WB_STATUS_STYLES["Not Started"];
+        rows.push({ type: "wb", label: wb.isEvent ? `★ ${wb.task}` : wb.task, sub: wb.owner, color: wb.isEvent ? "#ff6b4a" : projColor, bg: wb.isEvent ? "#ff6b4a22" : projColor + "18", startCol: idx, span: 1, projId: proj.id, pri: wb.isEvent ? 2 : 3 });
+      });
     });
     return rows.sort((a, b) => a.pri - b.pri);
-  };
+  }, [projects, projectWorkback]);
 
   // ── Month/Quarter grid builder ──
-  const buildMonthWeeks = (year, month) => {
+  const buildMonthWeeks = useCallback((year, month) => {
     const first = new Date(year, month, 1);
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const startDow = first.getDay(); // 0=Sun
@@ -103,10 +123,10 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
       }
     }
     return weeks;
-  };
+  }, []);
 
-  // For a given week (array of 7 date|null), find which spans overlap and assign lanes
-  const getWeekLanes = (weekDates) => {
+  // For a given week (array of 7 date|null), find which spans overlap and assign lanes (memoized callback)
+  const getWeekLanes = useCallback((weekDates) => {
     const weekStrs = weekDates.map(d => d ? fmt(d) : null);
     const firstStr = weekStrs.find(s => s);
     const lastStr = [...weekStrs].reverse().find(s => s);
@@ -133,27 +153,29 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
       }
       return { ...sp, startCol, endCol, showLabel: true };
     });
-  };
+  }, [spans]);
 
-  // Title
-  const titleLabel = (() => {
+  // Title (memoized)
+  const titleLabel = useMemo(() => {
     if (calView === "day") return addDays(today, navOffset).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
     if (calView === "week") { const r = getGanttRange(); return `${r.days[0].toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${r.days[6].toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`; }
     if (calView === "month") return new Date(today.getFullYear(), today.getMonth() + navOffset, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
     const s = new Date(today.getFullYear(), today.getMonth() + navOffset, 1);
     const e = new Date(today.getFullYear(), today.getMonth() + navOffset + 2, 1);
     return `${s.toLocaleDateString("en-US", { month: "short" })} – ${e.toLocaleDateString("en-US", { month: "short", year: "numeric" })}`;
-  })();
+  }, [calView, navOffset, getGanttRange]);
 
   const isGantt = calView === "day" || calView === "week";
   const isGrid = calView === "month" || calView === "quarter";
   const isQ = calView === "quarter";
 
-  // Month grid data
-  const monthGrids = isGrid ? (isQ
-    ? [0, 1, 2].map(m => ({ month: new Date(today.getFullYear(), today.getMonth() + navOffset + m, 1), weeks: buildMonthWeeks(today.getFullYear(), today.getMonth() + navOffset + m) }))
-    : [{ month: new Date(today.getFullYear(), today.getMonth() + navOffset, 1), weeks: buildMonthWeeks(today.getFullYear(), today.getMonth() + navOffset) }]
-  ) : [];
+  // Month grid data (memoized)
+  const monthGrids = useMemo(() => {
+    if (!isGrid) return [];
+    return isQ
+      ? [0, 1, 2].map(m => ({ month: new Date(today.getFullYear(), today.getMonth() + navOffset + m, 1), weeks: buildMonthWeeks(today.getFullYear(), today.getMonth() + navOffset + m) }))
+      : [{ month: new Date(today.getFullYear(), today.getMonth() + navOffset, 1), weeks: buildMonthWeeks(today.getFullYear(), today.getMonth() + navOffset) }];
+  }, [isGrid, isQ, navOffset, buildMonthWeeks]);
 
   const barH = isQ ? 16 : 20;
   const barGap = isQ ? 18 : 22;
@@ -404,6 +426,6 @@ function MasterCalendar({ projects, workback, onSelectProject }) {
       )}
     </div>
   );
-}
+});
 
 export default MasterCalendar;

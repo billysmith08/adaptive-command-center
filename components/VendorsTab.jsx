@@ -6,7 +6,7 @@ import {
   DocDropZone,
 } from "./shared/UIComponents";
 
-function VendorsTab({
+const VendorsTab = React.memo(function VendorsTab({
   uploadLog,
   w9Scanning,
   vendorSearch,
@@ -323,6 +323,6 @@ function VendorsTab({
                 </div>
               </div>
   );
-}
+});
 
 export default VendorsTab;

@@ -2,7 +2,7 @@
 import React, { useState, useRef } from "react";
 import { PhoneWithCode, AddressAutocomplete, processAvatarImage } from "./shared/UIComponents";
 
-function SettingsModal({
+const SettingsModal = React.memo(function SettingsModal({
   showSettings, setShowSettings,
   settingsDirty, setSettingsDirty,
   settingsTab, setSettingsTab,
@@ -1220,6 +1220,6 @@ function SettingsModal({
           </div>
         </div>
   );
-}
+});
 
 export default SettingsModal;

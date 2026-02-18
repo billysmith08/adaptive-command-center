@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import ProjectTimeline from "./ProjectTimeline";
 import {
   RichTextEditor,
   EditableText,
@@ -28,7 +29,7 @@ import {
  *   setActiveProjectId, setActiveTab, setProjects, setContacts, setNotesCollapsed,
  *   updateProject, viewContact, copyToClipboard, updateGlobalContact
  */
-function OverviewTab({
+const OverviewTab = React.memo(function OverviewTab({
   project,
   projects,
   contacts,
@@ -37,6 +38,9 @@ function OverviewTab({
   peopleOptions,
   notesCollapsed,
   pctSpent,
+  activityLog,
+  timelineCollapsed,
+  setTimelineCollapsed,
   setActiveProjectId,
   setActiveTab,
   setProjects,
@@ -192,8 +196,9 @@ function OverviewTab({
                   </div>
                 </div>
 
-                {/* ── PROJECT NOTES / UPDATES (COLLAPSIBLE) ── */}
-                <div style={{ marginTop: 22 }}>
+                {/* ── NOTES & TIMELINE (2-column grid, same as Brief + Budget) ── */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 22 }}>
+                  {/* PROJECT NOTES / UPDATES */}
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
                     <div onClick={() => setNotesCollapsed(p => !p)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", cursor: "pointer", userSelect: "none" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -220,6 +225,14 @@ function OverviewTab({
                       </div>
                     )}
                   </div>
+
+                  {/* PROJECT TIMELINE */}
+                  <ProjectTimeline
+                    activityLog={activityLog}
+                    projectId={project.id}
+                    collapsed={timelineCollapsed}
+                    setCollapsed={setTimelineCollapsed}
+                  />
                 </div>
 
                 {/* ── TOUR / SERIES SCHEDULE ── */}
@@ -350,7 +363,7 @@ function OverviewTab({
 
               </div>
   );
-}
+});
 
 /**
  * BudgetTab — the Budget (full Saturation embed) panel extracted from Dashboard.jsx
@@ -358,7 +371,7 @@ function OverviewTab({
  * Props:
  *   project, updateProject
  */
-function BudgetTab({
+const BudgetTab = React.memo(function BudgetTab({
   project,
   updateProject,
 }) {
@@ -410,6 +423,6 @@ function BudgetTab({
                   )}
                 </div>
   );
-}
+});
 
 export { OverviewTab, BudgetTab };

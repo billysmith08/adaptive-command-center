@@ -1,7 +1,7 @@
 "use client";
 import React from "react";
 
-function DriveTab({
+const DriveTab = React.memo(function DriveTab({
   project,
   setProjects,
   projDriveEnsuring,
@@ -252,6 +252,6 @@ function DriveTab({
                 )}
               </div>
   );
-}
+});
 
 export default DriveTab;
