@@ -428,7 +428,7 @@ const BudgetTab = React.memo(function BudgetTab({
 
   // State B: Google Sheet linked
   if (hasSheet) {
-    const sheetEmbedUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing&rm=minimal&embedded=true`;
+    const sheetEmbedUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing`;
     return (
       <div style={{ animation: "fadeUp 0.3s ease" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
