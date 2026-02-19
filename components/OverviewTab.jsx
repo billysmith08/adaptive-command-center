@@ -30,6 +30,7 @@ import {
  *   updateProject, viewContact, copyToClipboard, updateGlobalContact
  */
 const OverviewTab = React.memo(function OverviewTab({
+  isMobile,
   project,
   projects,
   contacts,
@@ -101,7 +102,7 @@ const OverviewTab = React.memo(function OverviewTab({
                     </div>
                   );
                 })()}
-                <div style={{ display: "grid", gridTemplateColumns: project.parentId ? "1fr 1fr 1fr 1fr 1fr" : "1fr 1fr 1fr 1fr 1fr 1fr", gap: 12, marginBottom: 22 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr 1fr" : (project.parentId ? "1fr 1fr 1fr 1fr 1fr" : "1fr 1fr 1fr 1fr 1fr 1fr"), gap: 12, marginBottom: 22 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STATUS</div>
                     <Dropdown value={project.status} options={[...new Set([...STATUSES, ...(appSettings.statuses || [])])].filter(Boolean).sort()} onChange={v => updateProject("status", v)} colors={{...STATUS_COLORS, ...Object.fromEntries((appSettings.statuses || []).filter(s => !STATUS_COLORS[s]).map(s => [s, { bg: "#9b6dff10", text: "#9b6dff", dot: "#9b6dff" }]))}} width="100%" />
@@ -118,7 +119,7 @@ const OverviewTab = React.memo(function OverviewTab({
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>MANAGER(S)</div><TagInput values={project.managers} options={peopleOptions} contacts={contacts} onViewContact={viewContact} onChange={v => updateProject("managers", v)} /></div>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "14px 16px" }}><div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 8 }}>STAFF / CREW</div><TagInput values={project.staff || []} options={peopleOptions} contacts={contacts} onViewContact={viewContact} onChange={v => updateProject("staff", v)} /></div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, padding: "18px 20px" }}>
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 14 }}>PROJECT BRIEF</div>
                     {[{ q: "WHAT", key: "name" }, { q: "WHERE", key: "location" }, { q: "WHY", key: "why", multi: true }].map((f, i) => (
@@ -197,7 +198,7 @@ const OverviewTab = React.memo(function OverviewTab({
                 </div>
 
                 {/* ── NOTES & TIMELINE (2-column grid, same as Brief + Budget) ── */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 22 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16, marginTop: 22 }}>
                   {/* PROJECT NOTES / UPDATES */}
                   <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10 }}>
                     <div onClick={() => setNotesCollapsed(p => !p)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 20px", cursor: "pointer", userSelect: "none" }}>

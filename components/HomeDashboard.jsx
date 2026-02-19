@@ -96,6 +96,7 @@ const S = {
 
 // ─── COMPONENT ───────────────────────────────────────────────────────────────
 const HomeDashboard = React.memo(function HomeDashboard({
+  isMobile,
   user,
   projects,
   projectWorkback,
@@ -290,7 +291,7 @@ const HomeDashboard = React.memo(function HomeDashboard({
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={S.wrapper}>
+    <div style={{ ...S.wrapper, ...(isMobile ? { maxWidth: "100%", padding: "20px 16px 40px" } : {}) }}>
 
       {/* ── 1. Greeting Header ────────────────────────────────────────────── */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 32 }}>
@@ -308,7 +309,7 @@ const HomeDashboard = React.memo(function HomeDashboard({
       </div>
 
       {/* ── 2. Stats Row ──────────────────────────────────────────────────── */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14, marginBottom: 32 }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(4, 1fr)", gap: isMobile ? 10 : 14, marginBottom: isMobile ? 24 : 32 }}>
         {[
           { icon: "📁", value: stats.activeCount, label: "Active Projects", alert: false },
           { icon: "📅", value: stats.thisWeekCount, label: "This Week", alert: false },

@@ -33,10 +33,14 @@ import KeyboardShortcuts from "./KeyboardShortcuts";
 import HomeDashboard from "./HomeDashboard";
 import NotificationInbox from "./NotificationInbox";
 import { exportWorkbackPdf, exportProgressPdf, exportROSPdf, exportContactsPdf } from "./PdfExport";
+import useIsMobile from "@/hooks/useIsMobile";
+import { modalStyle, modalBackdropStyle } from "./shared/mobileStyles";
 
 // ─── MAIN DASHBOARD ──────────────────────────────────────────────────────────
 
 export default function Dashboard({ user, onLogout }) {
+  const isMobile = useIsMobile();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const supabase = createClient();
   const [dataLoaded, setDataLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved"); // saved, saving, error
@@ -3285,6 +3289,11 @@ export default function Dashboard({ user, onLogout }) {
         div:hover > .resize-handle-line { opacity: 0.6 !important; }
         div:active > .resize-handle-line { opacity: 1 !important; background: #3da5db !important; }
         input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(${darkMode ? "0.6" : "0"}); cursor: pointer; }
+        @media (max-width: 768px) {
+          input, select, textarea { font-size: 16px !important; }
+          .scroll-hint { position: relative; }
+          .scroll-hint::after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; width: 24px; background: linear-gradient(to right, transparent, var(--bg)); pointer-events: none; z-index: 3; }
+        }
       `}</style>
 
       {/* PREVIEW MODE BANNER */}
@@ -3328,41 +3337,49 @@ export default function Dashboard({ user, onLogout }) {
       )}
 
       {/* TOP BAR */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s", flexShrink: 0, zIndex: 100 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {appSettings.branding?.logoDark || appSettings.branding?.logoLight ? (
-            <img src={darkMode ? (appSettings.branding.logoDark || appSettings.branding.logoLight) : (appSettings.branding.logoLight || appSettings.branding.logoDark)} alt="Logo" style={{ height: 26, objectFit: "contain" }} />
-          ) : (
-            <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", background: "linear-gradient(135deg, #ff6b4a, #ff4a6b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Adaptive by Design</span>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "10px 16px" : "12px 24px", borderBottom: "1px solid var(--border)", background: "var(--topBar)", transition: "background 0.3s, border-color 0.3s", flexShrink: 0, zIndex: 100 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 14 }}>
+          {isMobile && (
+            <button onClick={() => setMobileMenuOpen(true)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, fontSize: 20, color: "var(--textSub)", lineHeight: 1, display: "flex", alignItems: "center" }} title="Open menu">☰</button>
           )}
-          <div style={{ width: 1, height: 20, background: "var(--border)" }} />
-          <span style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>COMMAND CENTER</span>
-          <div style={{ width: 1, height: 16, background: "var(--border)" }} />
-          <button onClick={() => setActiveTab("home")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "home" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+          {appSettings.branding?.logoDark || appSettings.branding?.logoLight ? (
+            <img src={darkMode ? (appSettings.branding.logoDark || appSettings.branding.logoLight) : (appSettings.branding.logoLight || appSettings.branding.logoDark)} alt="Logo" style={{ height: isMobile ? 22 : 26, objectFit: "contain" }} />
+          ) : (
+            <span style={{ fontSize: isMobile ? 14 : 16, fontWeight: 700, fontFamily: "'Instrument Sans'", background: "linear-gradient(135deg, #ff6b4a, #ff4a6b)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              {isMobile ? (() => {
+                const tabTitles = { home: "Home", calendar: "Glance", globalContacts: "Partners", clients: "Clients", finance: "Finance" };
+                return tabTitles[activeTab] || project?.name || "Command Center";
+              })() : "Adaptive by Design"}
+            </span>
+          )}
+          {!isMobile && <div style={{ width: 1, height: 20, background: "var(--border)" }} />}
+          {!isMobile && <span style={{ fontSize: 11, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>COMMAND CENTER</span>}
+          {!isMobile && <div style={{ width: 1, height: 16, background: "var(--border)" }} />}
+          {!isMobile && <button onClick={() => setActiveTab("home")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "home" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
             🏠 Home
-          </button>
-          <button onClick={() => setActiveTab("calendar")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "calendar" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
+          </button>}
+          {!isMobile && <button onClick={() => setActiveTab("calendar")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "calendar" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
             📅 Adaptive at a Glance
-          </button>
-          {canSeeSection("globalContacts") && (
+          </button>}
+          {!isMobile && canSeeSection("globalContacts") && (
             <button onClick={() => setActiveTab("globalContacts")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "globalContacts" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
               👤 Global Partners {contacts.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{contacts.length}</span>}
             </button>
           )}
-          {canSeeSection("globalContacts") && (
+          {!isMobile && canSeeSection("globalContacts") && (
             <button onClick={() => setActiveTab("clients")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "clients" ? "#ff6b4a" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
               🏢 Clients {clients.length > 0 && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgHover)", color: "var(--textFaint)", fontFamily: "'JetBrains Mono', monospace", marginLeft: 4 }}>{clients.length}</span>}
             </button>
           )}
-          {(isOwner || currentUserPerms.role === "admin") && (
+          {!isMobile && (isOwner || currentUserPerms.role === "admin") && (
             <button onClick={() => setActiveTab("finance")} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, fontWeight: 600, color: activeTab === "finance" ? "#4ecb71" : "var(--textFaint)", padding: "4px 10px", borderRadius: 5, transition: "all 0.15s", letterSpacing: 0.3 }}>
               💰 Finance
             </button>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 10 : 16 }}>
           {/* ── LIVE PRESENCE BUBBLES ── */}
-          {presenceUsers.length > 0 && (
+          {!isMobile && presenceUsers.length > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
               {presenceUsers.slice(0, 5).map((u, i) => {
                 const initials = ((u.firstName || "")[0] || "") + ((u.lastName || "")[0] || u.email[0] || "");
@@ -3401,8 +3418,9 @@ export default function Dashboard({ user, onLogout }) {
                 </span>
               )}
             </button>
+            {showActivityFeed && isMobile && <div onClick={() => setShowActivityFeed(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999 }} />}
             {showActivityFeed && (
-              <div style={{ position: "absolute", top: "calc(100% + 8px)", right: 0, width: 380, maxHeight: 480, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)", zIndex: 1000, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <div style={isMobile ? { position: "fixed", bottom: 0, left: 0, right: 0, maxHeight: "70vh", background: "var(--bgCard)", borderRadius: "16px 16px 0 0", boxShadow: "0 -8px 32px rgba(0,0,0,0.3)", zIndex: 1000, overflow: "hidden", display: "flex", flexDirection: "column" } : { position: "absolute", top: "calc(100% + 8px)", right: 0, width: 380, maxHeight: 480, background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.2)", zIndex: 1000, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Activity Feed</span>
                   <button onClick={() => setShowActivityFeed(false)} style={{ background: "none", border: "none", color: "var(--textMuted)", cursor: "pointer", fontSize: 16 }}>×</button>
@@ -3469,13 +3487,14 @@ export default function Dashboard({ user, onLogout }) {
         </div>
       </div>
 
-      <div style={{ display: "flex", flex: 1, overflow: "hidden", zoom: textSize !== 100 ? textSize / 100 : undefined }}>
+      <div style={{ display: "flex", flex: 1, overflow: "hidden", zoom: !isMobile && textSize !== 100 ? textSize / 100 : undefined }}>
 
-        {/* SIDEBAR */}
-        {sidebarOpen && (
-        <div style={{ width: sidebarW, minWidth: 220, maxWidth: 440, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bgSub)", position: "relative", flexShrink: 0, transition: "background 0.3s", overflow: "hidden" }}>
-          {/* Resize handle */}
-          <div onMouseDown={(e) => {
+        {/* SIDEBAR — overlay drawer on mobile, inline on desktop */}
+        {isMobile && mobileMenuOpen && <div onClick={() => setMobileMenuOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 199, transition: "opacity 0.3s" }} />}
+        {(isMobile ? mobileMenuOpen : sidebarOpen) && (
+        <div style={isMobile ? { position: "fixed", left: 0, top: 0, bottom: 0, width: 280, zIndex: 200, display: "flex", flexDirection: "column", background: "var(--bgSub)", boxShadow: "8px 0 30px rgba(0,0,0,0.25)", overflow: "hidden", transition: "transform 0.3s cubic-bezier(0.4,0,0.2,1)" } : { width: sidebarW, minWidth: 220, maxWidth: 440, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", background: "var(--bgSub)", position: "relative", flexShrink: 0, transition: "background 0.3s", overflow: "hidden" }}>
+          {/* Resize handle — desktop only */}
+          {!isMobile && <div onMouseDown={(e) => {
             e.preventDefault(); e.stopPropagation();
             const startX = e.clientX;
             const startW = sidebarW;
@@ -3483,12 +3502,12 @@ export default function Dashboard({ user, onLogout }) {
             const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
             document.addEventListener("mousemove", onMove);
             document.addEventListener("mouseup", onUp);
-          }} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 8, cursor: "col-resize", zIndex: 20, background: "transparent" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a30"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} />
+          }} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 8, cursor: "col-resize", zIndex: 20, background: "transparent" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a30"} onMouseLeave={e => e.currentTarget.style.background = "transparent"} />}
           <div style={{ padding: "14px 12px 10px", flexShrink: 0 }}>
             <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
               <input placeholder="Search projects..." value={search} onChange={e => setSearch(e.target.value)} style={{ flex: 1, padding: "8px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", fontFamily: "'DM Sans'" }} />
               <button onClick={() => { setBulkMode(prev => { if (prev) setBulkSelected(new Set()); return !prev; }); }} style={{ padding: "4px 8px", background: bulkMode ? "#ff6b4a15" : "var(--bgCard)", border: bulkMode ? "1px solid #ff6b4a40" : "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: bulkMode ? "#ff6b4a" : "var(--textFaint)", fontSize: 12, display: "flex", alignItems: "center", fontFamily: "'DM Sans', sans-serif" }} title={bulkMode ? "Exit bulk mode" : "Bulk select projects"}>{bulkMode ? "✓" : "☐"}</button>
-              <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>
+              {!isMobile && <button onClick={() => setSidebarOpen(false)} style={{ padding: "4px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Collapse sidebar">◀</button>}
             </div>
             <select value={sidebarStatusFilter} onChange={e => setSidebarStatusFilter(e.target.value)} style={{ width: "100%", padding: "6px 10px", background: sidebarStatusFilter ? "#ff6b4a10" : "var(--bgCard)", border: `1px solid ${sidebarStatusFilter ? "#ff6b4a30" : "var(--borderSub)"}`, borderRadius: 7, color: sidebarStatusFilter ? "#ff6b4a" : "var(--textFaint)", fontSize: 10, fontWeight: 600, outline: "none", marginBottom: 4, cursor: "pointer" }}>
               <option value="">All Statuses</option>
@@ -3550,6 +3569,7 @@ export default function Dashboard({ user, onLogout }) {
                       if (sw && sw.offsetX < -10) { setSwipeState(prev => ({ ...prev, [p.id]: { offsetX: 0 } })); return; }
                       setActiveProjectId(p.id);
                       if (activeTab === "home" || activeTab === "calendar" || activeTab === "globalContacts" || activeTab === "clients" || activeTab === "finance" ) setActiveTab("overview");
+                      if (isMobile) setMobileMenuOpen(false);
                     }}
                     style={{ padding: 12, borderRadius: 8, cursor: "pointer", background: bulkMode && bulkSelected.has(p.id) ? "#ff6b4a08" : p.archived ? "var(--bgCard)" : active ? "var(--bgHover)" : "transparent", border: bulkMode && bulkSelected.has(p.id) ? "1px solid #ff6b4a30" : active ? "1px solid var(--borderActive)" : "1px solid transparent", transition: swipe.offsetX === 0 ? "transform 0.25s ease" : "none", transform: `translateX(${swipe.offsetX}px)`, opacity: p.archived ? 0.55 : 1, position: "relative", zIndex: 1, userSelect: "none" }}
                   >
@@ -3601,8 +3621,8 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
         )}
-        {/* Sidebar collapsed toggle */}
-        {!sidebarOpen && (
+        {/* Sidebar collapsed toggle — desktop only */}
+        {!isMobile && !sidebarOpen && (
           <div style={{ width: 40, borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column", alignItems: "center", background: "var(--bgSub)", flexShrink: 0, paddingTop: 14 }}>
             <button onClick={() => setSidebarOpen(true)} style={{ padding: "6px 8px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, cursor: "pointer", color: "var(--textFaint)", fontSize: 14, display: "flex", alignItems: "center" }} title="Expand sidebar">▶</button>
             <div style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 9, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 1, marginTop: 14, transform: "rotate(180deg)" }}>PROJECTS ({projects.filter(p => !p.archived).length})</div>
@@ -3611,29 +3631,29 @@ export default function Dashboard({ user, onLogout }) {
 
         {/* MAIN */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "16px 28px 0" }}>
+          <div style={{ padding: isMobile ? "12px 16px 0" : "16px 28px 0" }}>
             {activeTab !== "home" && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", justifyContent: "space-between", alignItems: isMobile ? "stretch" : "flex-start", marginBottom: 12, gap: isMobile ? 8 : 0 }}>
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
                     <span style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1 }}>{project.client}</span>
                     {project.code && <span onClick={() => { const newCode = prompt("Edit project code:", project.code); if (newCode !== null) updateProject("code", newCode.toUpperCase()); }} style={{ fontSize: 9, color: "var(--textGhost)", fontFamily: "'JetBrains Mono', monospace", padding: "1px 6px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 3, letterSpacing: 0.3, cursor: "pointer" }} title="Click to edit project code">{project.code}</span>}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={22} fontWeight={700} color="var(--text)" /></h1>
+                    <h1 style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, margin: 0, fontFamily: "'Instrument Sans'" }}><EditableText value={project.name} onChange={v => updateProject("name", v)} fontSize={isMobile ? 18 : 22} fontWeight={700} color="var(--text)" /></h1>
                     <select value={project.projectType || ""} onChange={e => updateProject("projectType", e.target.value)} style={{ padding: "3px 8px", borderRadius: 5, fontSize: 9, fontWeight: 700, cursor: "pointer", outline: "none", appearance: "auto", background: (PT_COLORS[project.projectType] || "var(--textMuted)") + "15", border: `1px solid ${(PT_COLORS[project.projectType] || "var(--textMuted)")}30`, color: PT_COLORS[project.projectType] || "var(--textMuted)", letterSpacing: 0.5 }}>
                       <option value="">No Type</option>
                       {[...new Set([...PROJECT_TYPES, ...(appSettings.projectTypes || [])])].filter(Boolean).sort().map(t => <option key={t} value={t}>{t.toUpperCase()}</option>)}
                     </select>
                   </div>
                 </div>
-                <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
+                <div style={{ textAlign: isMobile ? "left" : "right" }}><div style={{ fontSize: 10, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 0.5, marginBottom: 3 }}>BUDGET</div><div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{fmt(project.budget)}</div></div>
               </div>
             )}
             {activeTab !== "home" && activeTab !== "calendar" && activeTab !== "globalContacts" && activeTab !== "clients" && activeTab !== "finance" && (
             <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto" }}>
               {tabs.map(t => (
-                <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
+                <button key={t.id} onClick={() => setActiveTab(t.id)} style={{ padding: isMobile ? "8px 10px" : "9px 14px", background: "none", border: "none", cursor: "pointer", fontSize: isMobile ? 11 : 12, fontWeight: 600, color: activeTab === t.id ? "var(--text)" : "var(--textFaint)", borderBottom: activeTab === t.id ? "2px solid #ff6b4a" : "2px solid transparent", fontFamily: "'DM Sans'", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 10 }}>{t.icon}</span>{t.label}
                   {t.id === "vendors" && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: compDone < compTotal ? "var(--borderSub)" : "var(--bgCard)", color: compDone < compTotal ? "#e85454" : "#4ecb71", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{compDone}/{compTotal}</span>}
                   {t.id === "progress" && (() => { const pr = (projectProgress[activeProjectId]?.rows || []); const prDone = pr.filter(r => r.status === "Done").length; return pr.length > 0 ? <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, background: "var(--bgCard)", color: prDone === pr.length ? "#4ecb71" : "var(--textMuted)", fontFamily: "'JetBrains Mono', monospace", fontWeight: 700 }}>{prDone}/{pr.length}</span> : null; })()}
@@ -3644,11 +3664,12 @@ export default function Dashboard({ user, onLogout }) {
             )}
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px 40px", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: `${appSettings.branding?.bgZoom || 100}%`, backgroundPosition: appSettings.branding?.bgPosition || "center center", backgroundRepeat: "no-repeat", backgroundAttachment: "local" } : {}) }}>
+          <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "16px 16px 80px" : "20px 28px 40px", ...(appSettings.branding?.dashboardBg ? { backgroundImage: `url(${appSettings.branding.dashboardBg})`, backgroundSize: `${appSettings.branding?.bgZoom || 100}%`, backgroundPosition: appSettings.branding?.bgPosition || "center center", backgroundRepeat: "no-repeat", backgroundAttachment: "local" } : {}) }}>
 
             {/* ═══ HOME DASHBOARD ═══ */}
             {activeTab === "home" && (
               <HomeDashboard
+                isMobile={isMobile}
                 user={user}
                 projects={projects}
                 projectWorkback={projectWorkback}
@@ -3682,7 +3703,7 @@ export default function Dashboard({ user, onLogout }) {
 
                 {/* ── Cal View ── */}
                 {glanceTab === "cal" && (
-                  <MasterCalendar projects={projects} projectWorkback={projectWorkback} onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }} />
+                  <MasterCalendar isMobile={isMobile} projects={projects} projectWorkback={projectWorkback} onSelectProject={(id) => { setActiveProjectId(id); setActiveTab("overview"); }} />
                 )}
 
                 {/* ── Macro View ── */}
@@ -4017,6 +4038,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ GLOBAL CONTACTS ═══ */}
             {activeTab === "globalContacts" && (
               <GlobalContactsTab
+                isMobile={isMobile}
                 contactSearch={contactSearch}
                 setContactSearch={setContactSearch}
                 contactFilterType={contactFilterType}
@@ -4063,6 +4085,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ CLIENTS ═══ */}
             {activeTab === "clients" && (
               <ClientsTab
+                isMobile={isMobile}
                 clientSearch={clientSearch}
                 setClientSearch={setClientSearch}
                 clientFilterAttr={clientFilterAttr}
@@ -4099,6 +4122,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ FINANCE (ADMIN-ONLY) ═══ */}
             {activeTab === "finance" && (isOwner || currentUserPerms.role === "admin") && (
               <FinanceTab
+                isMobile={isMobile}
                 projects={projects}
                 setProjects={setProjects}
                 finFilterStatus={finFilterStatus}
@@ -4136,6 +4160,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ OVERVIEW ═══ */}
             {activeTab === "overview" && (
               <OverviewTab
+                isMobile={isMobile}
                 project={project}
                 projects={projects}
                 contacts={contacts}
@@ -4581,6 +4606,7 @@ export default function Dashboard({ user, onLogout }) {
             {/* ═══ VENDORS (v3 style with drop zones) ═══ */}
             {activeTab === "vendors" && (
               <VendorsTab
+                isMobile={isMobile}
                 uploadLog={uploadLog}
                 w9Scanning={w9Scanning}
                 vendorSearch={vendorSearch}
@@ -4892,6 +4918,27 @@ export default function Dashboard({ user, onLogout }) {
         );
       })()}
 
+      {/* ═══ MOBILE BOTTOM TAB BAR ═══ */}
+      {isMobile && (
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, height: 56, paddingBottom: "env(safe-area-inset-bottom)", background: "var(--topBar)", borderTop: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-around", zIndex: 150 }}>
+          {[
+            { id: "home", icon: "🏠", label: "Home", action: () => setActiveTab("home") },
+            { id: "calendar", icon: "📅", label: "Glance", action: () => setActiveTab("calendar") },
+            { id: "projects", icon: "📁", label: "Projects", action: () => setMobileMenuOpen(true) },
+            ...(canSeeSection("globalContacts") ? [{ id: "globalContacts", icon: "👤", label: "Partners", action: () => setActiveTab("globalContacts") }] : []),
+            ...((isOwner || currentUserPerms.role === "admin") ? [{ id: "finance", icon: "💰", label: "Finance", action: () => setActiveTab("finance") }] : []),
+          ].map(tab => {
+            const isActive = tab.id === "projects" ? mobileMenuOpen : activeTab === tab.id;
+            return (
+              <button key={tab.id} onClick={tab.action} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, background: "none", border: "none", cursor: "pointer", padding: "6px 0", minHeight: 44, justifyContent: "center" }}>
+                <span style={{ fontSize: 18 }}>{tab.icon}</span>
+                <span style={{ fontSize: 9, fontWeight: 600, color: isActive ? "#ff6b4a" : "var(--textFaint)", letterSpacing: 0.3 }}>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {/* ═══ COMMAND PALETTE (Cmd+K) ═══ */}
       <CommandPalette
         open={cmdKOpen}
@@ -4921,6 +4968,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ SETTINGS MODAL ═══ */}
       {showSettings && (
         <SettingsModal
+          isMobile={isMobile}
           showSettings={showSettings} setShowSettings={setShowSettings}
           settingsDirty={settingsDirty} setSettingsDirty={setSettingsDirty}
           settingsTab={settingsTab} setSettingsTab={setSettingsTab}
@@ -4972,7 +5020,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ARCHIVE / DELETE CONFIRM ═══ */}
       {archiveConfirm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setArchiveConfirm(null); setSwipeState({}); }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, padding: "28px 32px", width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", padding: isMobile ? "28px 24px" : "28px 32px", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", ...modalStyle(isMobile, 380) }}>
             <div style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>{archiveConfirm.action === "archive" ? "📦" : "🗑"}</div>
             <div style={{ fontSize: 16, fontWeight: 700, textAlign: "center", color: "var(--text)", marginBottom: 8, fontFamily: "'Instrument Sans'" }}>
               {archiveConfirm.action === "archive" ? "Archive Project?" : "Delete Project?"}
@@ -5023,7 +5071,7 @@ export default function Dashboard({ user, onLogout }) {
         const drivePath = `CLIENTS / ${spm.client || "—"} / ${yr} / ${parentCode} / ${previewCode}`;
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSubProjectModal(null)}>
-            <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, padding: "28px 32px", width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", padding: isMobile ? "28px 24px" : "28px 32px", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", ...modalStyle(isMobile, 380) }}>
               <div style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>📂</div>
               <div style={{ fontSize: 16, fontWeight: 700, textAlign: "center", color: "var(--text)", marginBottom: 4, fontFamily: "'Instrument Sans'" }}>New Sub-Project</div>
               <div style={{ fontSize: 12, color: "var(--textMuted)", textAlign: "center", marginBottom: 20 }}>Under <strong>{spm.parentName}</strong></div>
@@ -5091,7 +5139,7 @@ export default function Dashboard({ user, onLogout }) {
         if (!targetProject) return null;
         return (
           <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { setAccessModal(null); setAccessEmail(""); }}>
-            <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 14, padding: "28px 32px", width: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.5)", maxHeight: "80vh", overflowY: "auto" }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", padding: isMobile ? "28px 20px" : "28px 32px", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", overflowY: "auto", ...modalStyle(isMobile, 420) }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: "var(--text)", marginBottom: 4, fontFamily: "'Instrument Sans'" }}>🔒 Manage Access</div>
               <div style={{ fontSize: 13, color: "var(--textMuted)", marginBottom: 20 }}>{accessModal.projectName}</div>
 
@@ -5245,7 +5293,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD/EDIT CLIENT MODAL ═══ */}
       {showAddClient && (
         <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, background: "rgba(0,0,0,0.7)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", animation: "fadeUp 0.2s ease", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddClient(false); }}>
-          <div style={{ background: "var(--bgInput)", borderRadius: 16, width: 620, maxHeight: "90vh", display: "flex", flexDirection: "column", border: "1px solid var(--borderActive)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+          <div style={{ background: "var(--bgInput)", display: "flex", flexDirection: "column", border: "1px solid var(--borderActive)", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", ...modalStyle(isMobile, 620) }}>
             <div style={{ padding: "22px 30px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{clientForm.id ? "Edit Client" : "Add Client"}</div>
               <button onClick={() => setShowAddClient(false)} style={{ background: "none", border: "none", color: "var(--textFaint)", cursor: "pointer", fontSize: 18 }}>✕</button>
@@ -5370,7 +5418,7 @@ export default function Dashboard({ user, onLogout }) {
         const fieldStyle = { width: "100%", padding: "9px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--text)", fontSize: 13, outline: "none" };
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 480, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.3s ease", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+            <div style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", display: "flex", flexDirection: "column", animation: "fadeUp 0.3s ease", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", ...modalStyle(isMobile, 480) }}>
               <div style={{ padding: "28px 28px 20px", textAlign: "center", borderBottom: "1px solid var(--borderSub)" }}>
                 <div style={{ fontSize: 32, marginBottom: 8 }}>👋</div>
                 <div style={{ fontSize: 20, fontWeight: 700, color: "var(--text)", fontFamily: "'Instrument Sans'" }}>Welcome to Command Center</div>
@@ -5420,8 +5468,8 @@ export default function Dashboard({ user, onLogout }) {
 
       {showAddContact && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddContact(false); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 520, maxHeight: "85vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.25s ease" }}>
-            <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", display: "flex", flexDirection: "column", animation: "fadeUp 0.25s ease", ...modalStyle(isMobile, 520) }}>
+            <div style={{ padding: isMobile ? "20px 20px 16px" : "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{contactForm.id ? "Edit Contact" : "Add Contact"}</div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <label style={{ padding: "5px 12px", background: "#3da5db15", border: "1px solid #3da5db30", borderRadius: 6, color: "#3da5db", cursor: "pointer", fontSize: 10, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
@@ -5536,7 +5584,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD PROJECT MODAL ═══ */}
       {showAddProject && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setShowAddProject(false); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 920, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", maxWidth: isMobile ? "100%" : "95vw", overflowY: "auto", animation: "fadeUp 0.25s ease", ...modalStyle(isMobile, 920) }}>
             <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>New Project</div>
@@ -5770,7 +5818,7 @@ export default function Dashboard({ user, onLogout }) {
 
         return (
         <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setContractModal(null); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 680, maxWidth: "94vw", maxHeight: "90vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", maxWidth: isMobile ? "100%" : "94vw", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden", ...modalStyle(isMobile, 680) }}>
             {/* Header */}
             <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
@@ -6002,7 +6050,7 @@ export default function Dashboard({ user, onLogout }) {
         const versionLabel = renameModal.compKey === 'quote' ? 'Quote' : 'Invoice';
         return (
         <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) setRenameModal(null); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 480, maxWidth: "92vw", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", maxWidth: isMobile ? "100%" : "92vw", animation: "fadeUp 0.2s ease", overflow: "hidden", ...modalStyle(isMobile, 480) }}>
             <div style={{ padding: "20px 24px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, marginBottom: 4 }}>RENAME BEFORE UPLOAD</div>
@@ -6065,7 +6113,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ DOCUMENT PREVIEW MODAL ═══ */}
       {docPreview && (
         <div style={{ position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(6px)" }} onClick={e => { if (e.target === e.currentTarget) setDocPreview(null); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 800, maxWidth: "92vw", height: "88vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", maxWidth: isMobile ? "100%" : "92vw", height: isMobile ? "100%" : "88vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden", ...modalStyle(isMobile, 800) }}>
             {/* Header */}
             <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <div>
@@ -6155,7 +6203,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ VERSION HISTORY MODAL ═══ */}
       {showVersionHistory && (
         <div style={{ position: "fixed", inset: 0, zIndex: 10001, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(6px)" }} onClick={e => { if (e.target === e.currentTarget) setShowVersionHistory(false); }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 600, maxWidth: "92vw", maxHeight: "80vh", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", maxWidth: isMobile ? "100%" : "92vw", display: "flex", flexDirection: "column", animation: "fadeUp 0.2s ease", overflow: "hidden", ...modalStyle(isMobile, 600) }}>
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 16, fontWeight: 700, fontFamily: "'Instrument Sans'", color: "var(--text)" }}>🕐 Version History</div>
@@ -6213,9 +6261,9 @@ export default function Dashboard({ user, onLogout }) {
       {/* ═══ ADD VENDOR MODAL ═══ */}
       {showAddVendor && (
         <div style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", backdropFilter: "blur(4px)" }} onClick={e => { if (e.target === e.currentTarget) { setShowAddVendor(false); setW9ParsedData(null); setEditingVendorId(null); } }}>
-          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 16, width: 620, maxHeight: "85vh", overflowY: "auto", animation: "fadeUp 0.25s ease" }}>
+          <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", overflowY: "auto", animation: "fadeUp 0.25s ease", ...modalStyle(isMobile, 620) }}>
             {/* Header */}
-            <div style={{ padding: "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ padding: isMobile ? "20px 20px 16px" : "20px 28px 16px", borderBottom: "1px solid var(--borderSub)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
                 <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>{editingVendorId ? "Edit Vendor" : "Add New Vendor"}</div>
                 <div style={{ fontSize: 11, color: "var(--textFaint)", marginTop: 2 }}>{editingVendorId ? "Update vendor/contractor details" : "Fill in contact details — compliance docs can be uploaded after"}</div>
@@ -6394,7 +6442,7 @@ export default function Dashboard({ user, onLogout }) {
             </button>
           )}
           {/* Slide-out panel */}
-          <div style={{ position: "fixed", right: showCommentPanel ? 0 : -380, top: 0, bottom: 0, width: 370, zIndex: 300, background: "var(--bg)", borderLeft: "1px solid var(--borderSub)", boxShadow: showCommentPanel ? "-8px 0 30px rgba(0,0,0,0.25)" : "none", transition: "right 0.3s cubic-bezier(0.4,0,0.2,1)", display: "flex", flexDirection: "column" }}>
+          <div style={{ position: "fixed", right: showCommentPanel ? 0 : (isMobile ? "-100%" : -380), top: 0, bottom: 0, width: isMobile ? "100%" : 370, zIndex: 300, background: "var(--bg)", borderLeft: isMobile ? "none" : "1px solid var(--borderSub)", boxShadow: showCommentPanel ? "-8px 0 30px rgba(0,0,0,0.25)" : "none", transition: "right 0.3s cubic-bezier(0.4,0,0.2,1)", display: "flex", flexDirection: "column" }}>
             {/* Panel header */}
             <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--borderSub)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--topBar)", flexShrink: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

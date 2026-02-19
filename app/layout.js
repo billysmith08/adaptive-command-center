@@ -1,6 +1,24 @@
+export const viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover',
+};
+
 export const metadata = {
   title: 'Command Center — Adaptive by Design',
   description: 'Production management dashboard',
+  manifest: '/manifest.json',
+  themeColor: '#0b0b0f',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Command Center',
+  },
+  icons: {
+    icon: '/icons/icon-192.png',
+    apple: '/icons/apple-touch-icon.png',
+  },
 };
 
 export default function RootLayout({ children }) {

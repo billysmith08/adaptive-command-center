@@ -2,6 +2,7 @@
 import React from "react";
 
 const FinanceTab = React.memo(function FinanceTab({
+  isMobile,
   projects,
   setProjects,
   finFilterStatus,
@@ -230,7 +231,7 @@ const FinanceTab = React.memo(function FinanceTab({
           <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, minWidth: 540 + orderedCols.length * 130 }}>
             <thead>
               <tr>
-                <th style={{ ...headerStyle, width: 200, textAlign: "left" }}>PROJECTS</th>
+                <th style={{ ...headerStyle, width: 200, textAlign: "left", ...(isMobile ? { position: "sticky", left: 0, zIndex: 6, background: "var(--bgHover)" } : {}) }}>PROJECTS</th>
                 <th style={{ ...headerStyle, width: 90, textAlign: "center" }}>STATUS</th>
                 <th style={{ ...headerStyle, width: 60, textAlign: "center" }}>MONTH</th>
                 <th style={{ ...headerStyle, width: 180, textAlign: "left" }}>NOTES</th>
@@ -260,7 +261,7 @@ const FinanceTab = React.memo(function FinanceTab({
                 // Main project row
                 rows.push(
                   <tr key={p.id} style={{ background: isSub ? "#9b6dff06" : idx % 2 === 0 ? "transparent" : "var(--bgHover)" }} onMouseEnter={e => e.currentTarget.style.background = "#ff6b4a08"} onMouseLeave={e => e.currentTarget.style.background = isSub ? "#9b6dff06" : idx % 2 === 0 ? "transparent" : "var(--bgHover)"}>
-                    <td style={{ ...colStyle, textAlign: "left" }}>
+                    <td style={{ ...colStyle, textAlign: "left", ...(isMobile ? { position: "sticky", left: 0, zIndex: 2, background: "inherit" } : {}) }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: isSub ? 24 : 0 }}>
                         {p.isRetainer && (
                           <button onClick={() => setExpandedRetainers(prev => { const next = new Set(prev); if (next.has(p.id)) next.delete(p.id); else next.add(p.id); return next; })} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 10, color: "#9b6dff", padding: 0, width: 16 }}>{isExpanded ? "▼" : "▶"}</button>

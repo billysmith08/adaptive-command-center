@@ -2,6 +2,7 @@
 import React from "react";
 
 const GlobalContactsTab = React.memo(function GlobalContactsTab({
+  isMobile,
   // State
   contactSearch,
   setContactSearch,
@@ -53,8 +54,8 @@ const GlobalContactsTab = React.memo(function GlobalContactsTab({
                     <div style={{ fontSize: 9, color: "var(--textFaint)", fontWeight: 600, letterSpacing: 1, marginBottom: 4 }}>ALL CONTACTS</div>
                     <div style={{ fontSize: 18, fontWeight: 700, fontFamily: "'Instrument Sans'" }}>Global Partners</div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: 240 }} />
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: isMobile ? "wrap" : "nowrap" }}>
+                    <input value={contactSearch} onChange={e => setContactSearch(e.target.value)} placeholder="Search contacts..." style={{ padding: "8px 14px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 7, color: "var(--textSub)", fontSize: 12, outline: "none", width: isMobile ? "100%" : 240 }} />
                     <select value={contactFilterType} onChange={e => setContactFilterType(e.target.value)} style={{ padding: "8px 10px", background: "var(--bgCard)", border: `1px solid ${contactFilterType ? "#ff6b4a40" : "var(--borderSub)"}`, borderRadius: 7, color: contactFilterType ? "#ff6b4a" : "var(--textFaint)", fontSize: 11, outline: "none", cursor: "pointer", appearance: "auto" }}>
                       <option value="">All Types</option>
                       {[...new Set(contacts.map(c => c.contactType).filter(Boolean))].sort().map(t => <option key={t} value={t}>{t}</option>)}
@@ -103,7 +104,30 @@ const GlobalContactsTab = React.memo(function GlobalContactsTab({
                         <button onClick={() => setSelectedContacts(new Set())} style={{ padding: "4px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 5, color: "var(--textFaint)", cursor: "pointer", fontSize: 10, fontWeight: 600 }}>✕ Clear</button>
                       </div>
                     )}
-                    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
+                    <div style={{ overflowX: isMobile ? "hidden" : "auto", overflowY: "auto", maxHeight: "calc(100vh - 200px)" }}>
+                    {isMobile ? (
+                      /* ── MOBILE CARD VIEW ── */
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
+                        {contacts.filter(c => (!contactSearch || c.name.toLowerCase().includes(contactSearch.toLowerCase()) || (c.email || "").toLowerCase().includes(contactSearch.toLowerCase()) || (c.company || "").toLowerCase().includes(contactSearch.toLowerCase())) && (!contactFilterType || c.contactType === contactFilterType) && (!contactFilterResource || c.resourceType === contactFilterResource)).sort((a, b) => { if (!partnerSort.col) return 0; const av = (a[partnerSort.col] || "").toString().toLowerCase(); const bv = (b[partnerSort.col] || "").toString().toLowerCase(); return partnerSort.dir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av); }).map(c => (
+                          <div key={c.id} onClick={(e) => viewContact(c, e)} style={{ padding: "14px 16px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, cursor: "pointer" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: "50%", background: "linear-gradient(135deg, #ff6b4a20, #ff4a6b20)", border: "1px solid #ff6b4a30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#ff6b4a", flexShrink: 0 }}>
+                                {c.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
+                              </div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontWeight: 600, color: "var(--text)", fontSize: 13 }}>{c.name}</div>
+                                {c.company && <div style={{ fontSize: 11, color: "var(--textMuted)" }}>{c.company}{c.position ? ` · ${c.position}` : ""}</div>}
+                              </div>
+                              {c.contactType && <span style={{ padding: "2px 7px", background: c.contactType === "Client" ? "#3da5db10" : c.contactType === "Vendor" ? "#4ecb7110" : "#9b6dff10", border: `1px solid ${c.contactType === "Client" ? "#3da5db20" : c.contactType === "Vendor" ? "#4ecb7120" : "#9b6dff20"}`, borderRadius: 3, fontSize: 9, fontWeight: 600, color: c.contactType === "Client" ? "#3da5db" : c.contactType === "Vendor" ? "#4ecb71" : "#9b6dff", whiteSpace: "nowrap", flexShrink: 0 }}>{c.contactType}</span>}
+                            </div>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 11, color: "var(--textMuted)" }}>
+                              {c.email && <span onClick={(e) => { e.stopPropagation(); copyToClipboard(c.email, "Email", e); }} style={{ cursor: "pointer" }}>📧 {c.email}</span>}
+                              {c.phone && <span onClick={(e) => { e.stopPropagation(); copyToClipboard(c.phone, "Phone", e); }} style={{ cursor: "pointer" }}>📱 {c.phone}</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
                     <div style={{ minWidth: 1600 }}>
                     <div style={{ display: "grid", gridTemplateColumns: colsToGrid(partnerColWidths), padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1, position: "sticky", top: 0, background: "var(--bgInput)", zIndex: 5, minWidth: 1600 }}>
                       {[["", ""], ["NAME", "name"], ["COMPANY", "company"], ["TYPE", "contactType"], ["RESOURCE TYPE", "resourceType"], ["POSITION", "position"], ["PHONE", "phone"], ["EMAIL", "email"], ["ADDRESS", "address"], ["PROJECTS", ""], ["ACTIONS", ""], ["DOCS", ""]].map(([label, sortKey], i) => (
@@ -285,6 +309,7 @@ const GlobalContactsTab = React.memo(function GlobalContactsTab({
                     ))}
                     </div>
                     </div>
+                    )}
                   </div>
                 )}
               </div>

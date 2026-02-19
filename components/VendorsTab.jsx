@@ -7,6 +7,7 @@ import {
 } from "./shared/UIComponents";
 
 const VendorsTab = React.memo(function VendorsTab({
+  isMobile,
   uploadLog,
   w9Scanning,
   vendorSearch,

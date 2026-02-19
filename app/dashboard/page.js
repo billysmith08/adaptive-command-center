@@ -14,6 +14,11 @@ export default function DashboardPage() {
       setUser(user);
       setLoading(false);
     });
+
+    // Register service worker for PWA
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   }, []);
 
   const handleLogout = async () => {

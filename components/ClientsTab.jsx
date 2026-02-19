@@ -2,6 +2,7 @@
 import React from "react";
 
 const ClientsTab = React.memo(function ClientsTab({
+  isMobile,
   clientSearch,
   setClientSearch,
   clientFilterAttr,

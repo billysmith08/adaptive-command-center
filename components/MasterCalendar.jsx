@@ -5,8 +5,8 @@ import {
   WB_STATUS_STYLES,
 } from "./shared/UIComponents";
 
-const MasterCalendar = React.memo(function MasterCalendar({ projects, projectWorkback = {}, onSelectProject }) {
-  const [calView, setCalView] = useState("week");
+const MasterCalendar = React.memo(function MasterCalendar({ isMobile, projects, projectWorkback = {}, onSelectProject }) {
+  const [calView, setCalView] = useState(isMobile ? "day" : "week");
   const [navOffset, setNavOffset] = useState(0);
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split("T")[0];

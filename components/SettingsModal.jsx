@@ -3,6 +3,7 @@ import React, { useState, useRef } from "react";
 import { PhoneWithCode, AddressAutocomplete, processAvatarImage } from "./shared/UIComponents";
 
 const SettingsModal = React.memo(function SettingsModal({
+  isMobile,
   showSettings, setShowSettings,
   settingsDirty, setSettingsDirty,
   settingsTab, setSettingsTab,
@@ -37,7 +38,7 @@ const SettingsModal = React.memo(function SettingsModal({
 }) {
   return (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => { if (!settingsDirty) setShowSettings(false); }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, width: 780, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.5)", ...(isMobile ? { width: "100%", height: "100%", maxHeight: "100%", borderRadius: 0 } : { borderRadius: 16, width: 780, maxHeight: "80vh" }) }}>
             {/* Header */}
             <div style={{ padding: "20px 24px 0", flexShrink: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
@@ -48,9 +49,9 @@ const SettingsModal = React.memo(function SettingsModal({
                 <button onClick={() => { if (!settingsDirty) setShowSettings(false); else if (confirm("Discard unsaved changes?")) { setSettingsDirty(false); setShowSettings(false); } }} style={{ background: "none", border: "none", fontSize: 18, color: "var(--textMuted)", cursor: "pointer", padding: 4 }}>✕</button>
               </div>
               {/* Tabs */}
-              <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
                 {[["profile", "🪪 Profile"], ...(isAdmin ? [["users", "👤 Users"], ["drive", "📁 Drive"], ["defaults", "📋 Defaults"], ["templates", "📝 Templates"], ["display", "🔤 Display"], ["notifications", "🔔 Notifications"]] : []), ...(isOwner ? [["branding", "🎨 Branding"]] : [])].map(([key, label]) => (
-                  <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3 }}>{label}</button>
+                  <button key={key} onClick={() => setSettingsTab(key)} style={{ padding: isMobile ? "8px 12px" : "8px 16px", background: "none", border: "none", borderBottom: settingsTab === key ? "2px solid #ff6b4a" : "2px solid transparent", color: settingsTab === key ? "#ff6b4a" : "var(--textMuted)", fontSize: isMobile ? 11 : 12, fontWeight: 600, cursor: "pointer", letterSpacing: 0.3, whiteSpace: "nowrap" }}>{label}</button>
                 ))}
               </div>
             </div>
