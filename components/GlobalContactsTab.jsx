@@ -308,8 +308,8 @@ const GlobalContactsTab = React.memo(function GlobalContactsTab({
                       </div>
                     ))}
                     </div>
-                    </div>
                     )}
+                    </div>
                   </div>
                 )}
               </div>
