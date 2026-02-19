@@ -637,6 +637,7 @@ export default function Dashboard({ user, onLogout }) {
   const [renameModal, setRenameModal] = useState(null); // { file, vendorId, compKey, drivePath, basePath, vendorName, suggestedName, originalName, ext, fromContacts }
   const [vendorLinkCopied, setVendorLinkCopied] = useState(false);
   const [showAddProject, setShowAddProject] = useState(false);
+  const [subProjectModal, setSubProjectModal] = useState(null);
   const [clipboardToast, setClipboardToast] = useState(null);
   const [contactPopover, setContactPopover] = useState(null); // { contact, x, y }
   const [showAddContact, setShowAddContact] = useState(false);
@@ -4954,7 +4955,7 @@ export default function Dashboard({ user, onLogout }) {
           <div onClick={e => e.stopPropagation()} style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 8, padding: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.5)", zIndex: 191, minWidth: 160 }}>
             <div style={{ padding: "6px 12px", fontSize: 10, color: "var(--textGhost)", fontWeight: 600, letterSpacing: 0.5, borderBottom: "1px solid var(--borderSub)", marginBottom: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{contextMenu.projectName}</div>
             <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src) { const newId = "proj_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const dup = JSON.parse(JSON.stringify(src)); dup.id = newId; dup.name = src.name + " (Copy)"; dup.archived = false; dup.status = "Pre-Production"; dup.driveFolderId = ""; dup.driveFiles = []; setProjects(prev => [...prev, dup]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Duplicated "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "var(--textSub)", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "var(--bgHover)"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📋 Duplicate</button>
-            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); const sub = { id: newId, parentId: src.id, name: "New Sub-Project", client: src.client || "", projectType: src.projectType || "", code: "", status: "Pre-Production", location: "", budget: 0, spent: 0, eventDates: { start: "", end: "" }, engagementDates: { start: "", end: "" }, brief: src.brief || { what: "", where: "", why: "" }, why: src.why || "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], staff: [], pocs: [], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], notes: "", archived: false, isTour: src.isTour || false, subEvents: src.isTour ? [] : undefined }; setProjects(prev => [...prev, sub]); setActiveProjectId(newId); setActiveTab("overview"); setClipboardToast({ text: `Sub-project created under "${src.name}"`, x: window.innerWidth / 2, y: 60 }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
+            <button onClick={() => { const src = projects.find(x => x.id === contextMenu.projectId); if (src && !src.parentId) { setSubProjectModal({ parentId: src.id, parentName: src.name, client: src.client || "", projectType: src.projectType || "", name: "", location: "", eventStart: "", services: [...(src.services || [])], producers: [...(src.producers || [])], managers: [...(src.managers || [])], clientContacts: [...(src.clientContacts || [])], billingContacts: [...(src.billingContacts || [])], why: src.why || "", isTour: src.isTour || false }); } else if (src?.parentId) { alert("Cannot nest sub-projects further."); } setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#dba94e", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#dba94e12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>📂 Add Sub-Project</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "archive", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#9b6dff", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#9b6dff12"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>{contextMenu.archived ? "↩ Restore Project" : "📦 Archive Project"}</button>
             <button onClick={() => { setArchiveConfirm({ projectId: contextMenu.projectId, action: "delete", name: contextMenu.projectName }); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#e85454", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }} onMouseEnter={e => e.currentTarget.style.background = "#e8545412"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🗑 Delete Project</button>
             {isAdmin && (<button onClick={() => { setAccessModal({ projectId: contextMenu.projectId, projectName: contextMenu.projectName }); setAccessEmail(""); setContextMenu(null); }} style={{ width: "100%", padding: "8px 12px", background: "transparent", border: "none", borderRadius: 4, color: "#5b9ff5", fontSize: 12, fontWeight: 600, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8, borderTop: "1px solid var(--borderSub)", marginTop: 2, paddingTop: 10 }} onMouseEnter={e => e.currentTarget.style.background = "#5b9ff512"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>🔒 Manage Access</button>)}
@@ -5005,6 +5006,65 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* ═══ NEW SUB-PROJECT MODAL ═══ */}
+      {subProjectModal && (() => {
+        const spm = subProjectModal;
+        const previewCode = generateProjectCode({ name: spm.name, client: spm.client, location: spm.location, eventDates: { start: spm.eventStart || "" } });
+        const yr = spm.eventStart ? spm.eventStart.slice(0, 4) : String(new Date().getFullYear());
+        const drivePath = `CLIENTS / ${spm.client || "—"} / ${yr} / ${previewCode}`;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setSubProjectModal(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ background: "var(--bgCard)", border: "1px solid var(--borderActive)", borderRadius: 16, padding: "28px 32px", width: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+              <div style={{ fontSize: 32, textAlign: "center", marginBottom: 12 }}>📂</div>
+              <div style={{ fontSize: 16, fontWeight: 700, textAlign: "center", color: "var(--text)", marginBottom: 4, fontFamily: "'Instrument Sans'" }}>New Sub-Project</div>
+              <div style={{ fontSize: 12, color: "var(--textMuted)", textAlign: "center", marginBottom: 20 }}>Under <strong>{spm.parentName}</strong></div>
+
+              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textSub)", marginBottom: 4, display: "block" }}>Project Name *</label>
+              <input value={spm.name} onChange={e => setSubProjectModal(prev => ({ ...prev, name: e.target.value }))} placeholder="e.g. Club Space MMW" autoFocus style={{ width: "100%", padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, marginBottom: 12, outline: "none", boxSizing: "border-box" }} />
+
+              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textSub)", marginBottom: 4, display: "block" }}>Location</label>
+              <input value={spm.location} onChange={e => setSubProjectModal(prev => ({ ...prev, location: e.target.value }))} placeholder="e.g. Miami" style={{ width: "100%", padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, marginBottom: 12, outline: "none", boxSizing: "border-box" }} />
+
+              <label style={{ fontSize: 11, fontWeight: 600, color: "var(--textSub)", marginBottom: 4, display: "block" }}>Event Date</label>
+              <input type="date" value={spm.eventStart} onChange={e => setSubProjectModal(prev => ({ ...prev, eventStart: e.target.value }))} style={{ width: "100%", padding: "8px 12px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--text)", fontSize: 13, marginBottom: 16, outline: "none", boxSizing: "border-box" }} />
+
+              <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--textGhost)", marginBottom: 4, letterSpacing: 0.5 }}>PROJECT CODE</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#dba94e", fontFamily: "monospace", wordBreak: "break-all" }}>{previewCode}</div>
+              </div>
+              <div style={{ background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, padding: "10px 12px", marginBottom: 20 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, color: "var(--textGhost)", marginBottom: 4, letterSpacing: 0.5 }}>DRIVE FOLDER</div>
+                <div style={{ fontSize: 11, color: "var(--textMuted)", fontFamily: "monospace", wordBreak: "break-all" }}>{drivePath}</div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setSubProjectModal(null)} style={{ flex: 1, padding: "10px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 8, color: "var(--textSub)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Cancel</button>
+                <button disabled={!spm.name.trim()} onClick={() => {
+                  const newId = "sub_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+                  const code = generateProjectCode({ name: spm.name, client: spm.client, location: spm.location, eventDates: { start: spm.eventStart || "" } });
+                  const sub = {
+                    id: newId, parentId: spm.parentId, name: spm.name.trim(), client: spm.client, projectType: spm.projectType, code,
+                    status: "Pre-Production", location: spm.location, budget: 0, spent: 0,
+                    eventDates: { start: spm.eventStart || "", end: "" }, engagementDates: { start: "", end: "" },
+                    brief: { what: "", where: "", why: "" }, why: spm.why, services: [...(spm.services || [])],
+                    producers: [...(spm.producers || [])], managers: [...(spm.managers || [])],
+                    staff: [], pocs: [], clientContacts: [...(spm.clientContacts || [])], billingContacts: [...(spm.billingContacts || [])],
+                    notes: "", archived: false, isTour: spm.isTour || false, subEvents: spm.isTour ? [] : undefined,
+                  };
+                  setProjects(prev => [...prev, sub]);
+                  setActiveProjectId(newId);
+                  setActiveTab("overview");
+                  if (sub.client && code) { setTimeout(() => ensureProjectDrive(sub), 500); }
+                  setClipboardToast({ text: `Sub-project "${sub.name}" created`, x: window.innerWidth / 2, y: 60 });
+                  setTimeout(() => setClipboardToast(null), 2200);
+                  setSubProjectModal(null);
+                }} style={{ flex: 1, padding: "10px", background: !spm.name.trim() ? "var(--borderSub)" : "#dba94e", border: "none", borderRadius: 8, color: !spm.name.trim() ? "var(--textGhost)" : "#000", cursor: !spm.name.trim() ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700 }}>Create Sub-Project</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ═══ MANAGE ACCESS MODAL ═══ */}
       {accessModal && (() => {

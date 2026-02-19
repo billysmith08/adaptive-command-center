@@ -376,52 +376,140 @@ const BudgetTab = React.memo(function BudgetTab({
   updateProject,
 }) {
   const satUrl = project.saturationUrl;
+  const sheetUrl = project.googleSheetUrl;
   const embedUrl = satUrl ? (satUrl.includes("/budget") ? satUrl : satUrl.replace(/\/$/, "") + "/budget") : null;
+
+  const extractSheetId = (url) => {
+    if (!url) return null;
+    const m = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : null;
+  };
+
+  const sheetId = extractSheetId(sheetUrl);
+  const hasSheet = !!(sheetUrl && sheetId);
+  const hasSaturation = !!satUrl;
+
+  // State A: Empty — neither URL set
+  if (!hasSheet && !hasSaturation) {
+    return (
+      <div style={{ animation: "fadeUp 0.3s ease" }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", marginBottom: 14 }}>Budget</div>
+        <div style={{ display: "flex", gap: 16 }}>
+          <div
+            onClick={() => {
+              const url = prompt("Paste a Google Sheets URL:");
+              if (url && url.trim()) updateProject("googleSheetUrl", url.trim());
+            }}
+            style={{ flex: 1, padding: "36px 24px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, textAlign: "center", cursor: "pointer", transition: "all 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#34a85380"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(52,168,83,0.12)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--borderSub)"; e.currentTarget.style.boxShadow = "none"; }}
+          >
+            <div style={{ fontSize: 36, marginBottom: 12 }}>📊</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Google Sheets</div>
+            <div style={{ fontSize: 12, color: "var(--textFaint)" }}>Embed a live, editable spreadsheet</div>
+          </div>
+          <div
+            onClick={() => {
+              const url = prompt("Paste a Saturation project URL:", `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+              if (url && url.trim()) updateProject("saturationUrl", url.trim());
+            }}
+            style={{ flex: 1, padding: "36px 24px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 12, textAlign: "center", cursor: "pointer", transition: "all 0.2s" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "#7c5cfc60"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,92,252,0.12)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--borderSub)"; e.currentTarget.style.boxShadow = "none"; }}
+          >
+            <div style={{ fontSize: 36, marginBottom: 12 }}>💰</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>Saturation</div>
+            <div style={{ fontSize: 12, color: "var(--textFaint)" }}>Link to your Saturation budget</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // State B: Google Sheet linked
+  if (hasSheet) {
+    const sheetEmbedUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/edit?usp=sharing&rm=minimal&embedded=true`;
+    return (
+      <div style={{ animation: "fadeUp 0.3s ease" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Google Sheets Budget</span>
+            <a href={sheetUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#34a853", textDecoration: "none", fontWeight: 600 }}>Open in Sheets ↗</a>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button onClick={() => {
+              const url = prompt("Google Sheets URL:", sheetUrl);
+              if (url !== null) updateProject("googleSheetUrl", url.trim());
+            }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+              Edit URL
+            </button>
+            <button onClick={() => {
+              const url = prompt("Paste a Saturation project URL:", `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+              if (url && url.trim()) {
+                updateProject("googleSheetUrl", "");
+                updateProject("saturationUrl", url.trim());
+              }
+            }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+              Switch to Saturation
+            </button>
+          </div>
+        </div>
+        <iframe
+          src={sheetEmbedUrl}
+          style={{ width: "100%", height: "calc(100vh - 220px)", border: "none", borderRadius: 12, background: "#fff" }}
+          allow="clipboard-read; clipboard-write"
+          title="Google Sheets Budget"
+        />
+        <div style={{ marginTop: 10, fontSize: 11, color: "var(--textFaint)", fontStyle: "italic" }}>
+          Editing live — changes save directly to Google Sheets
+        </div>
+      </div>
+    );
+  }
+
+  // State C: Saturation linked
   return (
-                <div style={{ animation: "fadeUp 0.3s ease" }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Saturation Budget</span>
-                      {embedUrl && <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#ff6b4a", textDecoration: "none", fontWeight: 600 }}>Open in Saturation ↗</a>}
-                    </div>
-                    <button onClick={() => {
-                      const url = prompt("Saturation project URL:", satUrl || `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
-                      if (url !== null) updateProject("saturationUrl", url.trim());
-                    }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
-                      {satUrl ? "✏ Edit URL" : "🔗 Link Saturation"}
-                    </button>
-                  </div>
-                  {embedUrl ? (
-                    <div>
-                      <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "28px 32px", background: "linear-gradient(135deg, #1a1128 0%, #0d0d0d 100%)", border: "1px solid #3a2a5c40", borderRadius: 12, textDecoration: "none", cursor: "pointer", transition: "all 0.2s", marginBottom: 16 }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#7c5cfc60"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,92,252,0.15)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#3a2a5c40"; e.currentTarget.style.boxShadow = "none"; }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-                          <div style={{ width: 52, height: 52, borderRadius: 12, background: "linear-gradient(135deg, #7c5cfc 0%, #a855f7 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>📊</div>
-                          <div>
-                            <div style={{ fontSize: 16, fontWeight: 700, color: "#e8e0f0", marginBottom: 4 }}>Open Budget in Saturation</div>
-                            <div style={{ fontSize: 12, color: "#9b8ab8" }}>View and edit the full budget, actuals, cost tracking, and transactions</div>
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <img src="https://app.saturation.io/favicon.ico" style={{ width: 18, height: 18, borderRadius: 3, opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
-                          <span style={{ fontSize: 13, color: "#7c5cfc", fontWeight: 700 }}>Open →</span>
-                        </div>
-                      </a>
-                      <div style={{ padding: "16px 20px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, fontSize: 11, color: "var(--textFaint)", lineHeight: 1.6 }}>
-                        <strong style={{ color: "var(--textMuted)" }}>Why a link instead of an embed?</strong> Saturation uses secure authentication that prevents embedding in other apps (third-party cookie restrictions). Clicking the button above opens your full Saturation workspace with all features available.
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ textAlign: "center", padding: 60 }}>
-                      <div style={{ fontSize: 40, marginBottom: 16 }}>📊</div>
-                      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>Link Saturation to view the budget</div>
-                      <div style={{ fontSize: 13, color: "var(--textFaint)", marginBottom: 20 }}>Paste the Saturation URL for this project to embed the live budget.</div>
-                      <button onClick={() => {
-                        const url = prompt("Paste the Saturation project URL:", `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
-                        if (url && url.trim()) updateProject("saturationUrl", url.trim());
-                      }} style={{ display: "inline-flex", padding: "10px 20px", background: "#ff6b4a", border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>🔗 Link Saturation Project</button>
-                    </div>
-                  )}
-                </div>
+    <div style={{ animation: "fadeUp 0.3s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Saturation Budget</span>
+          {embedUrl && <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#ff6b4a", textDecoration: "none", fontWeight: 600 }}>Open in Saturation ↗</a>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => {
+            const url = prompt("Saturation project URL:", satUrl || `https://app.saturation.io/weareadptv/${(project.code || "").toLowerCase().replace(/\s+/g, "-")}/budget`);
+            if (url !== null) updateProject("saturationUrl", url.trim());
+          }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+            Edit URL
+          </button>
+          <button onClick={() => {
+            const url = prompt("Paste a Google Sheets URL:");
+            if (url && url.trim()) {
+              updateProject("saturationUrl", "");
+              updateProject("googleSheetUrl", url.trim());
+            }
+          }} style={{ padding: "5px 12px", background: "var(--bgCard)", border: "1px solid var(--borderSub)", borderRadius: 6, color: "var(--textMuted)", cursor: "pointer", fontSize: 10, fontWeight: 700 }}>
+            Switch to Google Sheets
+          </button>
+        </div>
+      </div>
+      <a href={embedUrl} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "28px 32px", background: "linear-gradient(135deg, #1a1128 0%, #0d0d0d 100%)", border: "1px solid #3a2a5c40", borderRadius: 12, textDecoration: "none", cursor: "pointer", transition: "all 0.2s", marginBottom: 16 }} onMouseEnter={e => { e.currentTarget.style.borderColor = "#7c5cfc60"; e.currentTarget.style.boxShadow = "0 4px 20px rgba(124,92,252,0.15)"; }} onMouseLeave={e => { e.currentTarget.style.borderColor = "#3a2a5c40"; e.currentTarget.style.boxShadow = "none"; }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ width: 52, height: 52, borderRadius: 12, background: "linear-gradient(135deg, #7c5cfc 0%, #a855f7 100%)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>📊</div>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#e8e0f0", marginBottom: 4 }}>Open Budget in Saturation</div>
+            <div style={{ fontSize: 12, color: "#9b8ab8" }}>View and edit the full budget, actuals, cost tracking, and transactions</div>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <img src="https://app.saturation.io/favicon.ico" style={{ width: 18, height: 18, borderRadius: 3, opacity: 0.7 }} onError={e => e.target.style.display = "none"} />
+          <span style={{ fontSize: 13, color: "#7c5cfc", fontWeight: 700 }}>Open →</span>
+        </div>
+      </a>
+      <div style={{ padding: "16px 20px", background: "var(--bgInput)", border: "1px solid var(--borderSub)", borderRadius: 10, fontSize: 11, color: "var(--textFaint)", lineHeight: 1.6 }}>
+        <strong style={{ color: "var(--textMuted)" }}>Why a link instead of an embed?</strong> Saturation uses secure authentication that prevents embedding in other apps (third-party cookie restrictions). Clicking the button above opens your full Saturation workspace with all features available.
+      </div>
+    </div>
   );
 });
 
