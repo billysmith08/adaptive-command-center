@@ -74,20 +74,13 @@ export default function LoginPage() {
 
   const googleBtnRef = useRef(null);
 
-  // Initialize Google Identity Services button for Chrome iOS
+  // Initialize Google Identity Services button for Chrome iOS (redirect mode)
   useEffect(() => {
     if (!chromeIOS || !gisReady || !window.google || !googleBtnRef.current) return;
     window.google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
-      callback: async (response) => {
-        setLoading(true);
-        const { error } = await supabase.auth.signInWithIdToken({
-          provider: 'google',
-          token: response.credential,
-        });
-        if (error) { setError(error.message); setLoading(false); }
-        else { window.location.href = '/dashboard'; }
-      },
+      ux_mode: 'redirect',
+      login_uri: `${window.location.origin}/api/auth/google-one-tap`,
     });
     window.google.accounts.id.renderButton(googleBtnRef.current, {
       type: 'standard',
