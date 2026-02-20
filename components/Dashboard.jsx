@@ -4260,7 +4260,7 @@ export default function Dashboard({ user, onLogout }) {
                   <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: "calc(100vh - 280px)", minHeight: 300 }}>
                   <div style={{ minWidth: 1100 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "140px 1fr 200px 180px 160px 36px", padding: "10px 16px", borderBottom: "1px solid var(--borderSub)", fontSize: 9, color: "var(--textFaint)", fontWeight: 700, letterSpacing: 1 }}><span>DATE</span><span>TASK</span><span>DEPARTMENT(S)</span><span>RESPONSIBLE</span><span>STATUS</span><span></span></div>
-                  {workback.map((wb, i) => {
+                  {[...workback].sort((a, b) => { if (!a.date && !b.date) return 0; if (!a.date) return 1; if (!b.date) return -1; return a.date.localeCompare(b.date); }).map((wb, i) => {
                     // Deadline color-coding
                     const wbDeadlineStyle = (() => {
                       if (!wb.date || wb.status === "Done") return { borderLeft: wb.isEvent ? "3px solid #ff6b4a40" : "3px solid transparent", bg: wb.isEvent ? "#ff6b4a0a" : "transparent" };
