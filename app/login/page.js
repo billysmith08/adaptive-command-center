@@ -66,14 +66,31 @@ export default function LoginPage() {
   };
 
   const handleGoogleSignIn = async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/api/auth/callback`,
-        queryParams: { prompt: 'select_account' },
-      },
-    });
-    if (error) setError(error.message);
+    const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+
+    if (mobile || standalone) {
+      // Direct Google OAuth (2-hop) — bypasses Supabase's multi-hop redirect
+      // chain which breaks on mobile browsers and PWA standalone mode
+      const params = new URLSearchParams({
+        client_id: GOOGLE_CLIENT_ID,
+        redirect_uri: `${window.location.origin}${GOOGLE_CALLBACK_URI}`,
+        response_type: 'code',
+        scope: 'openid email profile',
+        prompt: 'select_account',
+      });
+      window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
+    } else {
+      // Standard Supabase OAuth (desktop — 4-hop redirect works fine)
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/api/auth/callback`,
+          queryParams: { prompt: 'select_account' },
+        },
+      });
+      if (error) setError(error.message);
+    }
   };
   const inputStyle = {
     width: '100%', padding: '10px 14px', background: '#0a0a10',
