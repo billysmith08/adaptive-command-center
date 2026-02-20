@@ -32,6 +32,9 @@ export default function LoginPage() {
     fetch('/api/branding').then(r => r.json()).then(d => {
       if (d.loginBg) setBgUrl(d.loginBg);
     }).catch(() => {});
+    // Show OAuth callback errors
+    const urlErr = new URLSearchParams(window.location.search).get('error');
+    if (urlErr) setError('Auth error: ' + decodeURIComponent(urlErr));
   }, []);
 
   const handleLogin = async (e) => {
@@ -70,7 +73,6 @@ export default function LoginPage() {
         redirect_uri: window.location.origin + GOOGLE_CALLBACK_URI,
         response_type: 'code',
         scope: 'openid email profile',
-        access_type: 'offline',
         prompt: 'select_account',
       });
       window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
