@@ -258,6 +258,8 @@ export default function Dashboard({ user, onLogout }) {
     }
     const c = { id: `cmt_${Date.now()}`, text, author: user?.name || user?.email || "Unknown", authorEmail: user?.email, timestamp: new Date().toISOString(), mentions: mentions.map(m => m.email) };
     setProjectComments(prev => ({ ...prev, [activeProjectId]: [...(prev[activeProjectId] || []), c] }));
+    const preview = text.length > 60 ? text.slice(0, 60) + "…" : text;
+    logActivity("updated", `commented: "${preview}"`, project?.name);
     // Send instant email for @mentions
     if (mentions.length > 0) {
       const proj = projects.find(p => p.id === activeProjectId);
@@ -1468,9 +1470,11 @@ export default function Dashboard({ user, onLogout }) {
         }
         return updated;
       });
+      logActivity("updated", `edited client "${form.name}"`, "");
     } else {
       const newClient = { ...form, id: `cl_${Date.now()}` };
       setClients(prev => [...prev, newClient]);
+      logActivity("updated", `added client "${form.name}"`, "");
       // Auto-create client contact in Global Partners
       if (form.contactName) {
         const cc = {
@@ -1513,6 +1517,7 @@ export default function Dashboard({ user, onLogout }) {
     const name = contactForm.name || `${contactForm.firstName} ${contactForm.lastName}`.trim();
     if (!name) return;
     setContacts(prev => [...prev, { ...contactForm, name, id: `ct_${Date.now()}` }]);
+    logActivity("updated", `added contact "${name}"`, "");
     setContactForm({ ...emptyContact });
     setShowAddContact(false);
   };
@@ -2604,8 +2609,14 @@ export default function Dashboard({ user, onLogout }) {
     // Auto-archive when status changes to "Complete"
     const updates = key === "status" && val === "Complete" ? { [key]: val, archived: true } : { [key]: val };
     setProjects(prev => prev.map(p => p.id === activeProjectId ? { ...p, ...updates } : p));
-    if (["status", "location", "client", "name"].includes(key)) {
-      logActivity("updated", `${key} → "${val}"`, project?.name);
+    if (key === "notes") {
+      if (window._notesActivityTimer) clearTimeout(window._notesActivityTimer);
+      window._notesActivityTimer = setTimeout(() => {
+        logActivity("updated", "edited project notes", project?.name);
+      }, 5000);
+    } else {
+      const display = typeof val === "string" && val.length > 80 ? val.slice(0, 80) + "…" : val;
+      logActivity("updated", `${key} → "${display}"`, project?.name);
     }
     if (key === "status" && val === "Complete") {
       logActivity("archived", "auto-archived (status → Complete)", project?.name);
@@ -2821,7 +2832,14 @@ export default function Dashboard({ user, onLogout }) {
     }
   }, [activeTab, project?.id, project?.driveFolderId]);
 
-  const updateGlobalContact = (contactId, field, val) => setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
+  const updateGlobalContact = (contactId, field, val) => {
+    setContacts(prev => prev.map(c => c.id === contactId ? { ...c, [field]: val } : c));
+    if (window._contactActivityTimer) clearTimeout(window._contactActivityTimer);
+    window._contactActivityTimer = setTimeout(() => {
+      const ct = contacts.find(c => c.id === contactId);
+      logActivity("updated", `edited contact "${ct?.name || "unknown"}" (${field})`, "");
+    }, 3000);
+  };
   const updateWB = (id, key, val) => {
     pushUndoSnapshot();
     setWorkback(prev => prev.map(w => w.id === id ? { ...w, [key]: val } : w));
