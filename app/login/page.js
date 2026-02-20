@@ -65,13 +65,12 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     if (isChromeIOS()) {
       // Chrome iOS: redirect directly to Google OAuth (bypasses Supabase redirect chain)
-      const nonce = crypto.randomUUID();
       const params = new URLSearchParams({
         client_id: GOOGLE_CLIENT_ID,
         redirect_uri: window.location.origin + GOOGLE_CALLBACK_URI,
-        response_type: 'id_token',
+        response_type: 'code',
         scope: 'openid email profile',
-        nonce: nonce,
+        access_type: 'offline',
         prompt: 'select_account',
       });
       window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
